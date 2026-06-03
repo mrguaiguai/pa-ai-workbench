@@ -1028,7 +1028,7 @@ configured
 | G6 | EmbeddingProvider 抽象与 schemas | [x] |
 | G7 | Mock Embedding Provider | [x] |
 | G8 | OpenAI-compatible Embedding Provider | [x] |
-| G9 | `/api/model/status` 与配置更新 | [ ] |
+| G9 | `/api/model/status` 与配置更新 | [x] |
 
 ### 阶段 H：extracted Knowledge Engine 与真实 RAG
 

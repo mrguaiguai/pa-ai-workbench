@@ -172,6 +172,27 @@ class StatusResponse(BaseModel):
     counts: dict[str, int]
 
 
+class ModelProviderStatus(BaseModel):
+    provider: str
+    model: str
+    configured: bool
+    mock: bool
+    base_url_configured: bool
+    api_key_configured: bool
+    timeout_seconds: int
+    temperature: float | None = None
+    dimension: int | None = None
+
+
+class ModelStatusResponse(BaseModel):
+    chat_provider: str
+    embedding_provider: str
+    mock_mode: bool
+    configured: bool
+    chat: ModelProviderStatus
+    embedding: ModelProviderStatus
+
+
 class HistoryListResponse(BaseModel):
     items: list[GeneratedOutputRead]
     total: int
