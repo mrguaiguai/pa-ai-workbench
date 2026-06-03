@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { HomePage } from "./pages/HomePage";
+
 type RouteId = "/" | "/library" | "/analysis" | "/wiki" | "/history";
 
 type NavItem = {
@@ -55,6 +57,9 @@ export function App() {
 
   const currentPage = useMemo(() => pageMeta[route], [route]);
   const PageIcon = currentPage.icon;
+  const navigateTo = (nextRoute: RouteId) => {
+    window.location.hash = nextRoute;
+  };
 
   return (
     <div className="workbench-shell">
@@ -114,31 +119,35 @@ export function App() {
             </div>
           </div>
 
-          <div className="workspace-grid">
-            <div className="workspace-panel primary-panel">
-              <div className="panel-header">
-                <span>当前视图</span>
-                <strong>{currentPage.title}</strong>
+          {route === "/" ? (
+            <HomePage navigateTo={navigateTo} />
+          ) : (
+            <div className="workspace-grid">
+              <div className="workspace-panel primary-panel">
+                <div className="panel-header">
+                  <span>当前视图</span>
+                  <strong>{currentPage.title}</strong>
+                </div>
+                <div className="panel-lines" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
               </div>
-              <div className="panel-lines" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </div>
-            </div>
 
-            <div className="workspace-panel side-panel">
-              <div className="panel-header">
-                <span>状态</span>
-                <strong>Ready</strong>
-              </div>
-              <div className="status-stack">
-                <span>API Client</span>
-                <span>Hash Navigation</span>
-                <span>App Shell</span>
+              <div className="workspace-panel side-panel">
+                <div className="panel-header">
+                  <span>状态</span>
+                  <strong>Ready</strong>
+                </div>
+                <div className="status-stack">
+                  <span>API Client</span>
+                  <span>Hash Navigation</span>
+                  <span>App Shell</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </section>
       </main>
     </div>

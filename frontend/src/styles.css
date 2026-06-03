@@ -33,6 +33,7 @@ a {
 }
 
 h1,
+h2,
 p {
   margin: 0;
 }
@@ -294,6 +295,229 @@ p {
   font-weight: 700;
 }
 
+.home-page {
+  display: grid;
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.overview-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 20px;
+}
+
+.overview-copy p {
+  color: #6b7a86;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.overview-copy h2 {
+  margin-top: 6px;
+  color: #17212b;
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.backend-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  color: #42525e;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.backend-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backend-pill.ready {
+  border-color: #bfd9cb;
+  background: #eef7f1;
+  color: #256340;
+}
+
+.backend-pill.error {
+  border-color: #edc7c2;
+  background: #fff1ef;
+  color: #9b382d;
+}
+
+.backend-pill.loading svg {
+  animation: spin 1.4s linear infinite;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.metric-card {
+  min-height: 98px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px;
+}
+
+.metric-card span {
+  color: #6b7a86;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 12px;
+  color: #17212b;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.75fr);
+  gap: 16px;
+}
+
+.home-panel {
+  min-width: 0;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 18px;
+}
+
+.home-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-panel-heading span {
+  color: #6b7a86;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.home-panel-heading strong {
+  overflow: hidden;
+  color: #17212b;
+  font-size: 0.98rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.workflow-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(120px, auto) 24px;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  border: 1px solid #d8e0e5;
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #17212b;
+  cursor: pointer;
+  padding: 0 14px 0 12px;
+  text-align: left;
+}
+
+.workflow-row:hover {
+  background: #f8fafb;
+}
+
+.workflow-row span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.96rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-row code {
+  overflow: hidden;
+  color: #667781;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-row.blue {
+  border-left-color: #176b87;
+}
+
+.workflow-row.green {
+  border-left-color: #3f7f5f;
+}
+
+.workflow-row.amber {
+  border-left-color: #b7791f;
+}
+
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.quick-link {
+  display: grid;
+  min-height: 82px;
+  place-items: center;
+  gap: 8px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #42525e;
+  cursor: pointer;
+  padding: 10px;
+}
+
+.quick-link:hover {
+  border-color: #aebdc6;
+  background: #f6f9fa;
+}
+
+.quick-link span {
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (max-width: 860px) {
   .workbench-shell {
     grid-template-columns: 1fr;
@@ -347,7 +571,31 @@ p {
     grid-template-columns: 1fr;
   }
 
+  .overview-strip {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metric-grid,
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
+
   .primary-panel {
     min-height: 320px;
+  }
+}
+
+@media (max-width: 520px) {
+  .workflow-row {
+    grid-template-columns: minmax(0, 1fr) 22px;
+  }
+
+  .workflow-row code {
+    display: none;
+  }
+
+  .quick-grid {
+    grid-template-columns: 1fr;
   }
 }
