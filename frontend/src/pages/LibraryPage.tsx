@@ -9,6 +9,11 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 
 import { ApiError, Document, apiClient } from "../api/client";
+import {
+  DocumentStatusBadge,
+  EmptyState,
+  ErrorState,
+} from "../components/workbench";
 
 type LibraryForm = {
   title: string;
@@ -220,18 +225,12 @@ export function LibraryPage() {
             </button>
           </div>
 
-          {error ? <div className="inline-error">{error}</div> : null}
+          {error ? <ErrorState message={error} /> : null}
 
           {loadState === "loading" ? (
-            <div className="library-empty loading">
-              <Loader2 size={20} aria-hidden="true" />
-              <span>加载中</span>
-            </div>
+            <EmptyState text="加载中" loading />
           ) : documents.length === 0 ? (
-            <div className="library-empty">
-              <FileText size={20} aria-hidden="true" />
-              <span>暂无资料</span>
-            </div>
+            <EmptyState icon={FileText} text="暂无资料" />
           ) : (
             <div className="document-list">
               {documents.map((document) => (
@@ -250,9 +249,7 @@ export function LibraryPage() {
                   </div>
 
                   <div className="document-actions">
-                    <span className={`status-badge ${document.status}`}>
-                      {document.status}
-                    </span>
+                    <DocumentStatusBadge status={document.status} />
                     <button
                       className="icon-button"
                       type="button"

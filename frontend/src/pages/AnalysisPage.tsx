@@ -1,6 +1,4 @@
 import {
-  AlertTriangle,
-  BookOpenCheck,
   FileSearch,
   Loader2,
   MessageSquareText,
@@ -19,8 +17,18 @@ import {
   Conversation,
   ConversationMessage,
   GeneratedOutput,
+  Task,
   apiClient,
 } from "../api/client";
+import {
+  CitationList,
+  EmptyState,
+  ErrorState,
+  ResultPanel,
+  TaskProgress,
+  WarningList,
+  parseWarningsJson,
+} from "../components/workbench";
 
 type LoadState = "idle" | "loading" | "error";
 
@@ -85,19 +93,6 @@ function errorMessage(error: unknown) {
   return "Unknown error";
 }
 
-function parseWarnings(output: GeneratedOutput | null) {
-  if (!output?.warnings_json) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(output.warnings_json);
-    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
-  } catch {
-    return [output.warnings_json];
-  }
-}
-
 function roleLabel(role: ConversationMessage["role"]) {
   if (role === "assistant") {
     return "Assistant";
@@ -116,12 +111,16 @@ export function AnalysisPage() {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [latestOutput, setLatestOutput] = useState<GeneratedOutput | null>(null);
   const [latestCitations, setLatestCitations] = useState<Citation[]>([]);
+  const [latestTask, setLatestTask] = useState<Task | null>(null);
   const [conversationState, setConversationState] = useState<LoadState>("idle");
   const [messageState, setMessageState] = useState<LoadState>("idle");
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const warnings = useMemo(() => parseWarnings(latestOutput), [latestOutput]);
+  const warnings = useMemo(
+    () => parseWarningsJson(latestOutput?.warnings_json),
+    [latestOutput],
+  );
   const activeTask = taskOptions.find((option) => option.id === taskType) ?? taskOptions[0];
 
   const loadConversations = () => {
@@ -163,6 +162,7 @@ export function AnalysisPage() {
     setTaskType(conversation.default_task_type as AnalysisTaskType);
     setLatestOutput(null);
     setLatestCitations([]);
+    setLatestTask(null);
     loadMessages(conversation);
   };
 
@@ -171,6 +171,7 @@ export function AnalysisPage() {
     setMessages([]);
     setLatestOutput(null);
     setLatestCitations([]);
+    setLatestTask(null);
     setForm(initialForm);
     setError(null);
   };
@@ -200,6 +201,7 @@ export function AnalysisPage() {
         setMessages(response.messages);
         setLatestOutput(response.output);
         setLatestCitations(response.citations);
+        setLatestTask(response.task);
         setForm((current) => ({ ...current, query: "", title: "" }));
         setTaskType(response.conversation.default_task_type as AnalysisTaskType);
         loadConversations();
@@ -224,15 +226,9 @@ export function AnalysisPage() {
         </div>
 
         {conversationState === "loading" ? (
-          <div className="analysis-empty compact loading">
-            <Loader2 size={18} aria-hidden="true" />
-            <span>加载中</span>
-          </div>
+          <EmptyState text="加载中" loading compact />
         ) : conversations.length === 0 ? (
-          <div className="analysis-empty compact">
-            <BookOpenCheck size={18} aria-hidden="true" />
-            <span>暂无会话</span>
-          </div>
+          <EmptyState text="暂无会话" compact />
         ) : (
           <div className="conversation-list">
             {conversations.map((conversation) => (
@@ -260,19 +256,13 @@ export function AnalysisPage() {
           <strong>{selectedConversation?.title ?? "新分析"}</strong>
         </div>
 
-        {error ? <div className="inline-error">{error}</div> : null}
+        {error ? <ErrorState message={error} /> : null}
 
         <div className="message-stream">
           {messageState === "loading" ? (
-            <div className="analysis-empty loading">
-              <Loader2 size={20} aria-hidden="true" />
-              <span>加载消息中</span>
-            </div>
+            <EmptyState text="加载消息中" loading />
           ) : messages.length === 0 ? (
-            <div className="analysis-empty">
-              <MessageSquareText size={20} aria-hidden="true" />
-              <span>从右侧提交一个问题开始</span>
-            </div>
+            <EmptyState icon={MessageSquareText} text="从右侧提交一个问题开始" />
           ) : (
             messages.map((message) => (
               <article className={`message-bubble ${message.role}`} key={message.id}>
@@ -287,13 +277,7 @@ export function AnalysisPage() {
         </div>
 
         {latestOutput ? (
-          <section className="result-panel" aria-label="最近结果">
-            <div className="analysis-panel-heading">
-              <span>Result</span>
-              <strong>{latestOutput.title}</strong>
-            </div>
-            <pre>{latestOutput.content_markdown || "无结果内容"}</pre>
-          </section>
+          <ResultPanel title={latestOutput.title} content={latestOutput.content_markdown} />
         ) : null}
       </section>
 
@@ -371,39 +355,16 @@ export function AnalysisPage() {
           </button>
         </form>
 
+        {latestTask ? <TaskProgress task={latestTask} /> : null}
+
         <section className="citation-panel" aria-label="引用与警告">
           <div className="analysis-panel-heading">
             <span>Evidence</span>
             <strong>{latestCitations.length}</strong>
           </div>
 
-          {warnings.length > 0 ? (
-            <div className="warning-list">
-              {warnings.map((warning) => (
-                <div className="warning-item" key={warning}>
-                  <AlertTriangle size={15} aria-hidden="true" />
-                  <span>{warning}</span>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {latestCitations.length === 0 ? (
-            <div className="analysis-empty compact">
-              <BookOpenCheck size={18} aria-hidden="true" />
-              <span>暂无引用</span>
-            </div>
-          ) : (
-            <div className="citation-list">
-              {latestCitations.map((citation) => (
-                <article className="citation-item" key={citation.id}>
-                  <strong>{citation.title}</strong>
-                  <p>{citation.text}</p>
-                  <span>{citation.source}</span>
-                </article>
-              ))}
-            </div>
-          )}
+          <WarningList warnings={warnings} />
+          <CitationList citations={latestCitations} />
         </section>
       </aside>
     </div>

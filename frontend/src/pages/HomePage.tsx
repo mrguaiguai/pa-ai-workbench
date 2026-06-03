@@ -1,16 +1,14 @@
 import {
-  Activity,
   ArrowRight,
   BookOpenText,
   Database,
   FileClock,
   MessageSquareText,
-  RefreshCw,
-  ShieldCheck,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, StatusResponse, apiClient } from "../api/client";
+import { BackendStatusBadge } from "../components/workbench";
 
 type HomePageProps = {
   navigateTo: (route: "/library" | "/analysis" | "/wiki" | "/history") => void;
@@ -92,6 +90,12 @@ export function HomePage({ navigateTo }: HomePageProps) {
     ],
     [counts],
   );
+  const backendLabel =
+    status.state === "ready"
+      ? `${status.data.service} · ${status.data.knowledge_backend}`
+      : status.state === "loading"
+        ? "连接中"
+        : status.error;
 
   return (
     <div className="home-page">
@@ -100,22 +104,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
           <p>PA AI Workbench</p>
           <h2>公共事务智能工作台</h2>
         </div>
-        <div className={`backend-pill ${status.state}`}>
-          {status.state === "loading" ? (
-            <RefreshCw size={16} aria-hidden="true" />
-          ) : status.state === "ready" ? (
-            <ShieldCheck size={16} aria-hidden="true" />
-          ) : (
-            <Activity size={16} aria-hidden="true" />
-          )}
-          <span>
-            {status.state === "ready"
-              ? `${status.data.service} · ${status.data.knowledge_backend}`
-              : status.state === "loading"
-                ? "连接中"
-                : status.error}
-          </span>
-        </div>
+        <BackendStatusBadge state={status.state} label={backendLabel} />
       </section>
 
       <section className="metric-grid" aria-label="核心数据">

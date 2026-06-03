@@ -1,0 +1,205 @@
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileText,
+  Loader2,
+  WifiOff,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { Task } from "../api/client";
+
+export type CitationListItem = {
+  id?: string | null;
+  document_id?: string | null;
+  external_doc_id?: string | null;
+  chunk_id?: string | null;
+  title: string;
+  text: string;
+  score?: number | null;
+  source: string;
+};
+
+type EmptyStateProps = {
+  icon?: LucideIcon;
+  text: string;
+  loading?: boolean;
+  compact?: boolean;
+  wide?: boolean;
+};
+
+export function EmptyState({
+  icon: Icon = FileText,
+  text,
+  loading = false,
+  compact = false,
+  wide = false,
+}: EmptyStateProps) {
+  const className = [
+    "empty-state",
+    loading ? "loading" : "",
+    compact ? "compact" : "",
+    wide ? "wide" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <div className={className}>
+      {loading ? <Loader2 size={20} aria-hidden="true" /> : <Icon size={20} aria-hidden="true" />}
+      <span>{text}</span>
+    </div>
+  );
+}
+
+export function ErrorState({ message }: { message: string }) {
+  return (
+    <div className="error-state">
+      <AlertTriangle size={16} aria-hidden="true" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+export function WarningList({
+  warnings,
+  emptyText,
+}: {
+  warnings: string[];
+  emptyText?: string;
+}) {
+  if (warnings.length === 0) {
+    return emptyText ? (
+      <EmptyState icon={AlertTriangle} text={emptyText} compact />
+    ) : null;
+  }
+
+  return (
+    <div className="warning-list">
+      {warnings.map((warning) => (
+        <div className="warning-item" key={warning}>
+          <AlertTriangle size={15} aria-hidden="true" />
+          <span>{warning}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function CitationList({
+  citations,
+  emptyText = "暂无引用",
+}: {
+  citations: CitationListItem[];
+  emptyText?: string;
+}) {
+  if (citations.length === 0) {
+    return <EmptyState text={emptyText} compact />;
+  }
+
+  return (
+    <div className="citation-list">
+      {citations.map((citation, index) => (
+        <article className="citation-item" key={citationKey(citation, index)}>
+          <div className="citation-title-row">
+            <strong>{citation.title}</strong>
+            {citation.score === null || citation.score === undefined ? null : (
+              <span>{citation.score.toFixed(2)}</span>
+            )}
+          </div>
+          <p>{citation.text}</p>
+          <div className="citation-meta-row">
+            <span>{citation.source}</span>
+            {citation.chunk_id ? <span>{citation.chunk_id}</span> : null}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+export function ResultPanel({
+  title,
+  content,
+  emptyText = "无结果内容",
+}: {
+  title: string;
+  content: string | null | undefined;
+  emptyText?: string;
+}) {
+  return (
+    <section className="result-panel" aria-label="结果">
+      <div className="component-panel-heading">
+        <span>Result</span>
+        <strong>{title}</strong>
+      </div>
+      <pre>{content || emptyText}</pre>
+    </section>
+  );
+}
+
+export function TaskProgress({ task }: { task: Pick<Task, "status" | "progress" | "current_step"> }) {
+  const progress = Math.max(0, Math.min(100, task.progress));
+
+  return (
+    <section className="task-progress" aria-label="任务进度">
+      <div className="component-panel-heading">
+        <span>Progress</span>
+        <strong>{task.status}</strong>
+      </div>
+      <div className="task-progress-track" aria-hidden="true">
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <div className="task-progress-meta">
+        <span>{task.current_step || "ready"}</span>
+        <strong>{progress}%</strong>
+      </div>
+    </section>
+  );
+}
+
+export function DocumentStatusBadge({ status }: { status: string }) {
+  return <span className={`document-status-badge ${status}`}>{status}</span>;
+}
+
+export function BackendStatusBadge({
+  state,
+  label,
+}: {
+  state: "loading" | "ready" | "error";
+  label: string;
+}) {
+  const Icon = state === "loading" ? Loader2 : state === "ready" ? CheckCircle2 : WifiOff;
+
+  return (
+    <div className={`backend-status-badge ${state}`}>
+      <Icon size={16} aria-hidden="true" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+export function StatusBadge({ status }: { status: string }) {
+  return <span className={`status-badge ${status}`}>{status}</span>;
+}
+
+export function parseWarningsJson(warningsJson: string | null | undefined) {
+  if (!warningsJson) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(warningsJson);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [warningsJson];
+  }
+}
+
+function citationKey(citation: CitationListItem, index: number) {
+  return (
+    citation.id ||
+    `${citation.source}-${citation.chunk_id || citation.document_id || citation.external_doc_id || citation.title}-${index}`
+  );
+}

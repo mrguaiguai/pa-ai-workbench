@@ -1,6 +1,5 @@
 import {
   BookOpenText,
-  FileText,
   Loader2,
   RefreshCw,
   Search,
@@ -10,11 +9,15 @@ import type { FormEvent } from "react";
 
 import {
   ApiError,
-  Evidence,
   WikiPage as WikiPageDetail,
   WikiPageSummary,
   apiClient,
 } from "../api/client";
+import {
+  CitationList,
+  EmptyState,
+  ErrorState,
+} from "../components/workbench";
 
 type LoadState = "idle" | "loading" | "error";
 
@@ -44,13 +47,6 @@ function metadataEntries(metadata: Record<string, unknown>) {
   return Object.entries(metadata)
     .filter(([, value]) => value !== null && value !== undefined && value !== "")
     .map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value)]);
-}
-
-function scoreText(score: number | null) {
-  if (score === null) {
-    return "-";
-  }
-  return score.toFixed(2);
 }
 
 export function WikiPage() {
@@ -173,7 +169,7 @@ export function WikiPage() {
           </div>
         </form>
 
-        {error ? <div className="inline-error">{error}</div> : null}
+        {error ? <ErrorState message={error} /> : null}
 
         <section className="wiki-results" aria-label="Wiki 搜索结果">
           <div className="wiki-panel-heading">
@@ -182,15 +178,9 @@ export function WikiPage() {
           </div>
 
           {searchState === "loading" ? (
-            <div className="wiki-empty loading">
-              <Loader2 size={18} aria-hidden="true" />
-              <span>加载中</span>
-            </div>
+            <EmptyState text="加载中" loading />
           ) : results.length === 0 ? (
-            <div className="wiki-empty">
-              <BookOpenText size={18} aria-hidden="true" />
-              <span>暂无页面</span>
-            </div>
+            <EmptyState icon={BookOpenText} text="暂无页面" />
           ) : (
             <div className="wiki-result-list">
               {results.map((result) => (
@@ -229,10 +219,7 @@ export function WikiPage() {
         </div>
 
         {pageState === "loading" ? (
-          <div className="wiki-empty wide loading">
-            <Loader2 size={20} aria-hidden="true" />
-            <span>读取中</span>
-          </div>
+          <EmptyState text="读取中" loading wide />
         ) : page ? (
           <article className="wiki-article">
             <div className="wiki-article-title">
@@ -252,10 +239,7 @@ export function WikiPage() {
             <pre>{page.content}</pre>
           </article>
         ) : (
-          <div className="wiki-empty wide">
-            <FileText size={20} aria-hidden="true" />
-            <span>{selectedSummary?.title ?? "未选择页面"}</span>
-          </div>
+          <EmptyState text={selectedSummary?.title ?? "未选择页面"} wide />
         )}
       </section>
 
@@ -265,35 +249,8 @@ export function WikiPage() {
           <strong>{page?.citations.length ?? 0}</strong>
         </div>
 
-        {!page || page.citations.length === 0 ? (
-          <div className="wiki-empty">
-            <BookOpenText size={18} aria-hidden="true" />
-            <span>暂无引用</span>
-          </div>
-        ) : (
-          <div className="wiki-citation-list">
-            {page.citations.map((citation) => (
-              <CitationItem citation={citation} key={`${citation.source}-${citation.chunk_id}`} />
-            ))}
-          </div>
-        )}
+        <CitationList citations={page?.citations ?? []} />
       </aside>
     </div>
-  );
-}
-
-function CitationItem({ citation }: { citation: Evidence }) {
-  return (
-    <article className="wiki-citation">
-      <div>
-        <strong>{citation.title}</strong>
-        <span>{scoreText(citation.score)}</span>
-      </div>
-      <p>{citation.text}</p>
-      <div className="wiki-meta-row compact">
-        <span>{citation.source}</span>
-        {citation.chunk_id ? <span>{citation.chunk_id}</span> : null}
-      </div>
-    </article>
   );
 }

@@ -1,7 +1,5 @@
 import {
-  AlertTriangle,
   FileClock,
-  FileText,
   Loader2,
   RefreshCw,
   Search,
@@ -14,6 +12,14 @@ import {
   GeneratedOutput,
   apiClient,
 } from "../api/client";
+import {
+  CitationList,
+  EmptyState,
+  ErrorState,
+  StatusBadge,
+  WarningList,
+  parseWarningsJson,
+} from "../components/workbench";
 
 type LoadState = "idle" | "loading" | "error";
 
@@ -46,19 +52,6 @@ function errorMessage(error: unknown) {
     return error.message;
   }
   return "Unknown error";
-}
-
-function parseWarnings(output: GeneratedOutput | null) {
-  if (!output?.warnings_json) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(output.warnings_json);
-    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [];
-  } catch {
-    return [output.warnings_json];
-  }
 }
 
 function formatContent(output: GeneratedOutput | null) {
@@ -113,7 +106,10 @@ export function HistoryPage() {
     () => outputs.filter((output) => matchesFilter(output, filters)),
     [filters, outputs],
   );
-  const warnings = useMemo(() => parseWarnings(selectedOutput), [selectedOutput]);
+  const warnings = useMemo(
+    () => parseWarningsJson(selectedOutput?.warnings_json),
+    [selectedOutput],
+  );
   const displayContent = useMemo(() => formatContent(selectedOutput), [selectedOutput]);
 
   const loadDetail = (outputId: string) => {
@@ -236,18 +232,12 @@ export function HistoryPage() {
             <strong>{filteredOutputs.length}</strong>
           </div>
 
-          {error ? <div className="inline-error">{error}</div> : null}
+          {error ? <ErrorState message={error} /> : null}
 
           {historyState === "loading" ? (
-            <div className="history-empty loading">
-              <Loader2 size={18} aria-hidden="true" />
-              <span>加载中</span>
-            </div>
+            <EmptyState text="加载中" loading />
           ) : filteredOutputs.length === 0 ? (
-            <div className="history-empty">
-              <FileClock size={18} aria-hidden="true" />
-              <span>暂无历史</span>
-            </div>
+            <EmptyState icon={FileClock} text="暂无历史" />
           ) : (
             <div className="history-output-list">
               {filteredOutputs.map((output) => (
@@ -264,7 +254,7 @@ export function HistoryPage() {
                   <strong>{output.title}</strong>
                   <div>
                     <span>{output.task_type}</span>
-                    <span className={`history-status ${output.status}`}>{output.status}</span>
+                    <StatusBadge status={output.status} />
                   </div>
                   <time>{formatDate(output.created_at)}</time>
                 </button>
@@ -281,10 +271,7 @@ export function HistoryPage() {
         </div>
 
         {detailState === "loading" ? (
-          <div className="history-empty wide loading">
-            <Loader2 size={20} aria-hidden="true" />
-            <span>读取中</span>
-          </div>
+          <EmptyState text="读取中" loading wide />
         ) : selectedOutput ? (
           <article className="history-output-detail">
             <div className="history-detail-meta">
@@ -295,10 +282,7 @@ export function HistoryPage() {
             <pre>{displayContent}</pre>
           </article>
         ) : (
-          <div className="history-empty wide">
-            <FileText size={20} aria-hidden="true" />
-            <span>选择一条历史记录</span>
-          </div>
+          <EmptyState text="选择一条历史记录" wide />
         )}
       </section>
 
@@ -309,21 +293,7 @@ export function HistoryPage() {
             <strong>{warnings.length}</strong>
           </div>
 
-          {warnings.length === 0 ? (
-            <div className="history-empty compact">
-              <AlertTriangle size={18} aria-hidden="true" />
-              <span>暂无警告</span>
-            </div>
-          ) : (
-            <div className="history-warning-list">
-              {warnings.map((warning) => (
-                <div className="history-warning" key={warning}>
-                  <AlertTriangle size={15} aria-hidden="true" />
-                  <span>{warning}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <WarningList warnings={warnings} emptyText="暂无警告" />
         </section>
 
         <section className="history-side-section">
@@ -332,25 +302,7 @@ export function HistoryPage() {
             <strong>{citations.length}</strong>
           </div>
 
-          {citations.length === 0 ? (
-            <div className="history-empty compact">
-              <FileText size={18} aria-hidden="true" />
-              <span>暂无引用</span>
-            </div>
-          ) : (
-            <div className="history-citation-list">
-              {citations.map((citation) => (
-                <article className="history-citation" key={citation.id}>
-                  <div>
-                    <strong>{citation.title}</strong>
-                    <span>{citation.score === null ? "-" : citation.score.toFixed(2)}</span>
-                  </div>
-                  <p>{citation.text}</p>
-                  <span>{citation.source}</span>
-                </article>
-              ))}
-            </div>
-          )}
+          <CitationList citations={citations} />
         </section>
       </aside>
     </div>
