@@ -1027,7 +1027,7 @@ configured
 | G5 | OpenAI-compatible Chat Provider | [x] |
 | G6 | EmbeddingProvider 抽象与 schemas | [x] |
 | G7 | Mock Embedding Provider | [x] |
-| G8 | OpenAI-compatible Embedding Provider | [ ] |
+| G8 | OpenAI-compatible Embedding Provider | [x] |
 | G9 | `/api/model/status` 与配置更新 | [ ] |
 
 ### 阶段 H：extracted Knowledge Engine 与真实 RAG
