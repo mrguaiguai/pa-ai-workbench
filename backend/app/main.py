@@ -1,12 +1,14 @@
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
+from app.config import get_settings
 
 
 def create_app() -> FastAPI:
+    settings = get_settings()
     app = FastAPI(
-        title="PA AI Workbench API",
-        version="0.1.0",
+        title=settings.app_name,
+        version=settings.app_version,
         description="Backend API for the independent PA AI Workbench product.",
     )
     app.include_router(health_router)
@@ -14,4 +16,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-
