@@ -2,6 +2,7 @@ from agent.model_gateway.base import ModelGateway
 from agent.model_gateway.factory import ModelGatewayConfig
 from agent.model_gateway.factory import get_model_gateway
 from agent.model_gateway.providers import MockChatProvider
+from agent.model_gateway.providers import OpenAICompatibleChatProvider
 from agent.model_gateway.schemas import ChatMessage
 from agent.model_gateway.schemas import ChatMessageRole
 from agent.model_gateway.schemas import ChatRequest
@@ -15,5 +16,6 @@ __all__ = [
     "ModelGateway",
     "ModelGatewayConfig",
     "MockChatProvider",
+    "OpenAICompatibleChatProvider",
     "get_model_gateway",
 ]

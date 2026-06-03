@@ -1024,7 +1024,7 @@ configured
 | G2 | 创建 NOTICE.md 与剥离版权说明 | [x] |
 | G3 | Model Gateway 抽象与 schemas | [x] |
 | G4 | Mock Chat Provider | [x] |
-| G5 | OpenAI-compatible Chat Provider | [ ] |
+| G5 | OpenAI-compatible Chat Provider | [x] |
 | G6 | EmbeddingProvider 抽象与 schemas | [ ] |
 | G7 | Mock Embedding Provider | [ ] |
 | G8 | OpenAI-compatible Embedding Provider | [ ] |

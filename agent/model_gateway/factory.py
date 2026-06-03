@@ -65,8 +65,14 @@ def get_model_gateway(config: ModelGatewayConfig | None = None) -> ModelGateway:
         from agent.model_gateway.providers.mock import MockChatProvider
 
         return MockChatProvider(resolved)
+    if provider in {"openai", "openai-compatible", "openai_compatible"}:
+        from agent.model_gateway.providers.openai_compatible import (
+            OpenAICompatibleChatProvider,
+        )
+
+        return OpenAICompatibleChatProvider(resolved)
 
     raise NotImplementedError(
         f"Chat model provider is not implemented yet: {resolved.provider}. "
-        "G5 adds the OpenAI-compatible provider."
+        "Supported providers: mock, openai_compatible."
     )
