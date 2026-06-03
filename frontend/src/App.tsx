@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import { HomePage } from "./pages/HomePage";
 import { AnalysisPage } from "./pages/AnalysisPage";
 import { LibraryPage } from "./pages/LibraryPage";
+import { WikiPage } from "./pages/WikiPage";
 
 type RouteId = "/" | "/library" | "/analysis" | "/wiki" | "/history";
 
@@ -127,6 +128,8 @@ export function App() {
             <LibraryPage />
           ) : route === "/analysis" ? (
             <AnalysisPage />
+          ) : route === "/wiki" ? (
+            <WikiPage />
           ) : (
             <div className="workspace-grid">
               <div className="workspace-panel primary-panel">

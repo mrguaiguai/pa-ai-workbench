@@ -101,6 +101,17 @@ export type Citation = {
   created_at: string;
 };
 
+export type Evidence = {
+  document_id: string | null;
+  external_doc_id: string | null;
+  chunk_id: string | null;
+  title: string;
+  text: string;
+  score: number | null;
+  source: string;
+  metadata: Record<string, unknown>;
+};
+
 export type Task = {
   id: string;
   conversation_id: string | null;
@@ -146,6 +157,31 @@ export type AnalysisRunResponse = {
   task: Task;
   output: GeneratedOutput;
   citations: Citation[];
+};
+
+export type WikiPageSummary = {
+  slug: string;
+  title: string;
+  page_type: string;
+  summary: string;
+  source: string;
+  metadata: Record<string, unknown>;
+};
+
+export type WikiPage = {
+  slug: string;
+  title: string;
+  page_type: string;
+  summary: string;
+  content: string;
+  citations: Evidence[];
+  source: string;
+  metadata: Record<string, unknown>;
+};
+
+export type WikiSearchResponse = {
+  items: WikiPageSummary[];
+  total: number;
 };
 
 export type ListResponse<T> = {
@@ -220,4 +256,22 @@ export const apiClient = {
   getTask: (taskId: string) => request<Task>(`/api/tasks/${taskId}`),
   getOutput: (outputId: string) =>
     request<{ output: GeneratedOutput; citations: Citation[] }>(`/api/outputs/${outputId}`),
+  searchWiki: (query: string, kbId?: string, limit = 10) => {
+    const params = new URLSearchParams({
+      query,
+      limit: String(limit),
+    });
+    if (kbId) {
+      params.set("kb_id", kbId);
+    }
+    return request<WikiSearchResponse>(`/api/wiki/search?${params.toString()}`);
+  },
+  getWikiPage: (slug: string, kbId?: string) => {
+    const params = new URLSearchParams();
+    if (kbId) {
+      params.set("kb_id", kbId);
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(slug)}${suffix}`);
+  },
 };
