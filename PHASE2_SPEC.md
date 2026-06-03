@@ -1039,7 +1039,7 @@ configured
 | H3 | Chunker Python 化第一版 | [x] |
 | H4 | DocumentChunk 数据模型与迁移 | [x] |
 | H5 | 文档 parse/chunk/index 状态流转 | [x] |
-| H6 | VectorStore 抽象与 MockVectorStore | [ ] |
+| H6 | VectorStore 抽象与 MockVectorStore | [x] |
 | H7 | Local Chroma VectorStore | [ ] |
 | H8 | 文档索引管线接入 EmbeddingProvider | [ ] |
 | H9 | 真实 retrieve 接入 document chunks | [ ] |
