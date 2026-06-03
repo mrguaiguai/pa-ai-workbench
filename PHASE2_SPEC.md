@@ -1034,7 +1034,7 @@ configured
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| H1 | extracted_backend 骨架 | [ ] |
+| H1 | extracted_backend 骨架 | [x] |
 | H2 | 文档解析模块 PDF/DOCX/TXT/MD | [ ] |
 | H3 | Chunker Python 化第一版 | [ ] |
 | H4 | DocumentChunk 数据模型与迁移 | [ ] |

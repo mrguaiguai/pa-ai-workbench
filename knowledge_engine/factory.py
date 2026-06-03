@@ -1,10 +1,11 @@
 import os
 
 from knowledge_engine.base import KnowledgeEngine
+from knowledge_engine.backends import ExtractedKnowledgeBackend
 from knowledge_engine.backends import MockKnowledgeBackend
 from knowledge_engine.backends import WeKnoraApiBackend
 
-SUPPORTED_BACKENDS = {"mock", "weknora_api"}
+SUPPORTED_BACKENDS = {"mock", "weknora_api", "extracted"}
 
 
 def create_knowledge_engine(backend_name: str | None = None) -> KnowledgeEngine:
@@ -16,6 +17,8 @@ def create_knowledge_engine(backend_name: str | None = None) -> KnowledgeEngine:
         if backend.configured:
             return backend
         return MockKnowledgeBackend()
+    if selected == "extracted":
+        return ExtractedKnowledgeBackend()
 
     # Keep MVP demoable for unknown or not-yet-implemented backends.
     return MockKnowledgeBackend()
