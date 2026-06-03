@@ -21,6 +21,12 @@ from agent.skills import BUILTIN_SKILLS
 from agent.skills import SkillDefinition
 from agent.skills import SkillRegistry
 from agent.skills import create_builtin_skill_registry
+from agent.tools import CitationChecker
+from agent.tools import CitationCheckResult
+from agent.tools import RetrieverTool
+from agent.tools import ToolDefinition
+from agent.tools import ToolRegistry
+from agent.tools import create_builtin_tool_registry
 
 __all__ = [
     "AgentContext",
@@ -33,6 +39,8 @@ __all__ = [
     "AgentTaskType",
     "BUILTIN_SKILLS",
     "Citation",
+    "CitationChecker",
+    "CitationCheckResult",
     "ConversationMemory",
     "ContextManager",
     "EventBus",
@@ -42,6 +50,10 @@ __all__ = [
     "MemoryStore",
     "SkillDefinition",
     "SkillRegistry",
+    "RetrieverTool",
+    "ToolDefinition",
+    "ToolRegistry",
     "WorkflowHandler",
     "create_builtin_skill_registry",
+    "create_builtin_tool_registry",
 ]

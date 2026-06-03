@@ -652,7 +652,7 @@ ErrorState
 | D2 | 实现 AgentRuntime / ContextManager / EventBus | [x] |
 | D3 | 实现 ConversationMemory / MemoryManager | [x] |
 | D4 | 实现 SkillRegistry 与内置 Skill 文档 | [x] |
-| D5 | 实现 ToolRegistry / RetrieverTool / CitationChecker | [ ] |
+| D5 | 实现 ToolRegistry / RetrieverTool / CitationChecker | [x] |
 | D6 | 实现 QA workflow | [ ] |
 | D7 | 实现 PolicyAnalysis workflow | [ ] |
 | D8 | 实现 CaseReview workflow 轻量版 | [ ] |
