@@ -38,6 +38,32 @@ class Document(TimestampMixin, table=True):
     error_message: str | None = Field(default=None)
 
 
+class DocumentChunk(TimestampMixin, table=True):
+    __tablename__ = "document_chunks"
+
+    id: str = Field(default_factory=lambda: new_id("chunk"), primary_key=True)
+    document_id: str = Field(index=True)
+    external_doc_id: str | None = Field(default=None, index=True)
+    chunk_index: int = Field(index=True)
+    title: str | None = Field(default=None, index=True)
+    content: str
+    content_hash: str = Field(index=True)
+    token_count: int = Field(default=0)
+    char_count: int = Field(default=0)
+    start_char: int | None = Field(default=None)
+    end_char: int | None = Field(default=None)
+    page_number: int | None = Field(default=None, index=True)
+    section_path: str | None = Field(default=None)
+    paragraph_start_index: int | None = Field(default=None)
+    paragraph_end_index: int | None = Field(default=None)
+    business_area: str | None = Field(default=None, index=True)
+    document_type: str | None = Field(default=None, index=True)
+    source: str = Field(default="document", index=True)
+    metadata_json: str | None = Field(default=None)
+    embedding_status: str = Field(default="pending", index=True)
+    vector_id: str | None = Field(default=None, index=True)
+
+
 class Conversation(TimestampMixin, table=True):
     __tablename__ = "conversations"
 

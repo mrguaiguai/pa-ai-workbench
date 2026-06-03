@@ -41,6 +41,39 @@ class DocumentRetryIndexResponse(BaseModel):
     message: str
 
 
+class DocumentChunkRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    document_id: str
+    external_doc_id: str | None = None
+    chunk_index: int
+    title: str | None = None
+    content: str
+    content_hash: str
+    token_count: int
+    char_count: int
+    start_char: int | None = None
+    end_char: int | None = None
+    page_number: int | None = None
+    section_path: str | None = None
+    paragraph_start_index: int | None = None
+    paragraph_end_index: int | None = None
+    business_area: str | None = None
+    document_type: str | None = None
+    source: str
+    metadata_json: str | None = None
+    embedding_status: str
+    vector_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DocumentChunkListResponse(BaseModel):
+    items: list[DocumentChunkRead]
+    total: int
+
+
 class ConversationCreate(BaseModel):
     title: str | None = None
     summary: str | None = None
