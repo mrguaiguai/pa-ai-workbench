@@ -17,6 +17,10 @@ from agent.schemas import AgentResult
 from agent.schemas import AgentStatus
 from agent.schemas import AgentTaskType
 from agent.schemas import Citation
+from agent.skills import BUILTIN_SKILLS
+from agent.skills import SkillDefinition
+from agent.skills import SkillRegistry
+from agent.skills import create_builtin_skill_registry
 
 __all__ = [
     "AgentContext",
@@ -27,6 +31,7 @@ __all__ = [
     "AgentRuntime",
     "AgentStatus",
     "AgentTaskType",
+    "BUILTIN_SKILLS",
     "Citation",
     "ConversationMemory",
     "ContextManager",
@@ -35,5 +40,8 @@ __all__ = [
     "InMemoryMemoryStore",
     "MemoryManager",
     "MemoryStore",
+    "SkillDefinition",
+    "SkillRegistry",
     "WorkflowHandler",
+    "create_builtin_skill_registry",
 ]
