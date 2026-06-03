@@ -18,8 +18,8 @@ from knowledge_engine.schemas import Evidence
 from knowledge_engine.schemas import KnowledgeDocument
 from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
-from knowledge_engine.vectorstores import MockVectorStore
 from knowledge_engine.vectorstores import VectorStore
+from knowledge_engine.vectorstores import get_vector_store
 
 
 @dataclass(frozen=True)
@@ -52,7 +52,7 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         self.components = components or ExtractedBackendComponents()
         self.document_parser = self.components.document_parser or FileDocumentParser()
         self.chunker = self.components.chunker or ParagraphChunker()
-        self.vector_store = self.components.vector_store or MockVectorStore()
+        self.vector_store = self.components.vector_store or get_vector_store()
         self.embedding_provider = embedding_provider or get_embedding_provider()
         self._documents: dict[str, KnowledgeDocument] = {}
 

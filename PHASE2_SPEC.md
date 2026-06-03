@@ -1040,7 +1040,7 @@ configured
 | H4 | DocumentChunk 数据模型与迁移 | [x] |
 | H5 | 文档 parse/chunk/index 状态流转 | [x] |
 | H6 | VectorStore 抽象与 MockVectorStore | [x] |
-| H7 | Local Chroma VectorStore | [ ] |
+| H7 | Local Chroma VectorStore | [x] |
 | H8 | 文档索引管线接入 EmbeddingProvider | [ ] |
 | H9 | 真实 retrieve 接入 document chunks | [ ] |
 | H10 | Citation evidence 真实绑定 | [ ] |
