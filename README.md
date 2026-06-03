@@ -91,15 +91,25 @@ Use `docs/DEMO_SCRIPT.md` for the MVP walkthrough. It includes setup checks, saf
 Read these files before implementation:
 
 - `DEV_SPEC.md`
+- `PHASE2_SPEC.md`
 - `PRODUCT_SPEC.md`
 - `.github/skills/auto-coder/SKILL.md`
 - `.github/skills/qa-tester/SKILL.md`
 - `.github/skills/setup/SKILL.md`
+- `.github/skills/phase2-rag-auditor/SKILL.md`
+- `.github/skills/phase2-auto-coder/SKILL.md`
+- `.github/skills/phase2-qa-tester/SKILL.md`
 
 Suggested development prompt:
 
 ```text
 Please read pa-ai-workbench/DEV_SPEC.md and use the auto-coder skill to execute the next unchecked task. After finishing, update DEV_SPEC.md and report changed files, validation result, and next task.
+```
+
+Phase 2 development prompt:
+
+```text
+Please read pa-ai-workbench/PHASE2_SPEC.md and use the phase2-auto-coder skill to execute the next unchecked task. After finishing, update PHASE2_SPEC.md and report changed files, validation result, and next task.
 ```
 
 ## Git Safety
