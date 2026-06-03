@@ -1,5 +1,6 @@
 """Agent runtime contracts for PA AI Workbench."""
 
+from agent.agents import KnowledgeQaWorkflow
 from agent.context import AgentContext
 from agent.context import ContextManager
 from agent.events import EventBus
@@ -46,6 +47,7 @@ __all__ = [
     "EventBus",
     "EventHandler",
     "InMemoryMemoryStore",
+    "KnowledgeQaWorkflow",
     "MemoryManager",
     "MemoryStore",
     "SkillDefinition",
