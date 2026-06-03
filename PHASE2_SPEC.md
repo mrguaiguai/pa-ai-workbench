@@ -1020,7 +1020,7 @@ configured
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| G1 | WeKnora RAG/Wiki 源码审计与模块地图 | [ ] |
+| G1 | WeKnora RAG/Wiki 源码审计与模块地图 | [x] |
 | G2 | 创建 NOTICE.md 与剥离版权说明 | [ ] |
 | G3 | Model Gateway 抽象与 schemas | [ ] |
 | G4 | Mock Chat Provider | [ ] |
@@ -1188,4 +1188,3 @@ v0.3 可考虑：
 - 知识图谱。
 - Word/PPT 导出。
 - 部门内部部署脚本。
-
