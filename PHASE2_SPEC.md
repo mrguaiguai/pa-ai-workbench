@@ -1026,7 +1026,7 @@ configured
 | G4 | Mock Chat Provider | [x] |
 | G5 | OpenAI-compatible Chat Provider | [x] |
 | G6 | EmbeddingProvider 抽象与 schemas | [x] |
-| G7 | Mock Embedding Provider | [ ] |
+| G7 | Mock Embedding Provider | [x] |
 | G8 | OpenAI-compatible Embedding Provider | [ ] |
 | G9 | `/api/model/status` 与配置更新 | [ ] |
 

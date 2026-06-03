@@ -44,7 +44,13 @@ def get_embedding_provider(
     config: EmbeddingProviderConfig | None = None,
 ) -> EmbeddingProvider:
     resolved = config or EmbeddingProviderConfig()
+    provider = resolved.provider.strip().lower()
+    if provider in {"mock", "mock_embedding"}:
+        from knowledge_engine.embeddings.providers.mock import MockEmbeddingProvider
+
+        return MockEmbeddingProvider(resolved)
+
     raise NotImplementedError(
         f"Embedding provider is not implemented yet: {resolved.provider}. "
-        "G7 adds the mock provider and G8 adds the OpenAI-compatible provider."
+        "G8 adds the OpenAI-compatible provider."
     )
