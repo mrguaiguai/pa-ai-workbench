@@ -638,7 +638,7 @@ ErrorState
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| C1 | 定义 KnowledgeEngine 抽象接口与 schema | [ ] |
+| C1 | 定义 KnowledgeEngine 抽象接口与 schema | [x] |
 | C2 | 实现 MockKnowledgeBackend | [ ] |
 | C3 | 实现 KnowledgeEngine factory | [ ] |
 | C4 | 实现 WeKnoraApiBackend 雏形 | [ ] |
