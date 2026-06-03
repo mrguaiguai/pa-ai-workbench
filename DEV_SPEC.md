@@ -675,7 +675,7 @@ ErrorState
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | F1 | 编写 DEMO_SCRIPT | [x] |
-| F2 | 补充 README 启动说明 | [ ] |
+| F2 | 补充 README 启动说明 | [x] |
 | F3 | 后端基础 smoke test | [ ] |
 | F4 | 前端构建 smoke test | [ ] |
 | F5 | Git 安全检查 | [ ] |
