@@ -85,3 +85,57 @@ class ConversationMessagesResponse(BaseModel):
     items: list[ConversationMessageRead]
     total: int
 
+
+class TaskRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    conversation_id: str | None = None
+    task_type: str
+    title: str | None = None
+    input_json: str | None = None
+    status: str
+    current_step: str | None = None
+    progress: int
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class GeneratedOutputRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    task_id: str
+    conversation_id: str | None = None
+    task_type: str
+    title: str
+    content_json: str | None = None
+    content_markdown: str | None = None
+    warnings_json: str | None = None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class CitationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    task_id: str | None = None
+    output_id: str | None = None
+    document_id: str | None = None
+    external_doc_id: str | None = None
+    chunk_id: str | None = None
+    title: str
+    text: str
+    score: float | None = None
+    source: str
+    metadata_json: str | None = None
+    created_at: datetime
+
+
+class OutputDetailResponse(BaseModel):
+    output: GeneratedOutputRead
+    citations: list[CitationRead]
+

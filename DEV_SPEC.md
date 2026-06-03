@@ -631,7 +631,7 @@ ErrorState
 | B1 | 实现 SQLite / SQLModel 数据库基础 | [x] |
 | B2 | 实现 documents API 与本地文件存储 | [x] |
 | B3 | 实现 conversations 与 messages API | [x] |
-| B4 | 实现 tasks / outputs / citations 数据写入 | [ ] |
+| B4 | 实现 tasks / outputs / citations 数据写入 | [x] |
 | B5 | 实现 status / history API | [ ] |
 
 ### 阶段 C：Knowledge Engine
