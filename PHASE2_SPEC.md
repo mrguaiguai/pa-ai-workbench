@@ -1036,7 +1036,7 @@ configured
 | --- | --- | --- |
 | H1 | extracted_backend 骨架 | [x] |
 | H2 | 文档解析模块 PDF/DOCX/TXT/MD | [x] |
-| H3 | Chunker Python 化第一版 | [ ] |
+| H3 | Chunker Python 化第一版 | [x] |
 | H4 | DocumentChunk 数据模型与迁移 | [ ] |
 | H5 | 文档 parse/chunk/index 状态流转 | [ ] |
 | H6 | VectorStore 抽象与 MockVectorStore | [ ] |
