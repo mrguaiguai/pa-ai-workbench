@@ -256,6 +256,9 @@ export const apiClient = {
   getTask: (taskId: string) => request<Task>(`/api/tasks/${taskId}`),
   getOutput: (outputId: string) =>
     request<{ output: GeneratedOutput; citations: Citation[] }>(`/api/outputs/${outputId}`),
+  listHistory: () => request<ListResponse<GeneratedOutput>>("/api/history"),
+  getHistoryOutput: (outputId: string) =>
+    request<{ output: GeneratedOutput; citations: Citation[] }>(`/api/history/${outputId}`),
   searchWiki: (query: string, kbId?: string, limit = 10) => {
     const params = new URLSearchParams({
       query,
