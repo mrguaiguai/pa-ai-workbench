@@ -27,6 +27,44 @@ export type StatusResponse = {
   counts: Record<string, number>;
 };
 
+export type Document = {
+  id: string;
+  title: string;
+  business_area: string | null;
+  document_type: string | null;
+  source: string | null;
+  keywords_json: string | null;
+  file_name: string | null;
+  file_path: string | null;
+  file_size: number | null;
+  mime_type: string | null;
+  knowledge_backend: string;
+  external_doc_id: string | null;
+  summary: string | null;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DocumentUploadRequest = {
+  file: File;
+  title?: string;
+  business_area?: string;
+  document_type?: string;
+  source?: string;
+  keywords_json?: string;
+};
+
+export type DocumentUploadResponse = {
+  document: Document;
+};
+
+export type DocumentRetryIndexResponse = {
+  document: Document;
+  message: string;
+};
+
 export type Conversation = {
   id: string;
   title: string;
@@ -114,11 +152,14 @@ export type ListResponse<T> = {
 };
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const isFormData = init.body instanceof FormData;
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...init.headers,
-    },
+    headers: isFormData
+      ? init.headers
+      : {
+          "Content-Type": "application/json",
+          ...init.headers,
+        },
     ...init,
   });
 
@@ -137,6 +178,35 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const apiClient = {
   baseUrl: API_BASE_URL,
   getStatus: () => request<StatusResponse>("/api/status"),
+  listDocuments: () => request<ListResponse<Document>>("/api/documents"),
+  uploadDocument: (payload: DocumentUploadRequest) => {
+    const formData = new FormData();
+    formData.append("file", payload.file);
+    if (payload.title) {
+      formData.append("title", payload.title);
+    }
+    if (payload.business_area) {
+      formData.append("business_area", payload.business_area);
+    }
+    if (payload.document_type) {
+      formData.append("document_type", payload.document_type);
+    }
+    if (payload.source) {
+      formData.append("source", payload.source);
+    }
+    if (payload.keywords_json) {
+      formData.append("keywords_json", payload.keywords_json);
+    }
+    return request<DocumentUploadResponse>("/api/documents", {
+      method: "POST",
+      body: formData,
+      headers: {},
+    });
+  },
+  retryDocumentIndex: (documentId: string) =>
+    request<DocumentRetryIndexResponse>(`/api/documents/${documentId}/retry-index`, {
+      method: "POST",
+    }),
   listConversations: () => request<ListResponse<Conversation>>("/api/conversations"),
   listConversationMessages: (conversationId: string) =>
     request<ListResponse<ConversationMessage>>(`/api/conversations/${conversationId}/messages`),
