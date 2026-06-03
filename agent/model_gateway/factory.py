@@ -60,7 +60,13 @@ class ModelGatewayConfig:
 
 def get_model_gateway(config: ModelGatewayConfig | None = None) -> ModelGateway:
     resolved = config or ModelGatewayConfig()
+    provider = resolved.provider.strip().lower()
+    if provider in {"mock", "mock_chat"}:
+        from agent.model_gateway.providers.mock import MockChatProvider
+
+        return MockChatProvider(resolved)
+
     raise NotImplementedError(
         f"Chat model provider is not implemented yet: {resolved.provider}. "
-        "G4 adds the mock provider and G5 adds the OpenAI-compatible provider."
+        "G5 adds the OpenAI-compatible provider."
     )
