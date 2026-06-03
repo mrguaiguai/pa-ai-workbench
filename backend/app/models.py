@@ -36,6 +36,7 @@ class Document(TimestampMixin, table=True):
     summary: str | None = Field(default=None)
     status: str = Field(default="uploaded", index=True)
     error_message: str | None = Field(default=None)
+    failed_step: str | None = Field(default=None, index=True)
 
 
 class DocumentChunk(TimestampMixin, table=True):
@@ -62,6 +63,20 @@ class DocumentChunk(TimestampMixin, table=True):
     metadata_json: str | None = Field(default=None)
     embedding_status: str = Field(default="pending", index=True)
     vector_id: str | None = Field(default=None, index=True)
+
+
+class DocumentProcessingEvent(SQLModel, table=True):
+    __tablename__ = "document_processing_events"
+
+    id: str = Field(default_factory=lambda: new_id("evt"), primary_key=True)
+    document_id: str = Field(index=True)
+    external_doc_id: str | None = Field(default=None, index=True)
+    step: str = Field(index=True)
+    status: str = Field(index=True)
+    message: str | None = Field(default=None)
+    metadata_json: str | None = Field(default=None)
+    error_message: str | None = Field(default=None)
+    created_at: datetime = Field(default_factory=utc_now, nullable=False)
 
 
 class Conversation(TimestampMixin, table=True):

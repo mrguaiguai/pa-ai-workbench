@@ -1,5 +1,7 @@
 from collections.abc import Generator
 from pathlib import Path
+from sqlalchemy import inspect
+from sqlalchemy import text
 from sqlmodel import Session
 from sqlmodel import SQLModel
 from sqlmodel import create_engine
@@ -42,6 +44,22 @@ engine = create_db_engine()
 
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
+    ensure_sqlite_schema(engine)
+
+
+def ensure_sqlite_schema(db_engine) -> None:
+    if db_engine.dialect.name != "sqlite":
+        return
+
+    inspector = inspect(db_engine)
+    table_names = set(inspector.get_table_names())
+    if "documents" not in table_names:
+        return
+
+    document_columns = {column["name"] for column in inspector.get_columns("documents")}
+    if "failed_step" not in document_columns:
+        with db_engine.begin() as connection:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN failed_step VARCHAR"))
 
 
 def get_session() -> Generator[Session, None, None]:

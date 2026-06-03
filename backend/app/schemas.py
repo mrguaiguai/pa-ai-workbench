@@ -23,6 +23,7 @@ class DocumentRead(BaseModel):
     summary: str | None = None
     status: str
     error_message: str | None = None
+    failed_step: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -72,6 +73,36 @@ class DocumentChunkRead(BaseModel):
 class DocumentChunkListResponse(BaseModel):
     items: list[DocumentChunkRead]
     total: int
+
+
+class DocumentProcessingEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    document_id: str
+    external_doc_id: str | None = None
+    step: str
+    status: str
+    message: str | None = None
+    metadata_json: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+
+
+class DocumentProcessingEventListResponse(BaseModel):
+    items: list[DocumentProcessingEventRead]
+    total: int
+
+
+class DocumentParseResponse(BaseModel):
+    document: DocumentRead
+    parse_metadata: dict
+
+
+class DocumentIndexResponse(BaseModel):
+    document: DocumentRead
+    chunk_count: int
+    message: str
 
 
 class ConversationCreate(BaseModel):
