@@ -156,3 +156,39 @@ class HistoryListResponse(BaseModel):
     items: list[GeneratedOutputRead]
     total: int
 
+
+class EvidenceRead(BaseModel):
+    document_id: str | None = None
+    external_doc_id: str | None = None
+    chunk_id: str | None = None
+    title: str
+    text: str
+    score: float | None = None
+    source: str
+    metadata: dict
+
+
+class WikiPageSummaryRead(BaseModel):
+    slug: str
+    title: str
+    page_type: str
+    summary: str
+    source: str
+    metadata: dict
+
+
+class WikiSearchResponse(BaseModel):
+    items: list[WikiPageSummaryRead]
+    total: int
+
+
+class WikiPageRead(BaseModel):
+    slug: str
+    title: str
+    page_type: str
+    summary: str
+    content: str
+    citations: list[EvidenceRead]
+    source: str
+    metadata: dict
+

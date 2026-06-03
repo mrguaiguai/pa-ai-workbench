@@ -642,7 +642,7 @@ ErrorState
 | C2 | 实现 MockKnowledgeBackend | [x] |
 | C3 | 实现 KnowledgeEngine factory | [x] |
 | C4 | 实现 WeKnoraApiBackend 雏形 | [x] |
-| C5 | 实现 Wiki search / read API service 对接 | [ ] |
+| C5 | 实现 Wiki search / read API service 对接 | [x] |
 
 ### 阶段 D：Agent Runtime
 
