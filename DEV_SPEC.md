@@ -678,7 +678,7 @@ ErrorState
 | F2 | 补充 README 启动说明 | [x] |
 | F3 | 后端基础 smoke test | [x] |
 | F4 | 前端构建 smoke test | [x] |
-| F5 | Git 安全检查 | [ ] |
+| F5 | Git 安全检查 | [x] |
 
 ## 10. 任务执行协议
 
