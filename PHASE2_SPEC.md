@@ -1021,7 +1021,7 @@ configured
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | G1 | WeKnora RAG/Wiki 源码审计与模块地图 | [x] |
-| G2 | 创建 NOTICE.md 与剥离版权说明 | [ ] |
+| G2 | 创建 NOTICE.md 与剥离版权说明 | [x] |
 | G3 | Model Gateway 抽象与 schemas | [ ] |
 | G4 | Mock Chat Provider | [ ] |
 | G5 | OpenAI-compatible Chat Provider | [ ] |
