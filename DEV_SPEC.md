@@ -655,7 +655,7 @@ ErrorState
 | D5 | 实现 ToolRegistry / RetrieverTool / CitationChecker | [x] |
 | D6 | 实现 QA workflow | [x] |
 | D7 | 实现 PolicyAnalysis workflow | [x] |
-| D8 | 实现 CaseReview workflow 轻量版 | [ ] |
+| D8 | 实现 CaseReview workflow 轻量版 | [x] |
 | D9 | 实现 AgentOrchestrator 并接入 /api/analysis/run | [ ] |
 
 ### 阶段 E：前端工作台

@@ -1,5 +1,6 @@
 """Agent runtime contracts for PA AI Workbench."""
 
+from agent.agents import CaseReviewWorkflow
 from agent.agents import KnowledgeQaWorkflow
 from agent.agents import PolicyAnalysisWorkflow
 from agent.context import AgentContext
@@ -40,6 +41,7 @@ __all__ = [
     "AgentStatus",
     "AgentTaskType",
     "BUILTIN_SKILLS",
+    "CaseReviewWorkflow",
     "Citation",
     "CitationChecker",
     "CitationCheckResult",
