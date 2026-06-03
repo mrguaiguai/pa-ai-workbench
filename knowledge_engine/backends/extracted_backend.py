@@ -7,6 +7,10 @@ from uuid import uuid4
 from knowledge_engine.base import KnowledgeEngine
 from knowledge_engine.embeddings.base import EmbeddingProvider
 from knowledge_engine.embeddings.factory import get_embedding_provider
+from knowledge_engine.errors import KnowledgeDocumentNotFoundError
+from knowledge_engine.parsers import DocumentParser
+from knowledge_engine.parsers import DocumentParseError
+from knowledge_engine.parsers import FileDocumentParser
 from knowledge_engine.schemas import Evidence
 from knowledge_engine.schemas import KnowledgeDocument
 from knowledge_engine.schemas import WikiPage
@@ -15,7 +19,7 @@ from knowledge_engine.schemas import WikiPageSummary
 
 @dataclass(frozen=True)
 class ExtractedBackendComponents:
-    document_parser: object | None = None
+    document_parser: DocumentParser | None = None
     chunker: object | None = None
     vector_store: object | None = None
     retriever: object | None = None
@@ -41,6 +45,7 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
     ) -> None:
         self.config = config or ExtractedBackendConfig()
         self.components = components or ExtractedBackendComponents()
+        self.document_parser = self.components.document_parser or FileDocumentParser()
         self.embedding_provider = embedding_provider or get_embedding_provider()
         self._documents: dict[str, KnowledgeDocument] = {}
 
@@ -117,7 +122,18 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         return None
 
     def parse_document(self, external_doc_id: str) -> dict:
-        self._raise_pending("parse_document", "H2")
+        document = self._documents.get(external_doc_id)
+        if document is None:
+            raise KnowledgeDocumentNotFoundError(
+                f"Document is not registered in extracted backend: {external_doc_id}"
+            )
+        file_path = document.metadata.get("file_path")
+        if not file_path:
+            raise DocumentParseError(
+                f"Document has no file_path metadata: {external_doc_id}"
+            )
+        parsed = self.document_parser.parse(str(file_path), metadata=document.metadata)
+        return parsed.to_dict()
 
     def chunk_document(self, external_doc_id: str) -> dict:
         self._raise_pending("chunk_document", "H3")
@@ -148,7 +164,7 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
 
     def _pipeline_status(self) -> dict[str, str]:
         return {
-            "document_parser": self._component_status(self.components.document_parser),
+            "document_parser": self._component_status(self.document_parser),
             "chunker": self._component_status(self.components.chunker),
             "embedding_provider": "ready",
             "vector_store": self._component_status(self.components.vector_store),
