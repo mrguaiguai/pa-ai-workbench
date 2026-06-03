@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 import os
 from pathlib import Path
@@ -28,25 +28,28 @@ def _get_int(name: str, default: int) -> int:
 
 @dataclass(frozen=True)
 class Settings:
-    app_name: str = os.getenv("APP_NAME", "PA AI Workbench API")
-    app_version: str = os.getenv("APP_VERSION", "0.1.0")
-    app_env: str = os.getenv("APP_ENV", "local")
-    knowledge_backend: str = os.getenv("KNOWLEDGE_BACKEND", "mock")
-    mock_mode: bool = _get_bool("MOCK_MODE", True)
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./data/pa_workbench.db")
-    upload_dir: str = os.getenv("UPLOAD_DIR", "./uploads")
-    memory_recent_limit: int = _get_int("MEMORY_RECENT_LIMIT", 10)
-    cors_origins: tuple[str, ...] = tuple(
-        origin.strip()
-        for origin in os.getenv(
-            "CORS_ORIGINS",
-            "http://localhost:5173,http://127.0.0.1:5173",
-        ).split(",")
-        if origin.strip()
+    app_name: str = field(default_factory=lambda: os.getenv("APP_NAME", "PA AI Workbench API"))
+    app_version: str = field(default_factory=lambda: os.getenv("APP_VERSION", "0.1.0"))
+    app_env: str = field(default_factory=lambda: os.getenv("APP_ENV", "local"))
+    knowledge_backend: str = field(default_factory=lambda: os.getenv("KNOWLEDGE_BACKEND", "mock"))
+    mock_mode: bool = field(default_factory=lambda: _get_bool("MOCK_MODE", True))
+    database_url: str = field(
+        default_factory=lambda: os.getenv("DATABASE_URL", "sqlite:///./data/pa_workbench.db")
+    )
+    upload_dir: str = field(default_factory=lambda: os.getenv("UPLOAD_DIR", "./uploads"))
+    memory_recent_limit: int = field(default_factory=lambda: _get_int("MEMORY_RECENT_LIMIT", 10))
+    cors_origins: tuple[str, ...] = field(
+        default_factory=lambda: tuple(
+            origin.strip()
+            for origin in os.getenv(
+                "CORS_ORIGINS",
+                "http://localhost:5173,http://127.0.0.1:5173",
+            ).split(",")
+            if origin.strip()
+        )
     )
 
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
