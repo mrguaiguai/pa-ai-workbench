@@ -632,7 +632,7 @@ ErrorState
 | B2 | 实现 documents API 与本地文件存储 | [x] |
 | B3 | 实现 conversations 与 messages API | [x] |
 | B4 | 实现 tasks / outputs / citations 数据写入 | [x] |
-| B5 | 实现 status / history API | [ ] |
+| B5 | 实现 status / history API | [x] |
 
 ### 阶段 C：Knowledge Engine
 

@@ -139,3 +139,20 @@ class OutputDetailResponse(BaseModel):
     output: GeneratedOutputRead
     citations: list[CitationRead]
 
+
+class StatusResponse(BaseModel):
+    status: str
+    service: str
+    version: str
+    environment: str
+    knowledge_backend: str
+    mock_mode: bool
+    memory_recent_limit: int
+    database: str
+    counts: dict[str, int]
+
+
+class HistoryListResponse(BaseModel):
+    items: list[GeneratedOutputRead]
+    total: int
+
