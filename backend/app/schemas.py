@@ -39,3 +39,49 @@ class DocumentRetryIndexResponse(BaseModel):
     document: DocumentRead
     message: str
 
+
+class ConversationCreate(BaseModel):
+    title: str | None = None
+    summary: str | None = None
+    default_task_type: str = "knowledge_qa"
+    created_by: str | None = None
+    initial_message: str | None = None
+
+
+class ConversationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    title: str
+    summary: str | None = None
+    default_task_type: str
+    created_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationListResponse(BaseModel):
+    items: list[ConversationRead]
+    total: int
+
+
+class ConversationMessageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    conversation_id: str
+    role: str
+    content: str
+    metadata_json: str | None = None
+    created_at: datetime
+
+
+class ConversationCreateResponse(BaseModel):
+    conversation: ConversationRead
+    messages: list[ConversationMessageRead]
+
+
+class ConversationMessagesResponse(BaseModel):
+    items: list[ConversationMessageRead]
+    total: int
+
