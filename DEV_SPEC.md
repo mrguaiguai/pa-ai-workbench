@@ -648,7 +648,7 @@ ErrorState
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| D1 | 定义 Agent schemas / AgentResult / Citation / Event | [ ] |
+| D1 | 定义 Agent schemas / AgentResult / Citation / Event | [x] |
 | D2 | 实现 AgentRuntime / ContextManager / EventBus | [ ] |
 | D3 | 实现 ConversationMemory / MemoryManager | [ ] |
 | D4 | 实现 SkillRegistry 与内置 Skill 文档 | [ ] |
