@@ -11,6 +11,7 @@ from agent.memory import ConversationMemory
 from agent.memory import InMemoryMemoryStore
 from agent.memory import MemoryManager
 from agent.memory import MemoryStore
+from agent.orchestrator import AgentOrchestrator
 from agent.runtime import AgentRuntime
 from agent.runtime import WorkflowHandler
 from agent.schemas import AgentEvent
@@ -37,6 +38,7 @@ __all__ = [
     "AgentEventType",
     "AgentRequest",
     "AgentResult",
+    "AgentOrchestrator",
     "AgentRuntime",
     "AgentStatus",
     "AgentTaskType",

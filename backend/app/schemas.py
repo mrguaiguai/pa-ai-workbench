@@ -2,6 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import Field
 
 
 class DocumentRead(BaseModel):
@@ -140,6 +141,25 @@ class OutputDetailResponse(BaseModel):
     citations: list[CitationRead]
 
 
+class AnalysisRunRequest(BaseModel):
+    conversation_id: str | None = None
+    task_type: str = "knowledge_qa"
+    title: str | None = None
+    query_or_topic: str
+    business_area: str | None = None
+    document_type: str | None = None
+    document_ids: list[str] = Field(default_factory=list)
+    extra_requirements: str | None = None
+
+
+class AnalysisRunResponse(BaseModel):
+    conversation: ConversationRead
+    messages: list[ConversationMessageRead]
+    task: TaskRead
+    output: GeneratedOutputRead
+    citations: list[CitationRead]
+
+
 class StatusResponse(BaseModel):
     status: str
     service: str
@@ -191,4 +211,3 @@ class WikiPageRead(BaseModel):
     citations: list[EvidenceRead]
     source: str
     metadata: dict
-
