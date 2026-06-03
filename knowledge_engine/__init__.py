@@ -2,6 +2,7 @@ from knowledge_engine.base import KnowledgeEngine
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.errors import KnowledgeDocumentNotFoundError
 from knowledge_engine.errors import KnowledgeEngineError
+from knowledge_engine.factory import create_knowledge_engine
 from knowledge_engine.schemas import Evidence
 from knowledge_engine.schemas import KnowledgeDocument
 from knowledge_engine.schemas import WikiPage
@@ -16,4 +17,5 @@ __all__ = [
     "KnowledgeEngineError",
     "WikiPage",
     "WikiPageSummary",
+    "create_knowledge_engine",
 ]

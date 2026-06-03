@@ -640,7 +640,7 @@ ErrorState
 | --- | --- | --- |
 | C1 | 定义 KnowledgeEngine 抽象接口与 schema | [x] |
 | C2 | 实现 MockKnowledgeBackend | [x] |
-| C3 | 实现 KnowledgeEngine factory | [ ] |
+| C3 | 实现 KnowledgeEngine factory | [x] |
 | C4 | 实现 WeKnoraApiBackend 雏形 | [ ] |
 | C5 | 实现 Wiki search / read API service 对接 | [ ] |
 
