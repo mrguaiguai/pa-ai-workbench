@@ -4,6 +4,10 @@ from agent.context import AgentContext
 from agent.context import ContextManager
 from agent.events import EventBus
 from agent.events import EventHandler
+from agent.memory import ConversationMemory
+from agent.memory import InMemoryMemoryStore
+from agent.memory import MemoryManager
+from agent.memory import MemoryStore
 from agent.runtime import AgentRuntime
 from agent.runtime import WorkflowHandler
 from agent.schemas import AgentEvent
@@ -24,8 +28,12 @@ __all__ = [
     "AgentStatus",
     "AgentTaskType",
     "Citation",
+    "ConversationMemory",
     "ContextManager",
     "EventBus",
     "EventHandler",
+    "InMemoryMemoryStore",
+    "MemoryManager",
+    "MemoryStore",
     "WorkflowHandler",
 ]
