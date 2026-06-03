@@ -65,6 +65,8 @@ export type DocumentRetryIndexResponse = {
   message: string;
 };
 
+export type AnalysisTaskType = "knowledge_qa" | "policy_analysis" | "case_review";
+
 export type Conversation = {
   id: string;
   title: string;
@@ -129,7 +131,7 @@ export type GeneratedOutput = {
 
 export type AnalysisRunRequest = {
   conversation_id?: string | null;
-  task_type: "knowledge_qa" | "policy_analysis" | "case_review";
+  task_type: AnalysisTaskType;
   title?: string | null;
   query_or_topic: string;
   business_area?: string | null;

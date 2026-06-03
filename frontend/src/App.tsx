@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { HomePage } from "./pages/HomePage";
+import { AnalysisPage } from "./pages/AnalysisPage";
 import { LibraryPage } from "./pages/LibraryPage";
 
 type RouteId = "/" | "/library" | "/analysis" | "/wiki" | "/history";
@@ -124,6 +125,8 @@ export function App() {
             <HomePage navigateTo={navigateTo} />
           ) : route === "/library" ? (
             <LibraryPage />
+          ) : route === "/analysis" ? (
+            <AnalysisPage />
           ) : (
             <div className="workspace-grid">
               <div className="workspace-panel primary-panel">
