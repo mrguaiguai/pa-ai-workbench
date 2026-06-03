@@ -662,7 +662,7 @@ ErrorState
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| E1 | 实现 AppShell / 导航 / API client | [ ] |
+| E1 | 实现 AppShell / 导航 / API client | [x] |
 | E2 | 实现工作台首页 | [ ] |
 | E3 | 实现资料库页面 | [ ] |
 | E4 | 实现智能分析台页面 | [ ] |
