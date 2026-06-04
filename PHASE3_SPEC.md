@@ -799,7 +799,7 @@ M3 测试：
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | P3-M1-A1 | WeKnora 本地/内网启动方式审计 | [x] |
-| P3-M1-A2 | WeKnora 模型、embedding、向量库、DocReader 配置清单 | [ ] |
+| P3-M1-A2 | WeKnora 模型、embedding、向量库、DocReader 配置清单 | [x] |
 | P3-M1-A3 | PA `.env.example` 增加 WeKnora service account 配置 | [ ] |
 | P3-M1-A4 | WeKnora health / auth / workspace smoke 脚本设计 | [ ] |
 
@@ -851,7 +851,7 @@ WeKnora config examples、docs、docker-compose。
 风险：
 配置项可能因实际环境不同变化，必须保留“环境差异”章节。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-A3：PA `.env.example` 增加 WeKnora service account 配置
 
