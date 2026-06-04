@@ -1,6 +1,11 @@
 from typing import Any
 
 from agent.context import AgentContext
+from agent.model_gateway import ChatMessage
+from agent.model_gateway import ChatMessageRole
+from agent.model_gateway import ChatRequest
+from agent.model_gateway import ModelGateway
+from agent.model_gateway import get_model_gateway
 from agent.schemas import AgentEvent
 from agent.schemas import AgentEventType
 from agent.schemas import AgentRequest
@@ -16,10 +21,12 @@ class CaseReviewWorkflow:
         self,
         retriever: RetrieverTool | None = None,
         citation_checker: CitationChecker | None = None,
+        model_gateway: ModelGateway | None = None,
         top_k: int = 6,
     ) -> None:
         self.retriever = retriever or RetrieverTool()
         self.citation_checker = citation_checker or CitationChecker()
+        self.model_gateway = model_gateway or get_model_gateway()
         self.top_k = top_k
 
     def __call__(self, request: AgentRequest, context: AgentContext) -> AgentResult:
@@ -47,6 +54,30 @@ class CaseReviewWorkflow:
             )
         )
 
+        events.append(
+            AgentEvent(
+                task_id=request.task_id,
+                conversation_id=request.conversation_id,
+                event_type=AgentEventType.STEP_STARTED,
+                step="generate_case_review",
+                message="Generating grounded case review through ModelGateway.",
+                progress=65,
+                payload={"citation_count": len(citations)},
+            )
+        )
+        markdown, model_metadata = self._generate_review(request, context, citations)
+        events.append(
+            AgentEvent(
+                task_id=request.task_id,
+                conversation_id=request.conversation_id,
+                event_type=AgentEventType.STEP_COMPLETED,
+                step="generate_case_review",
+                message="Generated grounded case review.",
+                progress=75,
+                payload=model_metadata,
+            )
+        )
+
         warnings = self._build_warnings(citations)
         if warnings:
             events.append(
@@ -61,8 +92,14 @@ class CaseReviewWorkflow:
                 )
             )
 
-        content = self._build_content(request, context, citations, warnings)
-        markdown = self._build_markdown(request, content, citations, warnings)
+        content = self._build_content(
+            request=request,
+            context=context,
+            citations=citations,
+            warnings=warnings,
+            markdown=markdown,
+            model_metadata=model_metadata,
+        )
         return AgentResult(
             task_id=request.task_id,
             conversation_id=request.conversation_id,
@@ -105,7 +142,10 @@ class CaseReviewWorkflow:
         ]
 
     def _build_warnings(self, citations: list[Citation]) -> list[str]:
-        check_result = self.citation_checker.validate(citations)
+        check_result = self.citation_checker.validate(
+            citations,
+            evidence_items=citations,
+        )
         warnings = list(check_result.warnings)
         if not citations:
             warnings.append("No case evidence was found for the review.")
@@ -116,22 +156,150 @@ class CaseReviewWorkflow:
         filters: dict[str, Any] = {}
         if request.business_area:
             filters["business_area"] = request.business_area
-        filters["document_type"] = request.document_type or "case"
+        if request.document_type:
+            filters["document_type"] = request.document_type
         return filters
 
-    @staticmethod
+    def _generate_review(
+        self,
+        request: AgentRequest,
+        context: AgentContext,
+        citations: list[Citation],
+    ) -> tuple[str, dict[str, Any]]:
+        response = self.model_gateway.generate(
+            ChatRequest(
+                messages=self._build_messages(request, context, citations),
+                temperature=0.2,
+                max_tokens=1800,
+                metadata={
+                    "task_id": request.task_id,
+                    "task_type": request.task_type,
+                    "workflow": "case_review",
+                    "citation_count": len(citations),
+                    "source_types": sorted(
+                        {citation.source_type or "unknown" for citation in citations}
+                    ),
+                },
+            )
+        )
+        metadata = {
+            "provider": response.provider,
+            "model": response.model,
+            "usage": response.usage,
+        }
+        return response.content, metadata
+
+    @classmethod
+    def _build_messages(
+        cls,
+        request: AgentRequest,
+        context: AgentContext,
+        citations: list[Citation],
+    ) -> list[ChatMessage]:
+        return [
+            ChatMessage(
+                role=ChatMessageRole.SYSTEM,
+                content=(
+                    "你是 PA 智能工作台的案例复盘助手。必须基于给定案例、文档或 "
+                    "Wiki 证据输出复盘；不得编造来源。输出中文 Markdown，包含："
+                    "案例摘要、相关事实、问题与风险、建议补充核查、证据缺口。"
+                ),
+            ),
+            ChatMessage(
+                role=ChatMessageRole.USER,
+                content=cls._build_grounded_prompt(request, context, citations),
+            ),
+        ]
+
+    @classmethod
+    def _build_grounded_prompt(
+        cls,
+        request: AgentRequest,
+        context: AgentContext,
+        citations: list[Citation],
+    ) -> str:
+        lines = [
+            f"案例复盘主题：{request.query_or_topic}",
+            "",
+        ]
+
+        if context.recent_messages:
+            lines.extend(
+                [
+                    f"已参考最近 {len(context.recent_messages)} 条会话上下文。",
+                    "",
+                ]
+            )
+
+        if request.extra_requirements:
+            lines.extend(["复盘要求：", request.extra_requirements, ""])
+
+        if citations:
+            lines.extend(["证据：", ""])
+            for index, citation in enumerate(citations, start=1):
+                lines.extend(cls._citation_prompt_lines(index, citation))
+        else:
+            lines.append("证据：未检索到可用案例、文档或 Wiki 证据。")
+
+        lines.extend(
+            [
+                "",
+                "请输出以下结构：",
+                "1. 案例摘要",
+                "2. 相关事实",
+                "3. 问题与风险",
+                "4. 建议补充核查",
+                "5. 证据缺口或不确定性",
+            ]
+        )
+        return "\n".join(lines)
+
+    @classmethod
+    def _citation_prompt_lines(cls, index: int, citation: Citation) -> list[str]:
+        source_type = citation.source_type or citation.metadata.get(
+            "citation_source_type"
+        )
+        evidence_id = citation.evidence_id or citation.metadata.get("evidence_id")
+        identifiers = [
+            f"source_type={source_type or 'unknown'}",
+            f"evidence_id={evidence_id or 'unknown'}",
+        ]
+        if citation.document_id:
+            identifiers.append(f"document_id={citation.document_id}")
+        if citation.external_doc_id:
+            identifiers.append(f"external_doc_id={citation.external_doc_id}")
+        if citation.chunk_id:
+            identifiers.append(f"chunk_id={citation.chunk_id}")
+        if citation.wiki_page_id:
+            identifiers.append(f"wiki_page_id={citation.wiki_page_id}")
+        return [
+            f"[{index}] {citation.title}",
+            f"- {'; '.join(identifiers)}",
+            f"- source={citation.source}; score={citation.score}",
+            f"- excerpt={cls._excerpt(citation.text)}",
+            "",
+        ]
+
+    @classmethod
     def _build_content(
+        cls,
         request: AgentRequest,
         context: AgentContext,
         citations: list[Citation],
         warnings: list[str],
+        markdown: str,
+        model_metadata: dict[str, Any],
     ) -> dict[str, Any]:
         evidence_summaries = [
             {
                 "title": citation.title,
                 "source": citation.source,
-                "excerpt": CaseReviewWorkflow._excerpt(citation.text),
+                "excerpt": cls._excerpt(citation.text),
                 "score": citation.score,
+                "evidence_id": citation.evidence_id,
+                "source_type": citation.source_type,
+                "chunk_id": citation.chunk_id,
+                "wiki_page_id": citation.wiki_page_id,
             }
             for citation in citations
         ]
@@ -143,68 +311,27 @@ class CaseReviewWorkflow:
             relevant_facts = ["当前证据不足，暂无法提炼可靠事实。"]
 
         return {
+            "review": markdown,
             "case_summary": (
-                f"围绕“{request.query_or_topic}”完成轻量案例复盘，"
+                f"围绕“{request.query_or_topic}”通过 ModelGateway 完成案例复盘，"
                 f"共引用 {len(citations)} 条证据。"
             ),
             "relevant_facts": relevant_facts,
             "issues_and_risks": [
-                "需核对案例时间线、责任边界和对外沟通动作是否完整。",
-                "如证据不足，应避免形成确定性判断。",
+                "模型复盘已在 markdown 中展开；正式结论仍需核对时间线与责任边界。",
+                "如证据不足、冲突或缺少关键相关方，应避免形成确定性判断。",
             ],
             "suggested_next_checks": [
-                "补充原始案例材料、时间线记录和关键沟通纪要。",
-                "确认是否存在缺失证据、相互矛盾证据或未覆盖的相关方。",
+                "复核模型输出中的证据编号是否覆盖关键事实。",
+                "补充原始案例材料、时间线记录、关键沟通纪要和相关方反馈。",
             ],
+            "citation_count": len(citations),
             "evidence": evidence_summaries,
             "recent_message_count": len(context.recent_messages),
-            "filters": CaseReviewWorkflow._build_filters(request),
+            "filters": cls._build_filters(request),
+            "model": model_metadata,
             "warnings": warnings,
         }
-
-    @staticmethod
-    def _build_markdown(
-        request: AgentRequest,
-        content: dict[str, Any],
-        citations: list[Citation],
-        warnings: list[str],
-    ) -> str:
-        lines = [
-            f"## {request.title or request.query_or_topic}",
-            "",
-            "### 案例摘要",
-            content["case_summary"],
-            "",
-        ]
-
-        if request.extra_requirements:
-            lines.extend(["### 复盘要求", request.extra_requirements, ""])
-
-        lines.extend(["### 相关事实"])
-        lines.extend(f"- {item}" for item in content["relevant_facts"])
-        lines.append("")
-
-        lines.extend(["### 问题与风险"])
-        lines.extend(f"- {item}" for item in content["issues_and_risks"])
-        lines.append("")
-
-        lines.extend(["### 建议补充核查"])
-        lines.extend(f"- {item}" for item in content["suggested_next_checks"])
-
-        if citations:
-            lines.extend(["", "### 证据摘录"])
-            for index, citation in enumerate(citations, start=1):
-                lines.append(
-                    f"{index}. {citation.title}："
-                    f"{CaseReviewWorkflow._excerpt(citation.text)} "
-                    f"[来源：{citation.source}]"
-                )
-
-        if warnings:
-            lines.extend(["", "### 注意事项"])
-            lines.extend(f"- {warning}" for warning in warnings)
-
-        return "\n".join(lines)
 
     @staticmethod
     def _excerpt(text: str, max_chars: int = 280) -> str:
@@ -212,4 +339,3 @@ class CaseReviewWorkflow:
         if len(normalized) <= max_chars:
             return normalized
         return f"{normalized[:max_chars]}[truncated]"
-

@@ -1068,7 +1068,7 @@ configured
 | J4 | CitationChecker 增强真实 evidence 校验 | [x] |
 | J5 | QA workflow 接入 ModelGateway + real evidence | [x] |
 | J6 | Policy workflow 接入 ModelGateway + real evidence | [x] |
-| J7 | Case workflow 接入 ModelGateway + real evidence | [ ] |
+| J7 | Case workflow 接入 ModelGateway + real evidence | [x] |
 | J8 | `/api/analysis/run` 返回 document/wiki citation 区分 | [ ] |
 
 ### 阶段 K：前端 v0.2 升级
