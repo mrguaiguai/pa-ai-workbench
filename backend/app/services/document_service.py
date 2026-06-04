@@ -18,6 +18,8 @@ from knowledge_engine.chunking import ParagraphChunker
 from knowledge_engine.embeddings.base import EmbeddingProvider
 from knowledge_engine.embeddings.factory import get_embedding_provider
 from knowledge_engine.embeddings.schemas import EmbeddingVector
+from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend
+from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.parsers import DocumentParser
 from knowledge_engine.parsers import FileDocumentParser
 from knowledge_engine.parsers import ParsedDocument
@@ -60,16 +62,68 @@ async def create_document(
     session.add(document)
     session.commit()
     session.refresh(document)
+    if settings.knowledge_backend == "weknora_api":
+        _upload_document_to_weknora(session, document)
     return document
 
 
 def list_documents(session: Session) -> list[Document]:
     statement = select(Document).order_by(Document.created_at.desc())
-    return list(session.exec(statement).all())
+    documents = list(session.exec(statement).all())
+    for document in documents:
+        sync_document_status(session, document)
+    return documents
 
 
 def get_document(session: Session, document_id: str) -> Document | None:
-    return session.get(Document, document_id)
+    document = session.get(Document, document_id)
+    if document is not None:
+        sync_document_status(session, document)
+    return document
+
+
+def sync_document_status(session: Session, document: Document) -> Document:
+    if document.knowledge_backend != "weknora_api" or not document.external_doc_id:
+        return document
+    try:
+        status = _weknora_backend().get_document_status(document.external_doc_id)
+    except KnowledgeBackendUnavailableError as exc:
+        _record_event(
+            session=session,
+            document=document,
+            step="weknora_status",
+            status="failed",
+            message="WeKnora document status refresh failed.",
+            error_message=str(exc)[:MAX_ERROR_MESSAGE_CHARS],
+        )
+        session.commit()
+        return document
+
+    new_status = str(status.get("status") or "unknown")
+    if (
+        document.status == new_status
+        and document.error_message == status.get("error_message")
+        and document.failed_step == status.get("failed_step")
+    ):
+        return document
+
+    document.status = new_status
+    document.error_message = status.get("error_message")
+    document.failed_step = status.get("failed_step")
+    document.updated_at = utc_now()
+    session.add(document)
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_status",
+        status="completed",
+        message=status.get("message") or "WeKnora document status refreshed.",
+        metadata=status.get("metadata") or {},
+        error_message=status.get("error_message"),
+    )
+    session.commit()
+    session.refresh(document)
+    return document
 
 
 def parse_document_file(
@@ -256,6 +310,74 @@ def _parse_document(
             "source": document.source,
             "mime_type": document.mime_type,
         },
+    )
+
+
+def _upload_document_to_weknora(session: Session, document: Document) -> None:
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_upload",
+        status="started",
+        message="WeKnora document upload started.",
+    )
+    session.commit()
+    try:
+        uploaded = _weknora_backend().upload_document(
+            document.file_path or "",
+            metadata={
+                "document_id": document.id,
+                "title": document.title,
+                "business_area": document.business_area,
+                "document_type": document.document_type,
+                "source": document.source,
+                "keywords_json": document.keywords_json,
+                "file_name": document.file_name,
+                "mime_type": document.mime_type,
+            },
+        )
+    except KnowledgeBackendUnavailableError as exc:
+        _fail_document_step(
+            session=session,
+            document=document,
+            failed_step="weknora_upload",
+            exc=DocumentWorkflowError(str(exc)),
+        )
+        return
+
+    document.external_doc_id = uploaded.external_doc_id
+    document.knowledge_backend = uploaded.source
+    document.status = uploaded.status
+    document.error_message = None
+    document.failed_step = None
+    document.updated_at = utc_now()
+    session.add(document)
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_upload",
+        status="completed",
+        message="WeKnora document upload completed.",
+        metadata={
+            "external_doc_id": uploaded.external_doc_id,
+            "status": uploaded.status,
+            "title": uploaded.title,
+            "source": uploaded.source,
+            "weknora": uploaded.metadata,
+        },
+    )
+    session.commit()
+    session.refresh(document)
+
+
+def _weknora_backend() -> WeKnoraApiBackend:
+    settings = get_settings()
+    return WeKnoraApiBackend(
+        base_url=settings.weknora_base_url,
+        service_token=settings.weknora_service_token,
+        timeout=settings.weknora_timeout_seconds,
+        workspace_id=settings.weknora_workspace_id,
+        default_kb_id=settings.weknora_default_kb_id,
     )
 
 

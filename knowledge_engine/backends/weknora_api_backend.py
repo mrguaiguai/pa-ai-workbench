@@ -1,6 +1,8 @@
 import json
+import mimetypes
 import os
 from pathlib import Path
+from uuid import uuid4
 from urllib.error import HTTPError
 from urllib.error import URLError
 from urllib.parse import urlencode
@@ -85,33 +87,56 @@ class WeKnoraApiBackend(KnowledgeEngine):
 
     def upload_document(self, file_path: str, metadata: dict) -> KnowledgeDocument:
         self._require_configured()
-        payload = {
-            "file_path": file_path,
-            "metadata": metadata,
+        if not self.default_kb_id:
+            raise KnowledgeBackendUnavailableError("WEKNORA_DEFAULT_KB_ID is not configured")
+        path = Path(file_path)
+        fields = {
+            "metadata": json.dumps(_string_metadata(metadata), ensure_ascii=False),
+            "fileName": str(metadata.get("file_name") or path.name),
+            "channel": str(metadata.get("weknora_channel") or "api"),
         }
-        data = self._request_json("POST", "/api/documents", payload)
+        if metadata.get("tag_id"):
+            fields["tag_id"] = str(metadata["tag_id"])
+        if metadata.get("enable_multimodel") is not None:
+            fields["enable_multimodel"] = _bool_string(metadata["enable_multimodel"])
+        data = self._request_multipart_json(
+            "/api/v1/knowledge-bases/{kb_id}/knowledge/file".format(
+                kb_id=self.default_kb_id
+            ),
+            file_path=path,
+            fields=fields,
+        )
+        data = self._unwrap_data(data)
         if not isinstance(data, dict):
             raise KnowledgeBackendUnavailableError("WeKnora upload returned invalid JSON")
         external_doc_id = data.get("external_doc_id") or data.get("id")
+        if not external_doc_id:
+            raise KnowledgeBackendUnavailableError("WeKnora upload returned no document id")
+        mapped_status = self._map_document_status(data.get("parse_status") or data.get("status"))
         return KnowledgeDocument(
             document_id=metadata.get("document_id"),
             external_doc_id=external_doc_id,
-            title=data.get("title") or metadata.get("title") or Path(file_path).name,
-            status=data.get("status", "uploaded"),
+            title=data.get("title") or data.get("file_name") or metadata.get("title") or path.name,
+            status=mapped_status,
             source="weknora_api",
-            metadata=data.get("metadata") or metadata,
+            metadata=self._document_metadata(data, metadata),
         )
 
     def get_document_status(self, external_doc_id: str) -> dict:
         self._require_configured()
-        data = self._request_json("GET", f"/api/documents/{external_doc_id}/status")
+        data = self._request_json("GET", f"/api/v1/knowledge/{external_doc_id}")
+        data = self._unwrap_data(data)
         if not isinstance(data, dict):
             data = {}
+        raw_status = data.get("parse_status") or data.get("status")
         return {
             "external_doc_id": external_doc_id,
-            "status": data.get("status", "unknown"),
+            "status": self._map_document_status(raw_status),
             "source": "weknora_api",
-            "metadata": data.get("metadata", {}),
+            "message": self._status_message(data),
+            "failed_step": "weknora" if self._map_document_status(raw_status) == "failed" else None,
+            "error_message": data.get("error_message") or None,
+            "metadata": self._document_metadata(data, {}),
         }
 
     def retrieve(
@@ -183,8 +208,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
         if payload is not None:
             body = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"
-        if self.service_token:
-            headers["Authorization"] = f"Bearer {self.service_token}"
+        self._apply_auth_headers(headers)
 
         request = Request(
             url=f"{self.base_url}{path}",
@@ -195,7 +219,12 @@ class WeKnoraApiBackend(KnowledgeEngine):
         try:
             with urlopen(request, timeout=self.timeout) as response:
                 raw = response.read().decode("utf-8")
-        except (HTTPError, URLError, TimeoutError) as exc:
+        except HTTPError as exc:
+            body_text = exc.read().decode("utf-8", errors="replace")
+            raise KnowledgeBackendUnavailableError(
+                f"WeKnora API request failed with HTTP {exc.code}: {_shorten(body_text)}"
+            ) from exc
+        except (URLError, TimeoutError) as exc:
             raise KnowledgeBackendUnavailableError("WeKnora API request failed") from exc
 
         if not raw:
@@ -205,9 +234,119 @@ class WeKnoraApiBackend(KnowledgeEngine):
         except json.JSONDecodeError as exc:
             raise KnowledgeBackendUnavailableError("WeKnora API returned invalid JSON") from exc
 
+    def _request_multipart_json(
+        self,
+        path: str,
+        file_path: Path,
+        fields: dict[str, str],
+    ) -> dict | list:
+        boundary = f"----pa-weknora-{uuid4().hex}"
+        body = _multipart_body(boundary=boundary, file_path=file_path, fields=fields)
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        }
+        self._apply_auth_headers(headers)
+        request = Request(
+            url=f"{self.base_url}{path}",
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                raw = response.read().decode("utf-8")
+        except HTTPError as exc:
+            body_text = exc.read().decode("utf-8", errors="replace")
+            raise KnowledgeBackendUnavailableError(
+                f"WeKnora upload failed with HTTP {exc.code}: {_shorten(body_text)}"
+            ) from exc
+        except (URLError, TimeoutError) as exc:
+            raise KnowledgeBackendUnavailableError("WeKnora upload request failed") from exc
+
+        if not raw:
+            return {}
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise KnowledgeBackendUnavailableError("WeKnora upload returned invalid JSON") from exc
+
     def _require_configured(self) -> None:
         if not self.configured:
             raise KnowledgeBackendUnavailableError("WEKNORA_BASE_URL is not configured")
+
+    def _apply_auth_headers(self, headers: dict[str, str]) -> None:
+        if not self.service_token:
+            return
+        headers["X-API-Key"] = self.service_token
+        headers["Authorization"] = f"Bearer {self.service_token}"
+
+    @staticmethod
+    def _unwrap_data(value: dict | list) -> dict | list:
+        if isinstance(value, dict) and "data" in value and value.get("success") is not False:
+            data = value.get("data")
+            if isinstance(data, (dict, list)):
+                return data
+        return value
+
+    @staticmethod
+    def _map_document_status(raw_status: object) -> str:
+        normalized = str(raw_status or "").strip().lower()
+        if normalized in {"created", "pending", "uploaded"}:
+            return "uploaded"
+        if normalized in {"parsing", "processing"}:
+            return "parsing"
+        if normalized in {"chunking", "splitting"}:
+            return "chunking"
+        if normalized in {"embedding", "indexing", "finalizing"}:
+            return "indexing"
+        if normalized in {"completed", "indexed", "ready"}:
+            return "indexed"
+        if normalized in {"failed", "error", "cancelled"}:
+            return "failed"
+        return "unknown"
+
+    @staticmethod
+    def _document_metadata(data: dict, original_metadata: dict) -> dict:
+        metadata = dict(original_metadata)
+        raw_metadata = data.get("metadata")
+        if isinstance(raw_metadata, dict):
+            metadata.update(raw_metadata)
+        for key in (
+            "id",
+            "knowledge_base_id",
+            "tag_id",
+            "type",
+            "source",
+            "channel",
+            "parse_status",
+            "pending_subtasks_count",
+            "summary_status",
+            "enable_status",
+            "embedding_model_id",
+            "file_name",
+            "file_type",
+            "file_size",
+            "file_hash",
+            "storage_size",
+            "processed_at",
+            "error_message",
+        ):
+            if key in data and data.get(key) not in (None, ""):
+                metadata[f"weknora_{key}"] = data.get(key)
+        metadata["source"] = "weknora_api"
+        return metadata
+
+    @staticmethod
+    def _status_message(data: dict) -> str | None:
+        raw_status = data.get("parse_status") or data.get("status")
+        if not raw_status:
+            return None
+        message = f"WeKnora document status: {raw_status}"
+        pending = data.get("pending_subtasks_count")
+        if pending not in (None, "", 0):
+            message = f"{message}; pending subtasks: {pending}"
+        return message
 
     @staticmethod
     def _to_evidence(item: dict) -> Evidence:
@@ -259,3 +398,59 @@ class WeKnoraApiBackend(KnowledgeEngine):
         if source_type == "wiki_page" and wiki_page_id:
             return f"wiki_page:{wiki_page_id}"
         return None
+
+
+def _string_metadata(metadata: dict) -> dict[str, str]:
+    output: dict[str, str] = {}
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        if isinstance(value, (dict, list, tuple)):
+            output[str(key)] = json.dumps(value, ensure_ascii=False, default=str)
+        else:
+            output[str(key)] = str(value)
+    return output
+
+
+def _bool_string(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return "true" if str(value).strip().lower() in {"1", "true", "yes", "on"} else "false"
+
+
+def _multipart_body(boundary: str, file_path: Path, fields: dict[str, str]) -> bytes:
+    if not file_path.is_file():
+        raise KnowledgeBackendUnavailableError(f"Document file does not exist: {file_path}")
+    lines: list[bytes] = []
+    for name, value in fields.items():
+        lines.extend(
+            [
+                f"--{boundary}".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"'.encode("utf-8"),
+                b"",
+                value.encode("utf-8"),
+            ]
+        )
+    content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    lines.extend(
+        [
+            f"--{boundary}".encode("utf-8"),
+            (
+                'Content-Disposition: form-data; name="file"; '
+                f'filename="{file_path.name}"'
+            ).encode("utf-8"),
+            f"Content-Type: {content_type}".encode("utf-8"),
+            b"",
+            file_path.read_bytes(),
+            f"--{boundary}--".encode("utf-8"),
+            b"",
+        ]
+    )
+    return b"\r\n".join(lines)
+
+
+def _shorten(value: str, limit: int = 240) -> str:
+    collapsed = " ".join(value.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[: limit - 3] + "..."

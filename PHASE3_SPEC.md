@@ -908,7 +908,7 @@ WeKnora service account 配置。
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | P3-M1-B1 | WeKnora RAG API 审计与响应映射 | [x] |
-| P3-M1-B2 | WeKnoraKnowledgeBackend 文档上传/状态适配 | [ ] |
+| P3-M1-B2 | WeKnoraKnowledgeBackend 文档上传/状态适配 | [x] |
 | P3-M1-B3 | WeKnoraKnowledgeBackend retrieve 适配 | [ ] |
 | P3-M1-B4 | Evidence / Citation 标准化与 contract tests | [ ] |
 | P3-M1-B5 | 文档 chunk / evidence 预览 API 接入 | [ ] |
@@ -961,7 +961,7 @@ PA DocumentRead 显示 WeKnora 状态和 external_doc_id。
 风险：
 WeKnora 异步处理耗时较长，前端需要轮询或刷新。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-B3：WeKnoraKnowledgeBackend retrieve 适配
 
