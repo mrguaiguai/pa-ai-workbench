@@ -31,6 +31,10 @@ from agent.tools import RealRetrieverTool
 from agent.tools import RetrieverTool
 from agent.tools import ToolDefinition
 from agent.tools import ToolRegistry
+from agent.tools import WikiDraftRequest
+from agent.tools import WikiDraftResult
+from agent.tools import WikiDraftWriterError
+from agent.tools import WikiDraftWriterTool
 from agent.tools import WikiReadResult
 from agent.tools import WikiReadTool
 from agent.tools import create_builtin_tool_registry
@@ -65,6 +69,10 @@ __all__ = [
     "RetrieverTool",
     "ToolDefinition",
     "ToolRegistry",
+    "WikiDraftRequest",
+    "WikiDraftResult",
+    "WikiDraftWriterError",
+    "WikiDraftWriterTool",
     "WikiReadResult",
     "WikiReadTool",
     "WorkflowHandler",
