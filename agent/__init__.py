@@ -31,6 +31,8 @@ from agent.tools import RealRetrieverTool
 from agent.tools import RetrieverTool
 from agent.tools import ToolDefinition
 from agent.tools import ToolRegistry
+from agent.tools import WikiReadResult
+from agent.tools import WikiReadTool
 from agent.tools import create_builtin_tool_registry
 
 __all__ = [
@@ -63,6 +65,8 @@ __all__ = [
     "RetrieverTool",
     "ToolDefinition",
     "ToolRegistry",
+    "WikiReadResult",
+    "WikiReadTool",
     "WorkflowHandler",
     "create_builtin_skill_registry",
     "create_builtin_tool_registry",

@@ -1063,7 +1063,7 @@ configured
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | J1 | RealRetrieverTool | [x] |
-| J2 | WikiReadTool | [ ] |
+| J2 | WikiReadTool | [x] |
 | J3 | WikiDraftWriterTool | [ ] |
 | J4 | CitationChecker 增强真实 evidence 校验 | [ ] |
 | J5 | QA workflow 接入 ModelGateway + real evidence | [ ] |

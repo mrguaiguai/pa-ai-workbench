@@ -37,6 +37,7 @@ class ToolRegistry:
 def create_builtin_tool_registry() -> ToolRegistry:
     from agent.tools.citation_checker import CitationChecker
     from agent.tools.real_retriever import RealRetrieverTool
+    from agent.tools.wiki_reader import WikiReadTool
 
     real_retriever = RealRetrieverTool()
 
@@ -53,6 +54,12 @@ def create_builtin_tool_registry() -> ToolRegistry:
                 description="Retrieve real document and Wiki evidence from the Knowledge Engine.",
                 tool=real_retriever,
                 metadata={"implementation": "real_retriever"},
+            ),
+            ToolDefinition(
+                name="wiki_reader",
+                description="Read a Wiki page from the Knowledge Engine by slug.",
+                tool=WikiReadTool(),
+                metadata={"implementation": "wiki_reader"},
             ),
             ToolDefinition(
                 name="citation_checker",
