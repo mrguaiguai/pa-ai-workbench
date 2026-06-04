@@ -97,6 +97,9 @@ export type Citation = {
   text: string;
   score: number | null;
   source: string;
+  evidence_id: string | null;
+  source_type: "document_chunk" | "wiki_page" | string | null;
+  wiki_page_id: string | null;
   metadata_json: string | null;
   created_at: string;
 };

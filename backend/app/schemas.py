@@ -1,8 +1,11 @@
 from datetime import datetime
+import json
+from typing import Any
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import model_validator
 
 
 class DocumentRead(BaseModel):
@@ -196,8 +199,59 @@ class CitationRead(BaseModel):
     text: str
     score: float | None = None
     source: str
+    evidence_id: str | None = None
+    source_type: str | None = None
+    wiki_page_id: str | None = None
     metadata_json: str | None = None
     created_at: datetime
+
+    @model_validator(mode="after")
+    def hydrate_evidence_fields(self) -> "CitationRead":
+        metadata = _metadata_from_json(self.metadata_json)
+        binding = metadata.get("citation_binding")
+        binding = binding if isinstance(binding, dict) else {}
+        if self.evidence_id is None:
+            self.evidence_id = _optional_str(
+                binding.get("evidence_id") or metadata.get("evidence_id")
+            )
+        if self.source_type is None:
+            self.source_type = _normalize_source_type(
+                binding.get("source_type")
+                or metadata.get("citation_source_type")
+                or metadata.get("source_type")
+                or ("document_chunk" if self.chunk_id else None)
+            )
+        if self.wiki_page_id is None:
+            self.wiki_page_id = _optional_str(
+                binding.get("wiki_page_id") or metadata.get("wiki_page_id")
+            )
+        return self
+
+
+def _metadata_from_json(metadata_json: str | None) -> dict[str, Any]:
+    if not metadata_json:
+        return {}
+    try:
+        value = json.loads(metadata_json)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _normalize_source_type(value: object) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"document", "document_chunk", "chunk"}:
+        return "document_chunk"
+    if normalized in {"wiki", "wiki_page", "wiki-page"}:
+        return "wiki_page"
+    return normalized or None
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
 
 
 class OutputDetailResponse(BaseModel):
