@@ -21,6 +21,8 @@ import {
 
 type LoadState = "idle" | "loading" | "error";
 
+const SELECTED_WIKI_STORAGE_KEY = "pa_workbench:selected_wiki_slug";
+
 type SearchForm = {
   query: string;
   kbId: string;
@@ -106,6 +108,13 @@ export function WikiPage() {
   };
 
   useEffect(() => {
+    const pendingSlug = window.sessionStorage.getItem(SELECTED_WIKI_STORAGE_KEY);
+    if (pendingSlug) {
+      window.sessionStorage.removeItem(SELECTED_WIKI_STORAGE_KEY);
+      setSelectedSlug(pendingSlug);
+      loadPage(pendingSlug);
+      return;
+    }
     runSearch(initialForm);
   }, []);
 

@@ -1,5 +1,7 @@
 import {
+  BookOpenText,
   FileSearch,
+  FilePlus2,
   Loader2,
   MessageSquareText,
   Plus,
@@ -18,6 +20,7 @@ import {
   ConversationMessage,
   GeneratedOutput,
   Task,
+  WikiPage,
   apiClient,
 } from "../api/client";
 import {
@@ -31,6 +34,8 @@ import {
 } from "../components/workbench";
 
 type LoadState = "idle" | "loading" | "error";
+
+const SELECTED_WIKI_STORAGE_KEY = "pa_workbench:selected_wiki_slug";
 
 type AnalysisForm = {
   query: string;
@@ -156,6 +161,9 @@ export function AnalysisPage() {
   const [latestTask, setLatestTask] = useState<Task | null>(null);
   const [conversationState, setConversationState] = useState<LoadState>("idle");
   const [messageState, setMessageState] = useState<LoadState>("idle");
+  const [draftState, setDraftState] = useState<LoadState>("idle");
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [createdDraft, setCreatedDraft] = useState<WikiPage | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -220,6 +228,9 @@ export function AnalysisPage() {
     setLatestOutput(null);
     setLatestCitations([]);
     setLatestTask(null);
+    setCreatedDraft(null);
+    setDraftError(null);
+    setDraftState("idle");
     loadMessages(conversation);
   };
 
@@ -229,6 +240,9 @@ export function AnalysisPage() {
     setLatestOutput(null);
     setLatestCitations([]);
     setLatestTask(null);
+    setCreatedDraft(null);
+    setDraftError(null);
+    setDraftState("idle");
     setForm(initialForm);
     setError(null);
   };
@@ -259,12 +273,47 @@ export function AnalysisPage() {
         setLatestOutput(response.output);
         setLatestCitations(response.citations);
         setLatestTask(response.task);
+        setCreatedDraft(null);
+        setDraftError(null);
+        setDraftState("idle");
         setForm((current) => ({ ...current, query: "", title: "" }));
         setTaskType(response.conversation.default_task_type as AnalysisTaskType);
         loadConversations();
       })
       .catch((runError: unknown) => setError(errorMessage(runError)))
       .finally(() => setIsRunning(false));
+  };
+
+  const createWikiDraft = () => {
+    if (!latestOutput || draftState === "loading") {
+      return;
+    }
+
+    setDraftState("loading");
+    setDraftError(null);
+    apiClient
+      .createWikiDraftFromOutput(latestOutput.id, {
+        title: latestOutput.title,
+        metadata: {
+          source: "analysis_page",
+        },
+      })
+      .then((page) => {
+        setCreatedDraft(page);
+        setDraftState("idle");
+      })
+      .catch((draftCreateError: unknown) => {
+        setDraftError(errorMessage(draftCreateError));
+        setDraftState("error");
+      });
+  };
+
+  const openCreatedDraft = () => {
+    if (!createdDraft) {
+      return;
+    }
+    window.sessionStorage.setItem(SELECTED_WIKI_STORAGE_KEY, createdDraft.slug);
+    window.location.hash = "/wiki";
   };
 
   return (
@@ -413,6 +462,42 @@ export function AnalysisPage() {
         </form>
 
         {latestTask ? <TaskProgress task={latestTask} /> : null}
+
+        <section className="wiki-draft-action" aria-label="Wiki 草稿">
+          <div className="analysis-panel-heading">
+            <span>Wiki Draft</span>
+            <strong>{createdDraft?.status ?? "Ready"}</strong>
+          </div>
+
+          <button
+            className="secondary-action"
+            type="button"
+            disabled={!latestOutput || draftState === "loading"}
+            onClick={createWikiDraft}
+          >
+            {draftState === "loading" ? (
+              <Loader2 size={16} aria-hidden="true" />
+            ) : (
+              <FilePlus2 size={16} aria-hidden="true" />
+            )}
+            <span>{draftState === "loading" ? "生成中" : "生成 Wiki 草稿"}</span>
+          </button>
+
+          {draftError ? <ErrorState message={draftError} /> : null}
+
+          {createdDraft ? (
+            <div className="wiki-draft-result">
+              <div>
+                <BookOpenText size={16} aria-hidden="true" />
+                <span>{createdDraft.title}</span>
+              </div>
+              <p>{createdDraft.slug}</p>
+              <button className="text-action" type="button" onClick={openCreatedDraft}>
+                查看草稿
+              </button>
+            </div>
+          ) : null}
+        </section>
 
         <section className="citation-panel" aria-label="引用与警告">
           <div className="analysis-panel-heading">

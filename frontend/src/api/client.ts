@@ -148,9 +148,12 @@ export type Citation = {
 };
 
 export type Evidence = {
+  evidence_id?: string | null;
+  source_type?: "document_chunk" | "wiki_page" | string | null;
   document_id: string | null;
   external_doc_id: string | null;
   chunk_id: string | null;
+  wiki_page_id?: string | null;
   title: string;
   text: string;
   score: number | null;
@@ -206,23 +209,53 @@ export type AnalysisRunResponse = {
 };
 
 export type WikiPageSummary = {
+  id?: string | null;
   slug: string;
   title: string;
-  page_type: string;
-  summary: string;
+  page_type: string | null;
+  summary: string | null;
+  status?: string | null;
+  tags?: string[];
   source: string;
   metadata: Record<string, unknown>;
 };
 
 export type WikiPage = {
+  id?: string | null;
   slug: string;
   title: string;
-  page_type: string;
-  summary: string;
+  page_type: string | null;
+  summary: string | null;
   content: string;
+  content_markdown?: string | null;
+  status?: string | null;
+  tags?: string[];
+  business_area?: string | null;
+  source_output_id?: string | null;
+  source_document_ids?: string[];
+  source_citation_ids?: string[];
   citations: Evidence[];
+  wiki_citations?: unknown[];
   source: string;
   metadata: Record<string, unknown>;
+  created_by?: string | null;
+  published_at?: string | null;
+  embedding_status?: string | null;
+  vector_id?: string | null;
+  indexed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type WikiDraftFromOutputRequest = {
+  slug?: string | null;
+  title?: string | null;
+  summary?: string | null;
+  tags?: string[] | null;
+  business_area?: string | null;
+  page_type?: string | null;
+  created_by?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 export type WikiSearchResponse = {
@@ -329,4 +362,9 @@ export const apiClient = {
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(slug)}${suffix}`);
   },
+  createWikiDraftFromOutput: (outputId: string, payload: WikiDraftFromOutputRequest = {}) =>
+    request<WikiPage>(`/api/wiki/drafts/from-output/${encodeURIComponent(outputId)}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };
