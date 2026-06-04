@@ -1079,7 +1079,7 @@ configured
 | K2 | Chunk 预览与重建索引入口 | [x] |
 | K3 | 智能分析 evidence/citation 展示升级 | [x] |
 | K4 | 分析结果生成 Wiki 草稿按钮 | [x] |
-| K5 | Wiki 新建/编辑/草稿/发布页面 | [ ] |
+| K5 | Wiki 新建/编辑/草稿/发布页面 | [x] |
 | K6 | Wiki 引用来源与索引状态展示 | [ ] |
 | K7 | 模型与 RAG 状态展示 | [ ] |
 

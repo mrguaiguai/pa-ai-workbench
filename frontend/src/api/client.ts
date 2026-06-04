@@ -258,6 +258,29 @@ export type WikiDraftFromOutputRequest = {
   metadata?: Record<string, unknown> | null;
 };
 
+export type WikiPageCreateRequest = {
+  slug: string;
+  title: string;
+  summary?: string | null;
+  content_markdown?: string;
+  tags?: string[];
+  business_area?: string | null;
+  page_type?: string | null;
+  created_by?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type WikiPageUpdateRequest = {
+  title?: string | null;
+  summary?: string | null;
+  content_markdown?: string | null;
+  tags?: string[] | null;
+  business_area?: string | null;
+  page_type?: string | null;
+  created_by?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
 export type WikiSearchResponse = {
   items: WikiPageSummary[];
   total: number;
@@ -362,6 +385,20 @@ export const apiClient = {
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(slug)}${suffix}`);
   },
+  createWikiPage: (payload: WikiPageCreateRequest) =>
+    request<WikiPage>("/api/wiki/pages", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateWikiPage: (slug: string, payload: WikiPageUpdateRequest) =>
+    request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(slug)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  publishWikiPage: (slug: string) =>
+    request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(slug)}/publish`, {
+      method: "POST",
+    }),
   createWikiDraftFromOutput: (outputId: string, payload: WikiDraftFromOutputRequest = {}) =>
     request<WikiPage>(`/api/wiki/drafts/from-output/${encodeURIComponent(outputId)}`, {
       method: "POST",
