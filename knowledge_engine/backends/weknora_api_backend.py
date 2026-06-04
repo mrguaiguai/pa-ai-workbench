@@ -15,16 +15,42 @@ from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
 
 
+def _get_timeout_seconds(default: float) -> float:
+    value = os.getenv("WEKNORA_TIMEOUT_SECONDS")
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
 class WeKnoraApiBackend(KnowledgeEngine):
     def __init__(
         self,
         base_url: str | None = None,
+        service_token: str | None = None,
         api_key: str | None = None,
-        timeout: float = 10.0,
+        timeout: float | None = None,
+        workspace_id: str | None = None,
+        default_kb_id: str | None = None,
     ) -> None:
         self.base_url = (base_url or os.getenv("WEKNORA_BASE_URL", "")).rstrip("/")
-        self.api_key = api_key if api_key is not None else os.getenv("WEKNORA_API_KEY", "")
-        self.timeout = timeout
+        # WEKNORA_API_KEY is kept as a legacy fallback for older local .env files.
+        self.service_token = (
+            service_token
+            if service_token is not None
+            else api_key
+            if api_key is not None
+            else os.getenv("WEKNORA_SERVICE_TOKEN", os.getenv("WEKNORA_API_KEY", ""))
+        )
+        self.timeout = timeout if timeout is not None else _get_timeout_seconds(60.0)
+        self.workspace_id = (
+            workspace_id if workspace_id is not None else os.getenv("WEKNORA_WORKSPACE_ID", "")
+        )
+        self.default_kb_id = (
+            default_kb_id if default_kb_id is not None else os.getenv("WEKNORA_DEFAULT_KB_ID", "")
+        )
 
     @property
     def configured(self) -> bool:
@@ -157,8 +183,8 @@ class WeKnoraApiBackend(KnowledgeEngine):
         if payload is not None:
             body = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        if self.service_token:
+            headers["Authorization"] = f"Bearer {self.service_token}"
 
         request = Request(
             url=f"{self.base_url}{path}",

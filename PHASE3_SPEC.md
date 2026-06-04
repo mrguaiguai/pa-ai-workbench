@@ -800,7 +800,7 @@ M3 测试：
 | --- | --- | --- |
 | P3-M1-A1 | WeKnora 本地/内网启动方式审计 | [x] |
 | P3-M1-A2 | WeKnora 模型、embedding、向量库、DocReader 配置清单 | [x] |
-| P3-M1-A3 | PA `.env.example` 增加 WeKnora service account 配置 | [ ] |
+| P3-M1-A3 | PA `.env.example` 增加 WeKnora service account 配置 | [x] |
 | P3-M1-A4 | WeKnora health / auth / workspace smoke 脚本设计 | [ ] |
 
 #### P3-M1-A1：WeKnora 本地/内网启动方式审计
@@ -876,7 +876,7 @@ WeKnora 接入配置清单。
 风险：
 字段命名与现有 `weknora_api_backend.py` 不一致，需要同步。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-A4：WeKnora health / auth / workspace smoke 脚本设计
 

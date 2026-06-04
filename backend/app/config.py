@@ -87,6 +87,18 @@ class Settings:
     embedding_timeout_seconds: int = field(
         default_factory=lambda: _get_int("EMBEDDING_TIMEOUT_SECONDS", 60)
     )
+    weknora_base_url: str = field(default_factory=lambda: os.getenv("WEKNORA_BASE_URL", ""))
+    weknora_service_token: str = field(
+        default_factory=lambda: os.getenv("WEKNORA_SERVICE_TOKEN", ""),
+        repr=False,
+    )
+    weknora_workspace_id: str = field(default_factory=lambda: os.getenv("WEKNORA_WORKSPACE_ID", ""))
+    weknora_default_kb_id: str = field(
+        default_factory=lambda: os.getenv("WEKNORA_DEFAULT_KB_ID", "")
+    )
+    weknora_timeout_seconds: int = field(
+        default_factory=lambda: _get_int("WEKNORA_TIMEOUT_SECONDS", 60)
+    )
     cors_origins: tuple[str, ...] = field(
         default_factory=lambda: tuple(
             origin.strip()
