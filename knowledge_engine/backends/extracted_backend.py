@@ -17,6 +17,8 @@ from knowledge_engine.parsers import DocumentParser
 from knowledge_engine.parsers import DocumentParseError
 from knowledge_engine.parsers import FileDocumentParser
 from knowledge_engine.parsers import ParsedDocument
+from knowledge_engine.retrieval import RetrieveRequest
+from knowledge_engine.retrieval import VectorRetriever
 from knowledge_engine.schemas import Evidence
 from knowledge_engine.schemas import KnowledgeDocument
 from knowledge_engine.schemas import WikiPage
@@ -31,7 +33,7 @@ class ExtractedBackendComponents:
     document_parser: DocumentParser | None = None
     chunker: Chunker | None = None
     vector_store: VectorStore | None = None
-    retriever: object | None = None
+    retriever: VectorRetriever | None = None
     citation_builder: object | None = None
     wiki_store: object | None = None
 
@@ -58,6 +60,11 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         self.chunker = self.components.chunker or ParagraphChunker()
         self.vector_store = self.components.vector_store or get_vector_store()
         self.embedding_provider = embedding_provider or get_embedding_provider()
+        self.retriever = self.components.retriever or VectorRetriever(
+            embedding_provider=self.embedding_provider,
+            vector_store=self.vector_store,
+            source=self.config.source,
+        )
         self._documents: dict[str, KnowledgeDocument] = {}
 
     def health(self) -> dict:
@@ -115,7 +122,13 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         filters: dict | None = None,
         top_k: int = 8,
     ) -> list[Evidence]:
-        return []
+        return self.retriever.retrieve(
+            RetrieveRequest(
+                query=query,
+                filters=filters or {},
+                top_k=top_k,
+            )
+        )
 
     def search_wiki(
         self,
@@ -232,7 +245,7 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
             "chunker": self._component_status(self.chunker),
             "embedding_provider": "ready",
             "vector_store": self._component_status(self.vector_store),
-            "retriever": self._component_status(self.components.retriever),
+            "retriever": self._component_status(self.retriever),
             "citation_builder": self._component_status(self.components.citation_builder),
             "wiki_store": self._component_status(self.components.wiki_store),
         }
@@ -306,6 +319,8 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
             "chunk_index": chunk.chunk_index,
             "title": chunk.title or document.title,
             "document_title": document.title,
+            "business_area": document.metadata.get("business_area"),
+            "document_type": document.metadata.get("document_type"),
             "content_hash": chunk.content_hash,
             "token_count": chunk.token_count,
             "char_count": chunk.char_count,
