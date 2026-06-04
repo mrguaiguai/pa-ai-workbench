@@ -195,7 +195,7 @@ def _persist_result(
                 "text": citation.text,
                 "score": citation.score,
                 "source": citation.source,
-                "metadata_json": _json_dumps(citation.metadata),
+                "metadata_json": _json_dumps(_citation_metadata(citation)),
             }
             for citation in result.citations
         ],
@@ -205,3 +205,13 @@ def _persist_result(
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
+
+def _citation_metadata(citation) -> dict:
+    metadata = dict(citation.metadata)
+    if citation.evidence_id:
+        metadata.setdefault("evidence_id", citation.evidence_id)
+    if citation.source_type:
+        metadata.setdefault("citation_source_type", citation.source_type)
+    if citation.wiki_page_id:
+        metadata.setdefault("wiki_page_id", citation.wiki_page_id)
+    return metadata

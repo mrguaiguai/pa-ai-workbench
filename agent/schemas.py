@@ -52,6 +52,9 @@ class Citation:
     chunk_id: str | None = None
     score: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    evidence_id: str | None = None
+    source_type: str | None = None
+    wiki_page_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -78,4 +81,3 @@ class AgentResult:
     warnings: list[str] = field(default_factory=list)
     memory_updates: list[dict[str, Any]] = field(default_factory=list)
     events: list[AgentEvent] = field(default_factory=list)
-

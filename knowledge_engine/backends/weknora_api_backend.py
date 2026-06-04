@@ -185,13 +185,51 @@ class WeKnoraApiBackend(KnowledgeEngine):
 
     @staticmethod
     def _to_evidence(item: dict) -> Evidence:
+        metadata = dict(item.get("metadata", {}) or {})
+        source_type = WeKnoraApiBackend._source_type(item, metadata)
+        chunk_id = item.get("chunk_id")
+        wiki_page_id = item.get("wiki_page_id") or item.get("wiki_id")
+        evidence_id = (
+            item.get("evidence_id")
+            or metadata.get("evidence_id")
+            or WeKnoraApiBackend._evidence_id(source_type, chunk_id, wiki_page_id)
+        )
+        metadata.setdefault("evidence_id", evidence_id)
+        metadata.setdefault("citation_source_type", source_type)
         return Evidence(
             document_id=item.get("document_id"),
             external_doc_id=item.get("external_doc_id") or item.get("doc_id"),
-            chunk_id=item.get("chunk_id"),
+            chunk_id=chunk_id,
             title=item.get("title", "Untitled evidence"),
             text=item.get("text", item.get("content", "")),
             score=item.get("score"),
             source="weknora_api",
-            metadata=item.get("metadata", {}),
+            metadata=metadata,
+            evidence_id=evidence_id,
+            source_type=source_type,
+            wiki_page_id=wiki_page_id,
         )
+
+    @staticmethod
+    def _source_type(item: dict, metadata: dict) -> str:
+        raw = item.get("source_type") or metadata.get("source_type")
+        normalized = str(raw or "").strip().lower()
+        if normalized in {"document", "document_chunk", "chunk"}:
+            return "document_chunk"
+        if normalized in {"wiki", "wiki_page", "wiki-page"}:
+            return "wiki_page"
+        if item.get("wiki_page_id") or item.get("wiki_id"):
+            return "wiki_page"
+        return "document_chunk"
+
+    @staticmethod
+    def _evidence_id(
+        source_type: str,
+        chunk_id: str | None,
+        wiki_page_id: str | None,
+    ) -> str | None:
+        if source_type == "document_chunk" and chunk_id:
+            return f"document_chunk:{chunk_id}"
+        if source_type == "wiki_page" and wiki_page_id:
+            return f"wiki_page:{wiki_page_id}"
+        return None

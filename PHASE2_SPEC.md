@@ -1043,7 +1043,7 @@ configured
 | H7 | Local Chroma VectorStore | [x] |
 | H8 | 文档索引管线接入 EmbeddingProvider | [x] |
 | H9 | 真实 retrieve 接入 document chunks | [x] |
-| H10 | Citation evidence 真实绑定 | [ ] |
+| H10 | Citation evidence 真实绑定 | [x] |
 | H11 | `/api/rag/retrieve` 调试接口 | [ ] |
 
 ### 阶段 I：Wiki 真实沉淀

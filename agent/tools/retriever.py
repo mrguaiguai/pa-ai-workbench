@@ -34,5 +34,7 @@ class RetrieverTool:
             score=evidence.score,
             source=evidence.source,
             metadata=evidence.metadata,
+            evidence_id=evidence.evidence_id,
+            source_type=evidence.source_type,
+            wiki_page_id=evidence.wiki_page_id,
         )
-

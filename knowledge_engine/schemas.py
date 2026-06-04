@@ -22,6 +22,9 @@ class Evidence:
     score: float | None
     source: str
     metadata: dict = field(default_factory=dict)
+    evidence_id: str | None = None
+    source_type: str = "document_chunk"
+    wiki_page_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,4 +47,3 @@ class WikiPage:
     citations: list[Evidence] = field(default_factory=list)
     source: str = "mock"
     metadata: dict = field(default_factory=dict)
-

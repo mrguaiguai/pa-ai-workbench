@@ -9,6 +9,7 @@ from knowledge_engine.base import KnowledgeEngine
 from knowledge_engine.chunking import Chunker
 from knowledge_engine.chunking import DocumentChunkCandidate
 from knowledge_engine.chunking import ParagraphChunker
+from knowledge_engine.citations import CitationBuilder
 from knowledge_engine.embeddings.schemas import EmbeddingVector
 from knowledge_engine.embeddings.base import EmbeddingProvider
 from knowledge_engine.embeddings.factory import get_embedding_provider
@@ -34,7 +35,7 @@ class ExtractedBackendComponents:
     chunker: Chunker | None = None
     vector_store: VectorStore | None = None
     retriever: VectorRetriever | None = None
-    citation_builder: object | None = None
+    citation_builder: CitationBuilder | None = None
     wiki_store: object | None = None
 
 
@@ -60,9 +61,11 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         self.chunker = self.components.chunker or ParagraphChunker()
         self.vector_store = self.components.vector_store or get_vector_store()
         self.embedding_provider = embedding_provider or get_embedding_provider()
+        self.citation_builder = self.components.citation_builder or CitationBuilder()
         self.retriever = self.components.retriever or VectorRetriever(
             embedding_provider=self.embedding_provider,
             vector_store=self.vector_store,
+            citation_builder=self.citation_builder,
             source=self.config.source,
         )
         self._documents: dict[str, KnowledgeDocument] = {}
@@ -246,7 +249,7 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
             "embedding_provider": "ready",
             "vector_store": self._component_status(self.vector_store),
             "retriever": self._component_status(self.retriever),
-            "citation_builder": self._component_status(self.components.citation_builder),
+            "citation_builder": self._component_status(self.citation_builder),
             "wiki_store": self._component_status(self.components.wiki_store),
         }
 

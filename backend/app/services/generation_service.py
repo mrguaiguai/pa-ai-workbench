@@ -1,4 +1,6 @@
 from datetime import datetime
+import json
+from typing import Any
 
 from sqlmodel import Session
 from sqlmodel import select
@@ -93,6 +95,15 @@ def create_citation(
     source: str = "mock",
     metadata_json: str | None = None,
 ) -> Citation:
+    _validate_citation_trace(
+        title=title,
+        text=text,
+        source=source,
+        document_id=document_id,
+        external_doc_id=external_doc_id,
+        chunk_id=chunk_id,
+        metadata_json=metadata_json,
+    )
     citation = Citation(
         task_id=task_id,
         output_id=output_id,
@@ -111,6 +122,67 @@ def create_citation(
     return citation
 
 
+def _validate_citation_trace(
+    title: str,
+    text: str,
+    source: str,
+    document_id: str | None,
+    external_doc_id: str | None,
+    chunk_id: str | None,
+    metadata_json: str | None,
+) -> None:
+    if not title.strip():
+        raise ValueError("Citation title is required.")
+    if not text.strip():
+        raise ValueError("Citation evidence text is required.")
+    if source == "mock":
+        return
+
+    metadata = _metadata_from_json(metadata_json)
+    binding = metadata.get("citation_binding")
+    binding = binding if isinstance(binding, dict) else {}
+    evidence_id = binding.get("evidence_id") or metadata.get("evidence_id")
+    source_type = _normalize_source_type(
+        binding.get("source_type")
+        or metadata.get("citation_source_type")
+        or metadata.get("source_type")
+        or ("document_chunk" if chunk_id else None)
+    )
+    if not evidence_id:
+        raise ValueError("Real citation must include an evidence id.")
+    if source_type == "document_chunk":
+        if not chunk_id:
+            raise ValueError("Document citation must include chunk_id.")
+        if not document_id and not external_doc_id:
+            raise ValueError("Document citation must include a document id.")
+        return
+    if source_type == "wiki_page":
+        wiki_page_id = binding.get("wiki_page_id") or metadata.get("wiki_page_id")
+        if not wiki_page_id:
+            raise ValueError("Wiki citation must include wiki_page_id.")
+        return
+    raise ValueError("Real citation must include a known source type.")
+
+
+def _metadata_from_json(metadata_json: str | None) -> dict[str, Any]:
+    if not metadata_json:
+        return {}
+    try:
+        value = json.loads(metadata_json)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _normalize_source_type(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"document", "document_chunk", "chunk"}:
+        return "document_chunk"
+    if normalized in {"wiki", "wiki_page", "wiki-page"}:
+        return "wiki_page"
+    return normalized
+
+
 def create_output_with_citations(
     session: Session,
     task: GenerationTask,
@@ -121,6 +193,16 @@ def create_output_with_citations(
     warnings_json: str | None = None,
     status: str = "completed",
 ) -> tuple[GeneratedOutput, list[Citation]]:
+    for citation in citations:
+        _validate_citation_trace(
+            title=citation.get("title", ""),
+            text=citation.get("text", ""),
+            source=citation.get("source", "mock"),
+            document_id=citation.get("document_id"),
+            external_doc_id=citation.get("external_doc_id"),
+            chunk_id=citation.get("chunk_id"),
+            metadata_json=citation.get("metadata_json"),
+        )
     output = create_output(
         session=session,
         task=task,
@@ -153,4 +235,3 @@ def get_output(session: Session, output_id: str) -> GeneratedOutput | None:
 def list_output_citations(session: Session, output_id: str) -> list[Citation]:
     statement = select(Citation).where(Citation.output_id == output_id)
     return list(session.exec(statement).all())
-
