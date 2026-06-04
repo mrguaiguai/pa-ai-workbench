@@ -14,6 +14,7 @@ from app.schemas import WikiPageUpdateRequest
 from knowledge_engine.factory import create_knowledge_engine
 from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
+from knowledge_engine.wiki import WikiPageStatus
 
 
 class WikiPageConflictError(Exception):
@@ -128,6 +129,24 @@ def update_wiki_page_record(
         _replace_wiki_citations(session, page.id, payload.citations or [])
 
     page.updated_at = utc_now()
+    session.add(page)
+    session.commit()
+    session.refresh(page)
+    return page
+
+
+def publish_wiki_page_record(session: Session, slug: str) -> WikiPageModel:
+    page = get_wiki_page_record(session, slug)
+    if page is None:
+        raise WikiPageNotFoundError(f"Wiki page not found: {slug}")
+
+    if page.status == WikiPageStatus.PUBLISHED:
+        return page
+
+    now = utc_now()
+    page.status = WikiPageStatus.PUBLISHED
+    page.published_at = page.published_at or now
+    page.updated_at = now
     session.add(page)
     session.commit()
     session.refresh(page)

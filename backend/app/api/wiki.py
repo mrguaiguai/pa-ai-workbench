@@ -25,6 +25,7 @@ from app.services.wiki_service import page_metadata
 from app.services.wiki_service import page_source_citation_ids
 from app.services.wiki_service import page_source_document_ids
 from app.services.wiki_service import page_tags
+from app.services.wiki_service import publish_wiki_page_record
 from app.services.wiki_service import read_wiki_page
 from app.services.wiki_service import search_wiki_page_records
 from app.services.wiki_service import search_wiki_pages
@@ -104,6 +105,18 @@ def update_wiki(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _page_record_to_read(session=session, page=page)
+
+
+@router.post("/pages/{slug}/publish", response_model=WikiPageRead)
+def publish_wiki(
+    slug: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> WikiPageRead:
+    try:
+        page = publish_wiki_page_record(session=session, slug=slug)
+    except WikiPageNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _page_record_to_read(session=session, page=page)
 
 
