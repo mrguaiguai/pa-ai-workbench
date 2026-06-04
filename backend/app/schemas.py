@@ -291,10 +291,13 @@ class RagRetrieveResponse(BaseModel):
 
 
 class WikiPageSummaryRead(BaseModel):
+    id: str | None = None
     slug: str
     title: str
-    page_type: str
-    summary: str
+    page_type: str | None = None
+    summary: str | None = None
+    status: str | None = None
+    tags: list[str] = Field(default_factory=list)
     source: str
     metadata: dict
 
@@ -304,12 +307,78 @@ class WikiSearchResponse(BaseModel):
     total: int
 
 
-class WikiPageRead(BaseModel):
+class WikiCitationPayload(BaseModel):
+    document_id: str | None = None
+    external_doc_id: str | None = None
+    chunk_id: str | None = None
+    output_id: str | None = None
+    citation_id: str | None = None
+    evidence_id: str | None = None
+    source_type: str = "document_chunk"
+    excerpt: str
+    score: float | None = None
+    metadata: dict = Field(default_factory=dict)
+
+
+class WikiCitationRead(WikiCitationPayload):
+    id: str
+    wiki_page_id: str
+    created_at: datetime
+
+
+class WikiPageCreateRequest(BaseModel):
     slug: str
     title: str
-    page_type: str
-    summary: str
+    summary: str | None = None
+    content_markdown: str = ""
+    tags: list[str] = Field(default_factory=list)
+    business_area: str | None = None
+    page_type: str | None = None
+    source_output_id: str | None = None
+    source_document_ids: list[str] = Field(default_factory=list)
+    source_citation_ids: list[str] = Field(default_factory=list)
+    created_by: str | None = None
+    metadata: dict = Field(default_factory=dict)
+    citations: list[WikiCitationPayload] = Field(default_factory=list)
+
+
+class WikiPageUpdateRequest(BaseModel):
+    title: str | None = None
+    summary: str | None = None
+    content_markdown: str | None = None
+    tags: list[str] | None = None
+    business_area: str | None = None
+    page_type: str | None = None
+    source_output_id: str | None = None
+    source_document_ids: list[str] | None = None
+    source_citation_ids: list[str] | None = None
+    created_by: str | None = None
+    metadata: dict | None = None
+    citations: list[WikiCitationPayload] | None = None
+
+
+class WikiPageRead(BaseModel):
+    id: str | None = None
+    slug: str
+    title: str
+    page_type: str | None = None
+    summary: str | None = None
     content: str
+    content_markdown: str | None = None
+    status: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    business_area: str | None = None
+    source_output_id: str | None = None
+    source_document_ids: list[str] = Field(default_factory=list)
+    source_citation_ids: list[str] = Field(default_factory=list)
     citations: list[EvidenceRead]
+    wiki_citations: list[WikiCitationRead] = Field(default_factory=list)
     source: str
     metadata: dict
+    created_by: str | None = None
+    published_at: datetime | None = None
+    embedding_status: str | None = None
+    vector_id: str | None = None
+    indexed_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

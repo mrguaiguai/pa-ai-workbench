@@ -1051,7 +1051,7 @@ configured
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | I1 | WikiPage / WikiCitation 数据模型 | [x] |
-| I2 | Wiki CRUD API | [ ] |
+| I2 | Wiki CRUD API | [x] |
 | I3 | Wiki draft / publish 状态 | [ ] |
 | I4 | 从 output 生成 Wiki 草稿 service | [ ] |
 | I5 | Wiki 页面索引进入 VectorStore | [ ] |
