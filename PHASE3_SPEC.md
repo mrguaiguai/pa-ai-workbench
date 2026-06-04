@@ -907,7 +907,7 @@ WeKnora service account 配置。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M1-B1 | WeKnora RAG API 审计与响应映射 | [ ] |
+| P3-M1-B1 | WeKnora RAG API 审计与响应映射 | [x] |
 | P3-M1-B2 | WeKnoraKnowledgeBackend 文档上传/状态适配 | [ ] |
 | P3-M1-B3 | WeKnoraKnowledgeBackend retrieve 适配 | [ ] |
 | P3-M1-B4 | Evidence / Citation 标准化与 contract tests | [ ] |
@@ -936,7 +936,7 @@ WeKnora API 文档和源码。
 风险：
 WeKnora API 与源码能力不完全一致，需要记录 gap。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-B2：WeKnoraKnowledgeBackend 文档上传/状态适配
 
