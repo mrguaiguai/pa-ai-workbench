@@ -3,14 +3,15 @@ from agent.tools.citation_checker import CitationChecker
 from agent.tools.registry import ToolDefinition
 from agent.tools.registry import ToolRegistry
 from agent.tools.registry import create_builtin_tool_registry
+from agent.tools.real_retriever import RealRetrieverTool
 from agent.tools.retriever import RetrieverTool
 
 __all__ = [
     "CitationCheckResult",
     "CitationChecker",
+    "RealRetrieverTool",
     "RetrieverTool",
     "ToolDefinition",
     "ToolRegistry",
     "create_builtin_tool_registry",
 ]
-

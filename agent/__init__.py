@@ -27,6 +27,7 @@ from agent.skills import SkillRegistry
 from agent.skills import create_builtin_skill_registry
 from agent.tools import CitationChecker
 from agent.tools import CitationCheckResult
+from agent.tools import RealRetrieverTool
 from agent.tools import RetrieverTool
 from agent.tools import ToolDefinition
 from agent.tools import ToolRegistry
@@ -56,6 +57,7 @@ __all__ = [
     "MemoryManager",
     "MemoryStore",
     "PolicyAnalysisWorkflow",
+    "RealRetrieverTool",
     "SkillDefinition",
     "SkillRegistry",
     "RetrieverTool",

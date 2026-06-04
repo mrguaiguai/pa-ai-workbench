@@ -36,14 +36,23 @@ class ToolRegistry:
 
 def create_builtin_tool_registry() -> ToolRegistry:
     from agent.tools.citation_checker import CitationChecker
-    from agent.tools.retriever import RetrieverTool
+    from agent.tools.real_retriever import RealRetrieverTool
+
+    real_retriever = RealRetrieverTool()
 
     return ToolRegistry(
         [
             ToolDefinition(
                 name="retriever",
                 description="Retrieve grounded evidence from the Knowledge Engine.",
-                tool=RetrieverTool(),
+                tool=real_retriever,
+                metadata={"implementation": "real_retriever"},
+            ),
+            ToolDefinition(
+                name="real_retriever",
+                description="Retrieve real document and Wiki evidence from the Knowledge Engine.",
+                tool=real_retriever,
+                metadata={"implementation": "real_retriever"},
             ),
             ToolDefinition(
                 name="citation_checker",
@@ -52,4 +61,3 @@ def create_builtin_tool_registry() -> ToolRegistry:
             ),
         ]
     )
-

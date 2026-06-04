@@ -1062,7 +1062,7 @@ configured
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| J1 | RealRetrieverTool | [ ] |
+| J1 | RealRetrieverTool | [x] |
 | J2 | WikiReadTool | [ ] |
 | J3 | WikiDraftWriterTool | [ ] |
 | J4 | CitationChecker 增强真实 evidence 校验 | [ ] |
