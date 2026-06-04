@@ -27,6 +27,7 @@ from knowledge_engine.schemas import WikiPageSummary
 from knowledge_engine.vectorstores import VectorStore
 from knowledge_engine.vectorstores import VectorRecord
 from knowledge_engine.vectorstores import get_vector_store
+from knowledge_engine.wiki import WikiStore
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,7 @@ class ExtractedBackendComponents:
     vector_store: VectorStore | None = None
     retriever: VectorRetriever | None = None
     citation_builder: CitationBuilder | None = None
-    wiki_store: object | None = None
+    wiki_store: WikiStore | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,7 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         self.vector_store = self.components.vector_store or get_vector_store()
         self.embedding_provider = embedding_provider or get_embedding_provider()
         self.citation_builder = self.components.citation_builder or CitationBuilder()
+        self.wiki_store = self.components.wiki_store
         self.retriever = self.components.retriever or VectorRetriever(
             embedding_provider=self.embedding_provider,
             vector_store=self.vector_store,
@@ -139,14 +141,18 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         kb_id: str | None = None,
         limit: int = 10,
     ) -> list[WikiPageSummary]:
-        return []
+        if self.wiki_store is None:
+            return []
+        return self.wiki_store.search(query=query, kb_id=kb_id, limit=limit)
 
     def read_wiki_page(
         self,
         slug: str,
         kb_id: str | None = None,
     ) -> WikiPage | None:
-        return None
+        if self.wiki_store is None:
+            return None
+        return self.wiki_store.read(slug=slug, kb_id=kb_id)
 
     def parse_document(self, external_doc_id: str) -> dict:
         return self._parse_registered_document(external_doc_id).to_dict()
@@ -250,7 +256,7 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
             "vector_store": self._component_status(self.vector_store),
             "retriever": self._component_status(self.retriever),
             "citation_builder": self._component_status(self.citation_builder),
-            "wiki_store": self._component_status(self.components.wiki_store),
+            "wiki_store": self._component_status(self.wiki_store),
         }
 
     @staticmethod

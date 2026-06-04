@@ -23,11 +23,13 @@ from knowledge_engine.embeddings.base import EmbeddingProvider
 from knowledge_engine.embeddings.factory import get_embedding_provider
 from knowledge_engine.embeddings.schemas import EmbeddingVector
 from knowledge_engine.factory import create_knowledge_engine
+from knowledge_engine.schemas import Evidence
 from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
 from knowledge_engine.vectorstores import VectorRecord
 from knowledge_engine.vectorstores import VectorStore
 from knowledge_engine.vectorstores import get_vector_store
+from knowledge_engine.wiki import WikiStore
 from knowledge_engine.wiki import WikiPageStatus
 
 
@@ -47,13 +49,53 @@ class WikiPageIndexError(Exception):
     pass
 
 
+class SqlModelWikiStore(WikiStore):
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def search(
+        self,
+        query: str = "",
+        kb_id: str | None = None,
+        limit: int = 10,
+    ) -> list[WikiPageSummary]:
+        pages = _search_wiki_page_records(
+            session=self.session,
+            query=query,
+            kb_id=kb_id,
+            limit=limit,
+        )
+        return [_page_record_to_wiki_summary(page) for page in pages]
+
+    def read(
+        self,
+        slug: str,
+        kb_id: str | None = None,
+    ) -> WikiPage | None:
+        page = get_wiki_page_record(session=self.session, slug=slug)
+        if page is None or not _matches_kb(page, kb_id):
+            return None
+        return _page_record_to_wiki_page(session=self.session, page=page)
+
+
 def search_wiki_page_records(
     session: Session,
     query: str = "",
     limit: int = 10,
 ) -> list[WikiPageModel]:
+    return _search_wiki_page_records(session=session, query=query, limit=limit)
+
+
+def _search_wiki_page_records(
+    session: Session,
+    query: str = "",
+    kb_id: str | None = None,
+    limit: int = 10,
+) -> list[WikiPageModel]:
     statement = select(WikiPageModel).order_by(WikiPageModel.updated_at.desc())
     pages = list(session.exec(statement).all())
+    if kb_id is not None:
+        pages = [page for page in pages if _matches_kb(page, kb_id)]
     normalized_query = query.strip().lower()
     if normalized_query:
         pages = [
@@ -238,12 +280,21 @@ def search_wiki_pages(
     query: str,
     kb_id: str | None = None,
     limit: int = 10,
+    session: Session | None = None,
 ) -> list[WikiPageSummary]:
+    if session is not None:
+        return SqlModelWikiStore(session).search(query=query, kb_id=kb_id, limit=limit)
     engine = create_knowledge_engine()
     return engine.search_wiki(query=query, kb_id=kb_id, limit=limit)
 
 
-def read_wiki_page(slug: str, kb_id: str | None = None) -> WikiPage | None:
+def read_wiki_page(
+    slug: str,
+    kb_id: str | None = None,
+    session: Session | None = None,
+) -> WikiPage | None:
+    if session is not None:
+        return SqlModelWikiStore(session).read(slug=slug, kb_id=kb_id)
     engine = create_knowledge_engine()
     return engine.read_wiki_page(slug=slug, kb_id=kb_id)
 
@@ -271,6 +322,100 @@ def page_metadata(page: WikiPageModel) -> dict[str, Any]:
 def citation_metadata(citation: WikiCitation) -> dict[str, Any]:
     value = _from_json(citation.metadata_json, default={})
     return value if isinstance(value, dict) else {}
+
+
+def _page_record_to_wiki_summary(page: WikiPageModel) -> WikiPageSummary:
+    return WikiPageSummary(
+        slug=page.slug,
+        title=page.title,
+        page_type=page.page_type or "wiki",
+        summary=page.summary or "",
+        source="wiki",
+        metadata=_page_record_metadata(page),
+    )
+
+
+def _page_record_to_wiki_page(session: Session, page: WikiPageModel) -> WikiPage:
+    citations = list_wiki_citation_records(session=session, wiki_page_id=page.id)
+    return WikiPage(
+        slug=page.slug,
+        title=page.title,
+        page_type=page.page_type or "wiki",
+        summary=page.summary or "",
+        content=page.content_markdown,
+        citations=[
+            _wiki_citation_record_to_evidence(page=page, citation=citation)
+            for citation in citations
+        ],
+        source="wiki",
+        metadata={
+            **_page_record_metadata(page),
+            "wiki_citations": [
+                _wiki_citation_record_to_metadata(citation) for citation in citations
+            ],
+        },
+    )
+
+
+def _wiki_citation_record_to_evidence(
+    page: WikiPageModel,
+    citation: WikiCitation,
+) -> Evidence:
+    return Evidence(
+        document_id=citation.document_id,
+        external_doc_id=citation.external_doc_id,
+        chunk_id=citation.chunk_id,
+        title=page.title,
+        text=citation.excerpt,
+        score=citation.score,
+        source="wiki",
+        metadata=citation_metadata(citation),
+        evidence_id=citation.evidence_id,
+        source_type=citation.source_type,
+        wiki_page_id=page.id,
+    )
+
+
+def _wiki_citation_record_to_metadata(citation: WikiCitation) -> dict[str, Any]:
+    return {
+        "id": citation.id,
+        "wiki_page_id": citation.wiki_page_id,
+        "document_id": citation.document_id,
+        "external_doc_id": citation.external_doc_id,
+        "chunk_id": citation.chunk_id,
+        "output_id": citation.output_id,
+        "citation_id": citation.citation_id,
+        "evidence_id": citation.evidence_id,
+        "source_type": citation.source_type,
+        "excerpt": citation.excerpt,
+        "score": citation.score,
+        "metadata": citation_metadata(citation),
+        "created_at": citation.created_at,
+    }
+
+
+def _page_record_metadata(page: WikiPageModel) -> dict[str, Any]:
+    return {
+        **page_metadata(page),
+        "id": page.id,
+        "status": page.status,
+        "tags": page_tags(page),
+        "business_area": page.business_area,
+        "source_output_id": page.source_output_id,
+        "source_document_ids": page_source_document_ids(page),
+        "source_citation_ids": page_source_citation_ids(page),
+        "created_by": page.created_by,
+        "published_at": page.published_at,
+        "embedding_status": page.embedding_status,
+        "vector_id": page.vector_id,
+        "indexed_at": page.indexed_at,
+        "created_at": page.created_at,
+        "updated_at": page.updated_at,
+    }
+
+
+def _matches_kb(page: WikiPageModel, kb_id: str | None) -> bool:
+    return kb_id is None or page_metadata(page).get("kb_id") == kb_id
 
 
 def _wiki_page_to_vector_record(

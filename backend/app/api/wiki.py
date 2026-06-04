@@ -21,7 +21,6 @@ from app.schemas import WikiSearchResponse
 from app.services.wiki_service import citation_metadata
 from app.services.wiki_service import create_wiki_draft_from_output
 from app.services.wiki_service import create_wiki_page_record
-from app.services.wiki_service import get_wiki_page_record
 from app.services.wiki_service import index_wiki_page_record
 from app.services.wiki_service import list_wiki_citation_records
 from app.services.wiki_service import page_metadata
@@ -30,7 +29,6 @@ from app.services.wiki_service import page_source_document_ids
 from app.services.wiki_service import page_tags
 from app.services.wiki_service import publish_wiki_page_record
 from app.services.wiki_service import read_wiki_page
-from app.services.wiki_service import search_wiki_page_records
 from app.services.wiki_service import search_wiki_pages
 from app.services.wiki_service import update_wiki_page_record
 from app.services.wiki_service import WikiDraftSourceNotFoundError
@@ -50,16 +48,16 @@ def search_wiki(
     kb_id: str | None = None,
     limit: int = Query(default=10, ge=1, le=50),
 ) -> WikiSearchResponse:
-    page_records = search_wiki_page_records(session=session, query=query, limit=limit)
-    if page_records:
-        return WikiSearchResponse(
-            items=[_page_record_to_summary(page) for page in page_records],
-            total=len(page_records),
-        )
-
-    pages = search_wiki_pages(query=query, kb_id=kb_id, limit=limit)
+    pages = search_wiki_pages(
+        session=session,
+        query=query,
+        kb_id=kb_id,
+        limit=limit,
+    )
+    if not pages:
+        pages = search_wiki_pages(query=query, kb_id=kb_id, limit=limit)
     return WikiSearchResponse(
-        items=[_mock_page_to_summary(page) for page in pages],
+        items=[_wiki_summary_to_read(page) for page in pages],
         total=len(pages),
     )
 
@@ -111,14 +109,12 @@ def read_wiki(
     session: Annotated[Session, Depends(get_session)],
     kb_id: str | None = None,
 ) -> WikiPageRead:
-    page_record = get_wiki_page_record(session=session, slug=slug)
-    if page_record is not None:
-        return _page_record_to_read(session=session, page=page_record)
-
-    page = read_wiki_page(slug=slug, kb_id=kb_id)
+    page = read_wiki_page(slug=slug, kb_id=kb_id, session=session)
+    if page is None:
+        page = read_wiki_page(slug=slug, kb_id=kb_id)
     if page is None:
         raise HTTPException(status_code=404, detail="Wiki page not found")
-    return _mock_page_to_read(page)
+    return _wiki_page_to_read(page)
 
 
 @router.put("/pages/{slug}", response_model=WikiPageRead)
@@ -162,28 +158,19 @@ def reindex_wiki(
     return _page_record_to_read(session=session, page=page)
 
 
-def _page_record_to_summary(page: WikiPageModel) -> WikiPageSummaryRead:
+def _wiki_summary_to_read(page: WikiPageSummary) -> WikiPageSummaryRead:
+    metadata = page.metadata or {}
+    tags = metadata.get("tags")
     return WikiPageSummaryRead(
-        id=page.id,
+        id=metadata.get("id"),
         slug=page.slug,
         title=page.title,
         page_type=page.page_type,
         summary=page.summary,
-        status=page.status,
-        tags=page_tags(page),
-        source="wiki",
-        metadata=page_metadata(page),
-    )
-
-
-def _mock_page_to_summary(page: WikiPageSummary) -> WikiPageSummaryRead:
-    return WikiPageSummaryRead(
-        slug=page.slug,
-        title=page.title,
-        page_type=page.page_type,
-        summary=page.summary,
+        status=metadata.get("status"),
+        tags=tags if isinstance(tags, list) else [],
         source=page.source,
-        metadata=page.metadata,
+        metadata=metadata,
     )
 
 
@@ -217,14 +204,22 @@ def _page_record_to_read(session: Session, page: WikiPageModel) -> WikiPageRead:
     )
 
 
-def _mock_page_to_read(page: WikiPage) -> WikiPageRead:
+def _wiki_page_to_read(page: WikiPage) -> WikiPageRead:
+    metadata = page.metadata or {}
     return WikiPageRead(
+        id=metadata.get("id"),
         slug=page.slug,
         title=page.title,
         page_type=page.page_type,
         summary=page.summary,
         content=page.content,
         content_markdown=page.content,
+        status=metadata.get("status"),
+        tags=_metadata_list(metadata, "tags"),
+        business_area=metadata.get("business_area"),
+        source_output_id=metadata.get("source_output_id"),
+        source_document_ids=_metadata_list(metadata, "source_document_ids"),
+        source_citation_ids=_metadata_list(metadata, "source_citation_ids"),
         citations=[
             EvidenceRead(
                 evidence_id=citation.evidence_id,
@@ -241,8 +236,43 @@ def _mock_page_to_read(page: WikiPage) -> WikiPageRead:
             )
             for citation in page.citations
         ],
+        wiki_citations=[
+            _wiki_citation_metadata_to_read(citation)
+            for citation in _metadata_list(metadata, "wiki_citations")
+            if isinstance(citation, dict)
+        ],
         source=page.source,
-        metadata=page.metadata,
+        metadata=metadata,
+        created_by=metadata.get("created_by"),
+        published_at=metadata.get("published_at"),
+        embedding_status=metadata.get("embedding_status"),
+        vector_id=metadata.get("vector_id"),
+        indexed_at=metadata.get("indexed_at"),
+        created_at=metadata.get("created_at"),
+        updated_at=metadata.get("updated_at"),
+    )
+
+
+def _metadata_list(metadata: dict, key: str) -> list:
+    value = metadata.get(key)
+    return value if isinstance(value, list) else []
+
+
+def _wiki_citation_metadata_to_read(citation: dict) -> WikiCitationRead:
+    return WikiCitationRead(
+        id=str(citation.get("id") or ""),
+        wiki_page_id=str(citation.get("wiki_page_id") or ""),
+        document_id=citation.get("document_id"),
+        external_doc_id=citation.get("external_doc_id"),
+        chunk_id=citation.get("chunk_id"),
+        output_id=citation.get("output_id"),
+        citation_id=citation.get("citation_id"),
+        evidence_id=citation.get("evidence_id"),
+        source_type=str(citation.get("source_type") or "document_chunk"),
+        excerpt=str(citation.get("excerpt") or ""),
+        score=citation.get("score"),
+        metadata=citation.get("metadata") if isinstance(citation.get("metadata"), dict) else {},
+        created_at=citation.get("created_at"),
     )
 
 
