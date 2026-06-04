@@ -71,6 +71,43 @@ export type DocumentRetryIndexResponse = {
   message: string;
 };
 
+export type DocumentChunk = {
+  id: string;
+  document_id: string;
+  external_doc_id: string | null;
+  chunk_index: number;
+  title: string | null;
+  content: string;
+  content_hash: string;
+  token_count: number;
+  char_count: number;
+  start_char: number | null;
+  end_char: number | null;
+  page_number: number | null;
+  section_path: string | null;
+  paragraph_start_index: number | null;
+  paragraph_end_index: number | null;
+  business_area: string | null;
+  document_type: string | null;
+  source: string;
+  metadata_json: string | null;
+  embedding_status: string;
+  vector_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DocumentChunkListResponse = {
+  items: DocumentChunk[];
+  total: number;
+};
+
+export type DocumentIndexResponse = {
+  document: Document;
+  chunk_count: number;
+  message: string;
+};
+
 export type AnalysisTaskType = "knowledge_qa" | "policy_analysis" | "case_review";
 
 export type Conversation = {
@@ -254,6 +291,12 @@ export const apiClient = {
     request<DocumentRetryIndexResponse>(`/api/documents/${documentId}/retry-index`, {
       method: "POST",
     }),
+  reindexDocument: (documentId: string) =>
+    request<DocumentIndexResponse>(`/api/documents/${documentId}/reindex`, {
+      method: "POST",
+    }),
+  listDocumentChunks: (documentId: string) =>
+    request<DocumentChunkListResponse>(`/api/documents/${documentId}/chunks`),
   listConversations: () => request<ListResponse<Conversation>>("/api/conversations"),
   listConversationMessages: (conversationId: string) =>
     request<ListResponse<ConversationMessage>>(`/api/conversations/${conversationId}/messages`),

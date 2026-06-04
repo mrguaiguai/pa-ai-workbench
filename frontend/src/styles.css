@@ -825,6 +825,91 @@ p {
   gap: 8px;
 }
 
+.chunk-preview-panel {
+  margin-top: 16px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #f8fafb;
+  padding: 14px;
+}
+
+.chunk-preview-heading {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chunk-preview-heading div {
+  min-width: 0;
+}
+
+.chunk-preview-heading span {
+  display: block;
+  color: #6b7a86;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.chunk-preview-heading strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: #17212b;
+  font-size: 0.94rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chunk-preview-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.chunk-preview-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.chunk-preview-title,
+.chunk-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.chunk-preview-title strong {
+  color: #17212b;
+  font-size: 0.86rem;
+}
+
+.chunk-preview-title span,
+.chunk-preview-meta span {
+  min-height: 22px;
+  border-radius: 8px;
+  background: #f2f6f8;
+  color: #52636e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 7px;
+}
+
+.chunk-preview-item p {
+  margin: 0;
+  color: #2f3d49;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;

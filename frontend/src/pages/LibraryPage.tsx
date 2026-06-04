@@ -1,4 +1,5 @@
 import {
+  Eye,
   FileText,
   Loader2,
   RefreshCw,
@@ -8,7 +9,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 
-import { ApiError, Document, apiClient } from "../api/client";
+import { ApiError, Document, DocumentChunk, apiClient } from "../api/client";
 import {
   DocumentStatusBadge,
   EmptyState,
@@ -23,6 +24,7 @@ type LibraryForm = {
 };
 
 type LoadState = "idle" | "loading" | "error";
+type ChunkLoadState = "idle" | "loading" | "error";
 
 const initialForm: LibraryForm = {
   title: "",
@@ -134,6 +136,24 @@ function indexStatus(document: Document) {
   return "待索引";
 }
 
+function chunkExcerpt(text: string, maxChars = 360) {
+  const normalized = text.split(/\s+/).join(" ");
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxChars)}[truncated]`;
+}
+
+function chunkLocation(chunk: DocumentChunk) {
+  const parts = [
+    chunk.page_number === null ? null : `p.${chunk.page_number}`,
+    chunk.start_char === null || chunk.end_char === null
+      ? null
+      : `${chunk.start_char}-${chunk.end_char}`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "no offsets";
+}
+
 export function LibraryPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -141,7 +161,11 @@ export function LibraryPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [form, setForm] = useState<LibraryForm>(initialForm);
   const [isUploading, setIsUploading] = useState(false);
-  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [reindexingId, setReindexingId] = useState<string | null>(null);
+  const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
+  const [chunks, setChunks] = useState<DocumentChunk[]>([]);
+  const [chunkLoadState, setChunkLoadState] = useState<ChunkLoadState>("idle");
+  const [chunkError, setChunkError] = useState<string | null>(null);
 
   const indexedCount = useMemo(
     () => documents.filter((document) => document.status === "indexed").length,
@@ -155,6 +179,10 @@ export function LibraryPage() {
     () => documents.filter((document) => document.status === "failed").length,
     [documents],
   );
+  const previewDocument = useMemo(
+    () => documents.find((document) => document.id === previewDocumentId) ?? null,
+    [documents, previewDocumentId],
+  );
 
   const loadDocuments = () => {
     setLoadState("loading");
@@ -163,6 +191,13 @@ export function LibraryPage() {
       .listDocuments()
       .then((response) => {
         setDocuments(response.items);
+        if (
+          previewDocumentId &&
+          !response.items.some((document) => document.id === previewDocumentId)
+        ) {
+          setPreviewDocumentId(null);
+          setChunks([]);
+        }
         setLoadState("idle");
       })
       .catch((loadError: unknown) => {
@@ -209,20 +244,40 @@ export function LibraryPage() {
       .finally(() => setIsUploading(false));
   };
 
-  const onRetryIndex = (documentId: string) => {
-    setRetryingId(documentId);
+  const loadChunks = (documentId: string) => {
+    setPreviewDocumentId(documentId);
+    setChunkLoadState("loading");
+    setChunkError(null);
+    apiClient
+      .listDocumentChunks(documentId)
+      .then((response) => {
+        setChunks(response.items);
+        setChunkLoadState("idle");
+      })
+      .catch((chunkLoadError: unknown) => {
+        setChunks([]);
+        setChunkError(errorMessage(chunkLoadError));
+        setChunkLoadState("error");
+      });
+  };
+
+  const onReindexDocument = (documentId: string) => {
+    setReindexingId(documentId);
     setError(null);
     apiClient
-      .retryDocumentIndex(documentId)
+      .reindexDocument(documentId)
       .then((response) => {
         setDocuments((current) =>
           current.map((document) =>
             document.id === documentId ? response.document : document,
           ),
         );
+        if (previewDocumentId === documentId) {
+          loadChunks(documentId);
+        }
       })
-      .catch((retryError: unknown) => setError(errorMessage(retryError)))
-      .finally(() => setRetryingId(null));
+      .catch((reindexError: unknown) => setError(errorMessage(reindexError)))
+      .finally(() => setReindexingId(null));
   };
 
   return (
@@ -360,11 +415,19 @@ export function LibraryPage() {
                     <button
                       className="icon-button"
                       type="button"
-                      onClick={() => onRetryIndex(document.id)}
-                      disabled={retryingId === document.id}
+                      onClick={() => loadChunks(document.id)}
+                      title="预览 chunks"
+                    >
+                      <Eye size={16} aria-hidden="true" />
+                    </button>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => onReindexDocument(document.id)}
+                      disabled={reindexingId === document.id}
                       title="重新索引"
                     >
-                      {retryingId === document.id ? (
+                      {reindexingId === document.id ? (
                         <Loader2 size={16} aria-hidden="true" />
                       ) : (
                         <RotateCcw size={16} aria-hidden="true" />
@@ -375,6 +438,50 @@ export function LibraryPage() {
               ))}
             </div>
           )}
+
+          {previewDocument ? (
+            <section className="chunk-preview-panel" aria-label="Chunk 预览">
+              <div className="chunk-preview-heading">
+                <div>
+                  <span>Chunks</span>
+                  <strong>{previewDocument.title}</strong>
+                </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={() => loadChunks(previewDocument.id)}
+                  title="刷新 chunks"
+                >
+                  <RefreshCw size={16} aria-hidden="true" />
+                </button>
+              </div>
+
+              {chunkError ? <ErrorState message={chunkError} /> : null}
+
+              {chunkLoadState === "loading" ? (
+                <EmptyState text="加载 chunks" loading compact />
+              ) : chunks.length === 0 ? (
+                <EmptyState text="暂无 chunks" compact />
+              ) : (
+                <div className="chunk-preview-list">
+                  {chunks.map((chunk) => (
+                    <article className="chunk-preview-item" key={chunk.id}>
+                      <div className="chunk-preview-title">
+                        <strong>#{chunk.chunk_index}</strong>
+                        <span>{chunk.embedding_status}</span>
+                      </div>
+                      <p>{chunkExcerpt(chunk.content)}</p>
+                      <div className="chunk-preview-meta">
+                        <span>{chunkLocation(chunk)}</span>
+                        <span>{chunk.token_count} tokens</span>
+                        <span>{chunk.char_count} chars</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
         </section>
       </section>
     </div>
