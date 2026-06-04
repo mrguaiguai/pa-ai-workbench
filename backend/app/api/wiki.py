@@ -22,6 +22,7 @@ from app.services.wiki_service import citation_metadata
 from app.services.wiki_service import create_wiki_draft_from_output
 from app.services.wiki_service import create_wiki_page_record
 from app.services.wiki_service import get_wiki_page_record
+from app.services.wiki_service import index_wiki_page_record
 from app.services.wiki_service import list_wiki_citation_records
 from app.services.wiki_service import page_metadata
 from app.services.wiki_service import page_source_citation_ids
@@ -33,6 +34,7 @@ from app.services.wiki_service import search_wiki_page_records
 from app.services.wiki_service import search_wiki_pages
 from app.services.wiki_service import update_wiki_page_record
 from app.services.wiki_service import WikiDraftSourceNotFoundError
+from app.services.wiki_service import WikiPageIndexError
 from app.services.wiki_service import WikiPageConflictError
 from app.services.wiki_service import WikiPageNotFoundError
 from knowledge_engine.schemas import WikiPage
@@ -143,6 +145,20 @@ def publish_wiki(
         page = publish_wiki_page_record(session=session, slug=slug)
     except WikiPageNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _page_record_to_read(session=session, page=page)
+
+
+@router.post("/pages/{slug}/reindex", response_model=WikiPageRead)
+def reindex_wiki(
+    slug: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> WikiPageRead:
+    try:
+        page = index_wiki_page_record(session=session, slug=slug)
+    except WikiPageNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except WikiPageIndexError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _page_record_to_read(session=session, page=page)
 
 

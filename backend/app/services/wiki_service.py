@@ -19,9 +19,15 @@ from agent.model_gateway import ChatMessage
 from agent.model_gateway import ChatMessageRole
 from agent.model_gateway import ChatRequest
 from agent.model_gateway import get_model_gateway
+from knowledge_engine.embeddings.base import EmbeddingProvider
+from knowledge_engine.embeddings.factory import get_embedding_provider
+from knowledge_engine.embeddings.schemas import EmbeddingVector
 from knowledge_engine.factory import create_knowledge_engine
 from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
+from knowledge_engine.vectorstores import VectorRecord
+from knowledge_engine.vectorstores import VectorStore
+from knowledge_engine.vectorstores import get_vector_store
 from knowledge_engine.wiki import WikiPageStatus
 
 
@@ -34,6 +40,10 @@ class WikiPageNotFoundError(Exception):
 
 
 class WikiDraftSourceNotFoundError(Exception):
+    pass
+
+
+class WikiPageIndexError(Exception):
     pass
 
 
@@ -118,6 +128,37 @@ def create_wiki_draft_from_output(
     draft = _build_draft_from_output(output=output, citations=citations, payload=payload)
     draft.slug = _unique_slug(session=session, slug=draft.slug)
     return create_wiki_page_record(session=session, payload=draft)
+
+
+def index_wiki_page_record(
+    session: Session,
+    slug: str,
+    embedding_provider: EmbeddingProvider | None = None,
+    vector_store: VectorStore | None = None,
+) -> WikiPageModel:
+    page = get_wiki_page_record(session, slug)
+    if page is None:
+        raise WikiPageNotFoundError(f"Wiki page not found: {slug}")
+    if page.status != WikiPageStatus.PUBLISHED:
+        raise WikiPageIndexError("Only published Wiki pages can be indexed.")
+
+    text = _wiki_embedding_text(page)
+    embedding = (embedding_provider or get_embedding_provider()).embed_text(text)
+    record = _wiki_page_to_vector_record(page=page, text=text, embedding=embedding)
+    resolved_vector_store = vector_store or get_vector_store()
+    resolved_vector_store.upsert([record])
+    if page.vector_id and page.vector_id != record.id:
+        resolved_vector_store.delete([page.vector_id])
+
+    now = utc_now()
+    page.embedding_status = "indexed"
+    page.vector_id = record.id
+    page.indexed_at = now
+    page.updated_at = now
+    session.add(page)
+    session.commit()
+    session.refresh(page)
+    return page
 
 
 def update_wiki_page_record(
@@ -230,6 +271,59 @@ def page_metadata(page: WikiPageModel) -> dict[str, Any]:
 def citation_metadata(citation: WikiCitation) -> dict[str, Any]:
     value = _from_json(citation.metadata_json, default={})
     return value if isinstance(value, dict) else {}
+
+
+def _wiki_page_to_vector_record(
+    page: WikiPageModel,
+    text: str,
+    embedding: EmbeddingVector,
+) -> VectorRecord:
+    return VectorRecord(
+        id=_wiki_vector_id(page),
+        vector=embedding.vector,
+        text=text,
+        metadata=_wiki_vector_metadata(page=page, embedding=embedding),
+    )
+
+
+def _wiki_vector_id(page: WikiPageModel) -> str:
+    return f"wiki_page:{page.id}"
+
+
+def _wiki_embedding_text(page: WikiPageModel) -> str:
+    parts = [f"# {page.title}"]
+    if page.summary:
+        parts.extend(["", page.summary])
+    if page.content_markdown:
+        parts.extend(["", page.content_markdown])
+    return "\n".join(parts).strip()
+
+
+def _wiki_vector_metadata(
+    page: WikiPageModel,
+    embedding: EmbeddingVector,
+) -> dict[str, Any]:
+    return {
+        "source_type": "wiki_page",
+        "source": "wiki",
+        "wiki_page_id": page.id,
+        "slug": page.slug,
+        "title": page.title,
+        "summary": page.summary,
+        "status": page.status,
+        "business_area": page.business_area,
+        "page_type": page.page_type,
+        "source_output_id": page.source_output_id,
+        "source_document_ids": page_source_document_ids(page),
+        "source_citation_ids": page_source_citation_ids(page),
+        "tags": page_tags(page),
+        "published_at": page.published_at.isoformat() if page.published_at else None,
+        "embedding_provider": embedding.provider,
+        "embedding_model": embedding.model,
+        "embedding_dimension": embedding.dimension,
+        "embedding_text_hash": embedding.text_hash,
+        "wiki_metadata": page_metadata(page),
+    }
 
 
 def _build_draft_from_output(
