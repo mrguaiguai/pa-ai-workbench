@@ -8,6 +8,7 @@ import {
   Save,
   Search,
   Send,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -78,6 +79,18 @@ function metadataEntries(metadata: Record<string, unknown>) {
     .map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value)]);
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) {
+    return "not set";
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 function normalizeSlug(value: string) {
   return value
     .trim()
@@ -132,6 +145,48 @@ function statusLabel(status?: string | null) {
     return "archived";
   }
   return "draft";
+}
+
+function indexStatus(page: WikiPageDetail | null) {
+  if (!page) {
+    return "not loaded";
+  }
+  if (page.embedding_status === "indexed" || page.indexed_at || page.vector_id) {
+    return "indexed";
+  }
+  if (page.embedding_status) {
+    return page.embedding_status;
+  }
+  return "not indexed";
+}
+
+function indexStatusClass(page: WikiPageDetail | null) {
+  return indexStatus(page).replace(/\s+/g, "-").toLowerCase();
+}
+
+function evidenceTypeLabel(sourceType?: string | null) {
+  const normalized = String(sourceType || "").trim().toLowerCase();
+  if (["document", "document_chunk", "chunk"].includes(normalized)) {
+    return "Document";
+  }
+  if (["wiki", "wiki_page", "wiki-page"].includes(normalized)) {
+    return "Wiki";
+  }
+  if (normalized === "mock") {
+    return "Mock";
+  }
+  return normalized || "Evidence";
+}
+
+function sourceRefCount(page: WikiPageDetail | null) {
+  if (!page) {
+    return 0;
+  }
+  return (
+    (page.source_output_id ? 1 : 0) +
+    (page.source_document_ids?.length ?? 0) +
+    (page.source_citation_ids?.length ?? 0)
+  );
 }
 
 export function WikiPage() {
@@ -571,13 +626,97 @@ export function WikiPage() {
         )}
       </section>
 
-      <aside className="wiki-citation-panel" aria-label="Wiki 引用">
-        <div className="wiki-panel-heading">
-          <span>Citations</span>
-          <strong>{page?.citations.length ?? 0}</strong>
-        </div>
+      <aside className="wiki-citation-panel" aria-label="Wiki 引用与索引状态">
+        <section className="wiki-side-section" aria-label="索引状态">
+          <div className="wiki-panel-heading">
+            <span>Index</span>
+            <strong>{indexStatus(page)}</strong>
+          </div>
 
-        <CitationList citations={page?.citations ?? []} />
+          {page ? (
+            <div className="wiki-index-card">
+              <div className={`wiki-index-state ${indexStatusClass(page)}`}>
+                <ShieldCheck size={16} aria-hidden="true" />
+                <span>{indexStatus(page)}</span>
+              </div>
+              <div className="wiki-ref-list">
+                <span>{`status: ${page.status ?? "draft"}`}</span>
+                <span>{`published: ${formatDateTime(page.published_at)}`}</span>
+                <span>{`indexed: ${formatDateTime(page.indexed_at)}`}</span>
+                <span>{`embedding: ${page.embedding_status ?? "not set"}`}</span>
+                <span>{`vector: ${page.vector_id ?? "not set"}`}</span>
+              </div>
+            </div>
+          ) : (
+            <EmptyState text="未选择页面" compact />
+          )}
+        </section>
+
+        <section className="wiki-side-section" aria-label="来源引用">
+          <div className="wiki-panel-heading">
+            <span>Sources</span>
+            <strong>{sourceRefCount(page)}</strong>
+          </div>
+
+          {page ? (
+            <div className="wiki-ref-list">
+              {page.source_output_id ? <span>{`output: ${page.source_output_id}`}</span> : null}
+              {(page.source_document_ids ?? []).map((documentId) => (
+                <span key={`document-${documentId}`}>{`document: ${documentId}`}</span>
+              ))}
+              {(page.source_citation_ids ?? []).map((citationId) => (
+                <span key={`citation-${citationId}`}>{`citation: ${citationId}`}</span>
+              ))}
+              {sourceRefCount(page) === 0 ? <span>no source refs</span> : null}
+            </div>
+          ) : (
+            <EmptyState text="暂无来源" compact />
+          )}
+        </section>
+
+        <section className="wiki-side-section" aria-label="Wiki Citation 绑定">
+          <div className="wiki-panel-heading">
+            <span>Bindings</span>
+            <strong>{page?.wiki_citations?.length ?? 0}</strong>
+          </div>
+
+          {page?.wiki_citations?.length ? (
+            <div className="wiki-binding-list">
+              {page.wiki_citations.map((citation) => (
+                <article className="wiki-binding-item" key={citation.id}>
+                  <div>
+                    <strong>{evidenceTypeLabel(citation.source_type)}</strong>
+                    {citation.score === null || citation.score === undefined ? null : (
+                      <span>{citation.score.toFixed(2)}</span>
+                    )}
+                  </div>
+                  <p>{citation.excerpt}</p>
+                  <div className="wiki-ref-list compact">
+                    {citation.document_id ? <span>{`document: ${citation.document_id}`}</span> : null}
+                    {citation.chunk_id ? <span>{`chunk: ${citation.chunk_id}`}</span> : null}
+                    {citation.output_id ? <span>{`output: ${citation.output_id}`}</span> : null}
+                    {citation.citation_id ? <span>{`citation: ${citation.citation_id}`}</span> : null}
+                    {citation.evidence_id ? <span>{`evidence: ${citation.evidence_id}`}</span> : null}
+                    {citation.external_doc_id ? (
+                      <span>{`external: ${citation.external_doc_id}`}</span>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <EmptyState text="暂无绑定" compact />
+          )}
+        </section>
+
+        <section className="wiki-side-section" aria-label="Evidence">
+          <div className="wiki-panel-heading">
+            <span>Evidence</span>
+            <strong>{page?.citations.length ?? 0}</strong>
+          </div>
+
+          <CitationList citations={page?.citations ?? []} />
+        </section>
       </aside>
     </div>
   );

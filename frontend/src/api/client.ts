@@ -235,7 +235,7 @@ export type WikiPage = {
   source_document_ids?: string[];
   source_citation_ids?: string[];
   citations: Evidence[];
-  wiki_citations?: unknown[];
+  wiki_citations?: WikiCitation[];
   source: string;
   metadata: Record<string, unknown>;
   created_by?: string | null;
@@ -245,6 +245,22 @@ export type WikiPage = {
   indexed_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+};
+
+export type WikiCitation = {
+  id: string;
+  wiki_page_id: string;
+  document_id: string | null;
+  external_doc_id: string | null;
+  chunk_id: string | null;
+  output_id: string | null;
+  citation_id: string | null;
+  evidence_id: string | null;
+  source_type: string;
+  excerpt: string;
+  score: number | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 };
 
 export type WikiDraftFromOutputRequest = {

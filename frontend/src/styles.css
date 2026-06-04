@@ -1434,7 +1434,8 @@ p {
 .wiki-reader,
 .wiki-citation-panel,
 .wiki-search-form,
-.wiki-results {
+.wiki-results,
+.wiki-side-section {
   min-width: 0;
   border: 1px solid #d8e0e5;
   border-radius: 8px;
@@ -1443,6 +1444,14 @@ p {
 }
 
 .wiki-search-panel {
+  display: grid;
+  gap: 14px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.wiki-citation-panel {
   display: grid;
   gap: 14px;
   border: 0;
@@ -1538,6 +1547,107 @@ p {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.wiki-index-card,
+.wiki-binding-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.wiki-index-state {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #f8fafb;
+  color: #52636e;
+  font-size: 0.82rem;
+  font-weight: 900;
+  padding: 8px 10px;
+}
+
+.wiki-index-state.indexed {
+  border-color: #bfd9cb;
+  background: #eef7f1;
+  color: #256340;
+}
+
+.wiki-index-state.failed {
+  border-color: #edc7c2;
+  background: #fff1ef;
+  color: #9b382d;
+}
+
+.wiki-ref-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.wiki-ref-list.compact {
+  margin-top: 8px;
+}
+
+.wiki-ref-list span {
+  min-height: 24px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f2f6f8;
+  color: #52636e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki-binding-item {
+  min-width: 0;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 11px;
+}
+
+.wiki-binding-item > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wiki-binding-item strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #17212b;
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki-binding-item > div:first-child span {
+  flex: 0 0 auto;
+  color: #176b87;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.wiki-binding-item p {
+  display: -webkit-box;
+  margin-top: 8px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  color: #52636e;
+  font-size: 0.8rem;
+  line-height: 1.48;
+  -webkit-line-clamp: 3;
 }
 
 .wiki-result-list,
