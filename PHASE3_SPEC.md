@@ -801,7 +801,7 @@ M3 测试：
 | P3-M1-A1 | WeKnora 本地/内网启动方式审计 | [x] |
 | P3-M1-A2 | WeKnora 模型、embedding、向量库、DocReader 配置清单 | [x] |
 | P3-M1-A3 | PA `.env.example` 增加 WeKnora service account 配置 | [x] |
-| P3-M1-A4 | WeKnora health / auth / workspace smoke 脚本设计 | [ ] |
+| P3-M1-A4 | WeKnora health / auth / workspace smoke 脚本设计 | [x] |
 
 #### P3-M1-A1：WeKnora 本地/内网启动方式审计
 
@@ -901,7 +901,7 @@ WeKnora service account 配置。
 风险：
 真实 WeKnora 不可用时脚本应清晰失败，不 fallback 到 mock。
 
-状态：[ ]
+状态：[x]
 
 ### M1-B：WeKnora RAG Adapter
 
