@@ -1214,6 +1214,75 @@ p {
   margin-top: 14px;
 }
 
+.rag-summary {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.rag-mode {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #f8fafb;
+  padding: 9px 10px;
+}
+
+.rag-mode.real {
+  border-color: #bfd9cb;
+  background: #eef7f1;
+}
+
+.rag-mode span {
+  color: #6b7a86;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.rag-mode strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #17212b;
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rag-source-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.rag-source-counts span {
+  min-height: 28px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f2f6f8;
+  color: #52636e;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 6px 8px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-warning {
+  border: 1px solid #edd8a8;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #7a5312;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 8px 10px;
+}
+
 .warning-item {
   display: flex;
   gap: 8px;
@@ -2033,6 +2102,21 @@ p {
   padding: 4px 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.citation-meta-row .citation-source-type {
+  background: #edf6fa;
+  color: #176b87;
+}
+
+.citation-meta-row .citation-source-type.wiki {
+  background: #eef7f1;
+  color: #256340;
+}
+
+.citation-meta-row .citation-source-type.mock {
+  background: #f5f0ea;
+  color: #6a4a2f;
 }
 
 @keyframes spin {

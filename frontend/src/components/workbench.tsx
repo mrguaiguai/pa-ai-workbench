@@ -13,6 +13,9 @@ export type CitationListItem = {
   document_id?: string | null;
   external_doc_id?: string | null;
   chunk_id?: string | null;
+  evidence_id?: string | null;
+  source_type?: string | null;
+  wiki_page_id?: string | null;
   title: string;
   text: string;
   score?: number | null;
@@ -108,8 +111,13 @@ export function CitationList({
           </div>
           <p>{citation.text}</p>
           <div className="citation-meta-row">
+            <span className={`citation-source-type ${citationSourceClass(citation)}`}>
+              {citationSourceLabel(citation)}
+            </span>
             <span>{citation.source}</span>
+            {citation.evidence_id ? <span>{citation.evidence_id}</span> : null}
             {citation.chunk_id ? <span>{citation.chunk_id}</span> : null}
+            {citation.wiki_page_id ? <span>{citation.wiki_page_id}</span> : null}
           </div>
         </article>
       ))}
@@ -200,6 +208,46 @@ export function parseWarningsJson(warningsJson: string | null | undefined) {
 function citationKey(citation: CitationListItem, index: number) {
   return (
     citation.id ||
-    `${citation.source}-${citation.chunk_id || citation.document_id || citation.external_doc_id || citation.title}-${index}`
+    `${citation.source}-${citation.evidence_id || citation.chunk_id || citation.wiki_page_id || citation.document_id || citation.external_doc_id || citation.title}-${index}`
   );
+}
+
+function citationSourceLabel(citation: CitationListItem) {
+  const normalized = citationSourceType(citation);
+  if (normalized === "wiki_page") {
+    return "Wiki";
+  }
+  if (normalized === "document_chunk") {
+    return "Document";
+  }
+  if (citation.source === "mock") {
+    return "Mock";
+  }
+  return normalized || "Evidence";
+}
+
+function citationSourceClass(citation: CitationListItem) {
+  const normalized = citationSourceType(citation);
+  if (normalized === "wiki_page") {
+    return "wiki";
+  }
+  if (normalized === "document_chunk") {
+    return "document";
+  }
+  if (citation.source === "mock") {
+    return "mock";
+  }
+  return "unknown";
+}
+
+function citationSourceType(citation: CitationListItem) {
+  const raw = citation.source_type || (citation.wiki_page_id ? "wiki_page" : undefined);
+  const normalized = String(raw || "").trim().toLowerCase();
+  if (["document", "document_chunk", "chunk"].includes(normalized)) {
+    return "document_chunk";
+  }
+  if (["wiki", "wiki_page", "wiki-page"].includes(normalized)) {
+    return "wiki_page";
+  }
+  return normalized;
 }

@@ -1077,7 +1077,7 @@ configured
 | --- | --- | --- |
 | K1 | 资料库解析/索引状态升级 | [x] |
 | K2 | Chunk 预览与重建索引入口 | [x] |
-| K3 | 智能分析 evidence/citation 展示升级 | [ ] |
+| K3 | 智能分析 evidence/citation 展示升级 | [x] |
 | K4 | 分析结果生成 Wiki 草稿按钮 | [ ] |
 | K5 | Wiki 新建/编辑/草稿/发布页面 | [ ] |
 | K6 | Wiki 引用来源与索引状态展示 | [ ] |

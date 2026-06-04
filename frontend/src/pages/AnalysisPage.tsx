@@ -103,6 +103,48 @@ function roleLabel(role: ConversationMessage["role"]) {
   return "You";
 }
 
+function citationSourceType(citation: Citation) {
+  const normalized = String(
+    citation.source_type || (citation.wiki_page_id ? "wiki_page" : ""),
+  )
+    .trim()
+    .toLowerCase();
+  if (["document", "document_chunk", "chunk"].includes(normalized)) {
+    return "document_chunk";
+  }
+  if (["wiki", "wiki_page", "wiki-page"].includes(normalized)) {
+    return "wiki_page";
+  }
+  if (citation.source === "mock") {
+    return "mock";
+  }
+  return normalized || "unknown";
+}
+
+function ragMode(citations: Citation[]) {
+  if (citations.length === 0) {
+    return "No evidence";
+  }
+  if (citations.some((citation) => citation.source !== "mock")) {
+    return "Real RAG";
+  }
+  return "Mock fallback";
+}
+
+function hasInsufficientEvidenceWarning(warnings: string[]) {
+  return warnings.some((warning) =>
+    [
+      "No evidence",
+      "No policy evidence",
+      "No case evidence",
+      "does not match retrieved evidence",
+      "missing",
+      "不足",
+      "未检索",
+    ].some((token) => warning.includes(token)),
+  );
+}
+
 export function AnalysisPage() {
   const [taskType, setTaskType] = useState<AnalysisTaskType>("knowledge_qa");
   const [form, setForm] = useState<AnalysisForm>(initialForm);
@@ -121,6 +163,21 @@ export function AnalysisPage() {
     () => parseWarningsJson(latestOutput?.warnings_json),
     [latestOutput],
   );
+  const evidenceSummary = useMemo(() => {
+    const documentCount = latestCitations.filter(
+      (citation) => citationSourceType(citation) === "document_chunk",
+    ).length;
+    const wikiCount = latestCitations.filter(
+      (citation) => citationSourceType(citation) === "wiki_page",
+    ).length;
+    return {
+      mode: ragMode(latestCitations),
+      documentCount,
+      wikiCount,
+      totalCount: latestCitations.length,
+      insufficient: hasInsufficientEvidenceWarning(warnings),
+    };
+  }, [latestCitations, warnings]);
   const activeTask = taskOptions.find((option) => option.id === taskType) ?? taskOptions[0];
 
   const loadConversations = () => {
@@ -363,7 +420,22 @@ export function AnalysisPage() {
             <strong>{latestCitations.length}</strong>
           </div>
 
-          <WarningList warnings={warnings} />
+          <div className="rag-summary">
+            <div className={`rag-mode ${evidenceSummary.mode === "Real RAG" ? "real" : ""}`}>
+              <span>RAG</span>
+              <strong>{evidenceSummary.mode}</strong>
+            </div>
+            <div className="rag-source-counts">
+              <span>Document {evidenceSummary.documentCount}</span>
+              <span>Wiki {evidenceSummary.wikiCount}</span>
+              <span>Total {evidenceSummary.totalCount}</span>
+            </div>
+            {evidenceSummary.insufficient ? (
+              <div className="evidence-warning">依据不足或引用需要复核</div>
+            ) : null}
+          </div>
+
+          <WarningList warnings={warnings} emptyText="暂无依据不足提示" />
           <CitationList citations={latestCitations} />
         </section>
       </aside>
