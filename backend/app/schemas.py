@@ -263,14 +263,31 @@ class HistoryListResponse(BaseModel):
 
 
 class EvidenceRead(BaseModel):
+    evidence_id: str | None = None
+    source_type: str | None = None
     document_id: str | None = None
     external_doc_id: str | None = None
     chunk_id: str | None = None
+    wiki_page_id: str | None = None
     title: str
     text: str
     score: float | None = None
     source: str
     metadata: dict
+
+
+class RagRetrieveRequest(BaseModel):
+    query: str
+    filters: dict = Field(default_factory=dict)
+    top_k: int = 8
+
+
+class RagRetrieveResponse(BaseModel):
+    items: list[EvidenceRead]
+    total: int
+    query: str
+    filters: dict
+    top_k: int
 
 
 class WikiPageSummaryRead(BaseModel):
