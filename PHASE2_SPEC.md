@@ -1093,7 +1093,7 @@ configured
 | L4 | Agent smoke test：QA/policy/case with evidence | [x] |
 | L5 | Wiki smoke test：draft/publish/retrieve | [x] |
 | L6 | 前端 build 与主要页面检查 | [x] |
-| L7 | Git 安全检查 | [ ] |
+| L7 | Git 安全检查 | [x] |
 
 ## 16. 任务执行协议
 
