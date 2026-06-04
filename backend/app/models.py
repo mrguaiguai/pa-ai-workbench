@@ -145,6 +145,47 @@ class Citation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now, nullable=False)
 
 
+class WikiPage(TimestampMixin, table=True):
+    __tablename__ = "wiki_pages"
+
+    id: str = Field(default_factory=lambda: new_id("wiki"), primary_key=True)
+    slug: str = Field(index=True, unique=True)
+    title: str = Field(index=True)
+    summary: str | None = Field(default=None)
+    content_markdown: str = Field(default="")
+    status: str = Field(default="draft", index=True)
+    tags_json: str | None = Field(default=None)
+    business_area: str | None = Field(default=None, index=True)
+    page_type: str | None = Field(default=None, index=True)
+    source_output_id: str | None = Field(default=None, index=True)
+    source_document_ids_json: str | None = Field(default=None)
+    source_citation_ids_json: str | None = Field(default=None)
+    created_by: str | None = Field(default=None, index=True)
+    published_at: datetime | None = Field(default=None, index=True)
+    embedding_status: str = Field(default="pending", index=True)
+    vector_id: str | None = Field(default=None, index=True)
+    indexed_at: datetime | None = Field(default=None, index=True)
+    metadata_json: str | None = Field(default=None)
+
+
+class WikiCitation(SQLModel, table=True):
+    __tablename__ = "wiki_citations"
+
+    id: str = Field(default_factory=lambda: new_id("wikicite"), primary_key=True)
+    wiki_page_id: str = Field(index=True)
+    document_id: str | None = Field(default=None, index=True)
+    external_doc_id: str | None = Field(default=None, index=True)
+    chunk_id: str | None = Field(default=None, index=True)
+    output_id: str | None = Field(default=None, index=True)
+    citation_id: str | None = Field(default=None, index=True)
+    evidence_id: str | None = Field(default=None, index=True)
+    source_type: str = Field(default="document_chunk", index=True)
+    excerpt: str
+    score: float | None = Field(default=None)
+    metadata_json: str | None = Field(default=None)
+    created_at: datetime = Field(default_factory=utc_now, nullable=False)
+
+
 class WikiPageCache(TimestampMixin, table=True):
     __tablename__ = "wiki_pages_cache"
 

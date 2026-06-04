@@ -1050,7 +1050,7 @@ configured
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| I1 | WikiPage / WikiCitation 数据模型 | [ ] |
+| I1 | WikiPage / WikiCitation 数据模型 | [x] |
 | I2 | Wiki CRUD API | [ ] |
 | I3 | Wiki draft / publish 状态 | [ ] |
 | I4 | 从 output 生成 Wiki 草稿 service | [ ] |
