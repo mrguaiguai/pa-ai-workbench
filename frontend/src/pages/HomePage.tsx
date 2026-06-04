@@ -1,13 +1,16 @@
 import {
   ArrowRight,
   BookOpenText,
+  BrainCircuit,
+  Cable,
   Database,
   FileClock,
+  Layers3,
   MessageSquareText,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { ApiError, StatusResponse, apiClient } from "../api/client";
+import { ApiError, ModelStatusResponse, StatusResponse, apiClient } from "../api/client";
 import { BackendStatusBadge } from "../components/workbench";
 
 type HomePageProps = {
@@ -17,6 +20,11 @@ type HomePageProps = {
 type StatusState =
   | { state: "loading"; data: null; error: null }
   | { state: "ready"; data: StatusResponse; error: null }
+  | { state: "error"; data: null; error: string };
+
+type ModelStatusState =
+  | { state: "loading"; data: null; error: null }
+  | { state: "ready"; data: ModelStatusResponse; error: null }
   | { state: "error"; data: null; error: string };
 
 const workflows = [
@@ -47,8 +55,17 @@ const quickLinks = [
   { label: "生成历史", route: "/history" as const, icon: FileClock },
 ];
 
+function statusClass(value: string) {
+  return value.replace(/\s+/g, "-").toLowerCase();
+}
+
 export function HomePage({ navigateTo }: HomePageProps) {
   const [status, setStatus] = useState<StatusState>({
+    state: "loading",
+    data: null,
+    error: null,
+  });
+  const [modelStatus, setModelStatus] = useState<ModelStatusState>({
     state: "loading",
     data: null,
     error: null,
@@ -56,25 +73,40 @@ export function HomePage({ navigateTo }: HomePageProps) {
 
   useEffect(() => {
     let isMounted = true;
-    apiClient
-      .getStatus()
-      .then((data) => {
-        if (isMounted) {
-          setStatus({ state: "ready", data, error: null });
-        }
-      })
-      .catch((error: unknown) => {
-        if (!isMounted) {
-          return;
-        }
-        const message =
-          error instanceof ApiError
-            ? `HTTP ${error.status}`
-            : error instanceof Error
-              ? error.message
-              : "Unknown error";
-        setStatus({ state: "error", data: null, error: message });
-      });
+    const loadErrorMessage = (error: unknown) =>
+      error instanceof ApiError
+        ? `HTTP ${error.status}`
+        : error instanceof Error
+          ? error.message
+          : "Unknown error";
+
+    Promise.allSettled([apiClient.getStatus(), apiClient.getModelStatus()]).then((results) => {
+      if (!isMounted) {
+        return;
+      }
+
+      const [statusResult, modelResult] = results;
+      if (statusResult.status === "fulfilled") {
+        setStatus({ state: "ready", data: statusResult.value, error: null });
+      } else {
+        setStatus({
+          state: "error",
+          data: null,
+          error: loadErrorMessage(statusResult.reason),
+        });
+      }
+
+      if (modelResult.status === "fulfilled") {
+        setModelStatus({ state: "ready", data: modelResult.value, error: null });
+      } else {
+        setModelStatus({
+          state: "error",
+          data: null,
+          error: loadErrorMessage(modelResult.reason),
+        });
+      }
+    });
+
     return () => {
       isMounted = false;
     };
@@ -84,7 +116,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
   const metrics = useMemo(
     () => [
       { label: "资料", value: counts?.documents ?? 0 },
-      { label: "会话", value: counts?.conversations ?? 0 },
+      { label: "Chunks", value: counts?.document_chunks ?? 0 },
       { label: "任务", value: counts?.tasks ?? 0 },
       { label: "输出", value: counts?.outputs ?? 0 },
     ],
@@ -96,6 +128,89 @@ export function HomePage({ navigateTo }: HomePageProps) {
       : status.state === "loading"
         ? "连接中"
         : status.error;
+  const statusCards = useMemo(() => {
+    const modelReady = modelStatus.state === "ready";
+    const backendReady = status.state === "ready";
+    const model = modelReady ? modelStatus.data : null;
+    const backend = backendReady ? status.data : null;
+    return [
+      {
+        id: "chat",
+        label: "Chat Model",
+        icon: BrainCircuit,
+        state: modelStatus.state,
+        status:
+          modelReady
+            ? model?.chat.configured
+              ? "configured"
+              : "missing config"
+            : modelStatus.state === "loading"
+              ? "loading"
+              : "error",
+        primary: model?.chat.provider ?? "unknown",
+        secondary: model?.chat.model || "model not set",
+        details:
+          model
+            ? [
+                `mock: ${model.chat.mock ? "yes" : "no"}`,
+                `api key: ${model.chat.api_key_configured ? "set" : "not set"}`,
+                `timeout: ${model.chat.timeout_seconds}s`,
+              ]
+            : [modelStatus.state === "loading" ? "loading" : modelStatus.error ?? "error"],
+      },
+      {
+        id: "embedding",
+        label: "Embedding",
+        icon: Layers3,
+        state: modelStatus.state,
+        status:
+          modelReady
+            ? model?.embedding.configured
+              ? "configured"
+              : "missing config"
+            : modelStatus.state === "loading"
+              ? "loading"
+              : "error",
+        primary: model?.embedding.provider ?? "unknown",
+        secondary: model?.embedding.model || "model not set",
+        details:
+          model
+            ? [
+                `mock: ${model.embedding.mock ? "yes" : "no"}`,
+                `dimension: ${model.embedding.dimension ?? "not set"}`,
+                `api key: ${model.embedding.api_key_configured ? "set" : "not set"}`,
+              ]
+            : [modelStatus.state === "loading" ? "loading" : modelStatus.error ?? "error"],
+      },
+      {
+        id: "rag",
+        label: "RAG Pipeline",
+        icon: Cable,
+        state: backendReady && modelReady ? "ready" : status.state,
+        status:
+          backendReady
+            ? backend?.mock_mode || model?.mock_mode
+              ? "mock fallback"
+              : "real ready"
+            : status.state === "loading"
+              ? "loading"
+              : "error",
+        primary: backend?.knowledge_backend ?? "unknown",
+        secondary:
+          backendReady
+            ? `${counts?.document_chunks ?? 0} chunks indexed/stored`
+            : "backend status unavailable",
+        details:
+          backend
+            ? [
+                `backend mock: ${backend.mock_mode ? "yes" : "no"}`,
+                `model mock: ${model?.mock_mode ? "yes" : "no"}`,
+                `database: ${backend.database}`,
+              ]
+            : [status.state === "loading" ? "loading" : status.error ?? "error"],
+      },
+    ];
+  }, [counts, modelStatus, status]);
 
   return (
     <div className="home-page">
@@ -114,6 +229,28 @@ export function HomePage({ navigateTo }: HomePageProps) {
             <strong>{metric.value}</strong>
           </article>
         ))}
+      </section>
+
+      <section className="runtime-status-grid" aria-label="模型与 RAG 状态">
+        {statusCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <article className={`runtime-status-card ${statusClass(card.status)}`} key={card.id}>
+              <div className="runtime-status-title">
+                <Icon size={18} aria-hidden="true" />
+                <span>{card.label}</span>
+                <strong>{card.status}</strong>
+              </div>
+              <h3>{card.primary}</h3>
+              <p>{card.secondary}</p>
+              <div className="runtime-status-meta">
+                {card.details.map((detail) => (
+                  <span key={detail}>{detail}</span>
+                ))}
+              </div>
+            </article>
+          );
+        })}
       </section>
 
       <section className="home-grid">

@@ -27,6 +27,27 @@ export type StatusResponse = {
   counts: Record<string, number>;
 };
 
+export type ModelProviderStatus = {
+  provider: string;
+  model: string;
+  configured: boolean;
+  mock: boolean;
+  base_url_configured: boolean;
+  api_key_configured: boolean;
+  timeout_seconds: number;
+  temperature: number | null;
+  dimension: number | null;
+};
+
+export type ModelStatusResponse = {
+  chat_provider: string;
+  embedding_provider: string;
+  mock_mode: boolean;
+  configured: boolean;
+  chat: ModelProviderStatus;
+  embedding: ModelProviderStatus;
+};
+
 export type Document = {
   id: string;
   title: string;
@@ -334,6 +355,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const apiClient = {
   baseUrl: API_BASE_URL,
   getStatus: () => request<StatusResponse>("/api/status"),
+  getModelStatus: () => request<ModelStatusResponse>("/api/model/status"),
   listDocuments: () => request<ListResponse<Document>>("/api/documents"),
   uploadDocument: (payload: DocumentUploadRequest) => {
     const formData = new FormData();

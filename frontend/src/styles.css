@@ -391,6 +391,132 @@ p {
   line-height: 1;
 }
 
+.runtime-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.runtime-status-card {
+  min-width: 0;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px;
+}
+
+.runtime-status-card.configured,
+.runtime-status-card.real-ready {
+  border-color: #bfd9cb;
+  background: #f4faf6;
+}
+
+.runtime-status-card.mock-fallback {
+  border-color: #edd8a8;
+  background: #fffaf0;
+}
+
+.runtime-status-card.missing-config,
+.runtime-status-card.error {
+  border-color: #edc7c2;
+  background: #fff6f4;
+}
+
+.runtime-status-title {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.runtime-status-title svg {
+  color: #176b87;
+}
+
+.runtime-status-title span {
+  min-width: 0;
+  overflow: hidden;
+  color: #6b7a86;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.runtime-status-title strong {
+  min-height: 24px;
+  max-width: 118px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #eef3f5;
+  color: #52636e;
+  font-size: 0.72rem;
+  font-weight: 900;
+  padding: 4px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-status-card.configured .runtime-status-title strong,
+.runtime-status-card.real-ready .runtime-status-title strong {
+  background: #dff0e5;
+  color: #256340;
+}
+
+.runtime-status-card.mock-fallback .runtime-status-title strong {
+  background: #fff1cb;
+  color: #7a5312;
+}
+
+.runtime-status-card.missing-config .runtime-status-title strong,
+.runtime-status-card.error .runtime-status-title strong {
+  background: #ffe1dc;
+  color: #9b382d;
+}
+
+.runtime-status-card h3 {
+  min-width: 0;
+  overflow: hidden;
+  margin-top: 14px;
+  color: #17212b;
+  font-size: 1.15rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-status-card p {
+  min-width: 0;
+  overflow: hidden;
+  margin-top: 5px;
+  color: #52636e;
+  font-size: 0.84rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-status-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.runtime-status-meta span {
+  min-height: 24px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f2f6f8;
+  color: #52636e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .home-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.75fr);
@@ -2429,6 +2555,7 @@ p {
   }
 
   .metric-grid,
+  .runtime-status-grid,
   .home-grid,
   .library-summary,
   .library-grid,
