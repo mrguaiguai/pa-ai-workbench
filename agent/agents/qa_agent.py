@@ -1,6 +1,11 @@
 from typing import Any
 
 from agent.context import AgentContext
+from agent.model_gateway import ChatMessage
+from agent.model_gateway import ChatMessageRole
+from agent.model_gateway import ChatRequest
+from agent.model_gateway import ModelGateway
+from agent.model_gateway import get_model_gateway
 from agent.schemas import AgentEvent
 from agent.schemas import AgentEventType
 from agent.schemas import AgentRequest
@@ -16,10 +21,12 @@ class KnowledgeQaWorkflow:
         self,
         retriever: RetrieverTool | None = None,
         citation_checker: CitationChecker | None = None,
+        model_gateway: ModelGateway | None = None,
         top_k: int = 5,
     ) -> None:
         self.retriever = retriever or RetrieverTool()
         self.citation_checker = citation_checker or CitationChecker()
+        self.model_gateway = model_gateway or get_model_gateway()
         self.top_k = top_k
 
     def __call__(self, request: AgentRequest, context: AgentContext) -> AgentResult:
@@ -47,7 +54,34 @@ class KnowledgeQaWorkflow:
             )
         )
 
-        check_result = self.citation_checker.validate(citations)
+        events.append(
+            AgentEvent(
+                task_id=request.task_id,
+                conversation_id=request.conversation_id,
+                event_type=AgentEventType.STEP_STARTED,
+                step="generate",
+                message="Generating grounded QA answer through ModelGateway.",
+                progress=65,
+                payload={"citation_count": len(citations)},
+            )
+        )
+        answer, model_metadata = self._generate_answer(request, context, citations)
+        events.append(
+            AgentEvent(
+                task_id=request.task_id,
+                conversation_id=request.conversation_id,
+                event_type=AgentEventType.STEP_COMPLETED,
+                step="generate",
+                message="Generated grounded QA answer.",
+                progress=75,
+                payload=model_metadata,
+            )
+        )
+
+        check_result = self.citation_checker.validate(
+            citations,
+            evidence_items=citations,
+        )
         warnings = list(check_result.warnings)
         if not citations:
             warnings.append("No evidence was found for the question.")
@@ -65,7 +99,6 @@ class KnowledgeQaWorkflow:
                 )
             )
 
-        answer = self._build_answer(request, context, citations, warnings)
         return AgentResult(
             task_id=request.task_id,
             conversation_id=request.conversation_id,
@@ -77,6 +110,7 @@ class KnowledgeQaWorkflow:
                 "citation_count": len(citations),
                 "recent_message_count": len(context.recent_messages),
                 "filters": self._build_filters(request),
+                "model": model_metadata,
             },
             markdown=answer,
             citations=citations,
@@ -120,16 +154,65 @@ class KnowledgeQaWorkflow:
             filters["document_type"] = request.document_type
         return filters
 
-    @staticmethod
-    def _build_answer(
+    def _generate_answer(
+        self,
         request: AgentRequest,
         context: AgentContext,
         citations: list[Citation],
-        warnings: list[str],
+    ) -> tuple[str, dict[str, Any]]:
+        response = self.model_gateway.generate(
+            ChatRequest(
+                messages=self._build_messages(request, context, citations),
+                temperature=0.2,
+                max_tokens=1600,
+                metadata={
+                    "task_id": request.task_id,
+                    "task_type": request.task_type,
+                    "workflow": "knowledge_qa",
+                    "citation_count": len(citations),
+                    "source_types": sorted(
+                        {citation.source_type or "unknown" for citation in citations}
+                    ),
+                },
+            )
+        )
+        metadata = {
+            "provider": response.provider,
+            "model": response.model,
+            "usage": response.usage,
+        }
+        return response.content, metadata
+
+    @classmethod
+    def _build_messages(
+        cls,
+        request: AgentRequest,
+        context: AgentContext,
+        citations: list[Citation],
+    ) -> list[ChatMessage]:
+        return [
+            ChatMessage(
+                role=ChatMessageRole.SYSTEM,
+                content=(
+                    "你是 PA 智能工作台的知识问答助手。必须只基于给定证据回答；"
+                    "如果证据不足，要明确说明不足。回答使用中文 Markdown，"
+                    "并在涉及事实判断时引用证据编号。不得编造未给出的来源。"
+                ),
+            ),
+            ChatMessage(
+                role=ChatMessageRole.USER,
+                content=cls._build_grounded_prompt(request, context, citations),
+            ),
+        ]
+
+    @classmethod
+    def _build_grounded_prompt(
+        cls,
+        request: AgentRequest,
+        context: AgentContext,
+        citations: list[Citation],
     ) -> str:
         lines = [
-            f"## {request.title or request.query_or_topic}",
-            "",
             f"问题：{request.query_or_topic}",
             "",
         ]
@@ -146,23 +229,49 @@ class KnowledgeQaWorkflow:
             lines.extend(["补充要求：", request.extra_requirements, ""])
 
         if citations:
-            lines.extend(["基于当前知识库证据，可以先形成以下回答：", ""])
+            lines.extend(["证据：", ""])
             for index, citation in enumerate(citations, start=1):
-                evidence_excerpt = KnowledgeQaWorkflow._excerpt(citation.text)
-                lines.append(
-                    f"{index}. {citation.title}：{evidence_excerpt} "
-                    f"[来源：{citation.source}]"
-                )
-            lines.append("")
-            lines.append("以上结论仅基于已检索到的证据，后续可继续补充材料再细化。")
+                lines.extend(cls._citation_prompt_lines(index, citation))
         else:
-            lines.append("当前没有检索到足够证据，建议补充资料或放宽筛选条件后再分析。")
+            lines.append("证据：未检索到可用证据。")
 
-        if warnings:
-            lines.extend(["", "注意事项："])
-            lines.extend(f"- {warning}" for warning in warnings)
+        lines.extend(
+            [
+                "",
+                "请输出：",
+                "1. 直接回答",
+                "2. 依据列表，逐条标注使用的证据编号",
+                "3. 证据不足或不确定之处",
+            ]
+        )
 
         return "\n".join(lines)
+
+    @classmethod
+    def _citation_prompt_lines(cls, index: int, citation: Citation) -> list[str]:
+        source_type = citation.source_type or citation.metadata.get(
+            "citation_source_type"
+        )
+        evidence_id = citation.evidence_id or citation.metadata.get("evidence_id")
+        identifiers = [
+            f"source_type={source_type or 'unknown'}",
+            f"evidence_id={evidence_id or 'unknown'}",
+        ]
+        if citation.document_id:
+            identifiers.append(f"document_id={citation.document_id}")
+        if citation.external_doc_id:
+            identifiers.append(f"external_doc_id={citation.external_doc_id}")
+        if citation.chunk_id:
+            identifiers.append(f"chunk_id={citation.chunk_id}")
+        if citation.wiki_page_id:
+            identifiers.append(f"wiki_page_id={citation.wiki_page_id}")
+        return [
+            f"[{index}] {citation.title}",
+            f"- {'; '.join(identifiers)}",
+            f"- source={citation.source}; score={citation.score}",
+            f"- excerpt={cls._excerpt(citation.text)}",
+            "",
+        ]
 
     @staticmethod
     def _excerpt(text: str, max_chars: int = 280) -> str:
