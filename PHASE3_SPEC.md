@@ -798,7 +798,7 @@ M3 测试：
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M1-A1 | WeKnora 本地/内网启动方式审计 | [ ] |
+| P3-M1-A1 | WeKnora 本地/内网启动方式审计 | [x] |
 | P3-M1-A2 | WeKnora 模型、embedding、向量库、DocReader 配置清单 | [ ] |
 | P3-M1-A3 | PA `.env.example` 增加 WeKnora service account 配置 | [ ] |
 | P3-M1-A4 | WeKnora health / auth / workspace smoke 脚本设计 | [ ] |
@@ -826,7 +826,7 @@ WeKnora 根目录配置与部署文档。
 风险：
 WeKnora 部署依赖外部模型或私有配置，需用占位说明，不写入真实密钥。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-A2：WeKnora 模型、embedding、向量库、DocReader 配置清单
 
