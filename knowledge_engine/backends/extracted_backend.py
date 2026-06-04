@@ -1,12 +1,15 @@
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
+from typing import Any
 from typing import NoReturn
 from uuid import uuid4
 
 from knowledge_engine.base import KnowledgeEngine
 from knowledge_engine.chunking import Chunker
+from knowledge_engine.chunking import DocumentChunkCandidate
 from knowledge_engine.chunking import ParagraphChunker
+from knowledge_engine.embeddings.schemas import EmbeddingVector
 from knowledge_engine.embeddings.base import EmbeddingProvider
 from knowledge_engine.embeddings.factory import get_embedding_provider
 from knowledge_engine.errors import KnowledgeDocumentNotFoundError
@@ -19,6 +22,7 @@ from knowledge_engine.schemas import KnowledgeDocument
 from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
 from knowledge_engine.vectorstores import VectorStore
+from knowledge_engine.vectorstores import VectorRecord
 from knowledge_engine.vectorstores import get_vector_store
 
 
@@ -157,10 +161,52 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         return parsed
 
     def index_document(self, external_doc_id: str) -> dict:
-        self._raise_pending("index_document", "H5")
+        parsed = self._parse_registered_document(external_doc_id)
+        chunks = self.chunker.chunk(parsed)
+        document = self._documents[external_doc_id]
+        old_vector_ids = [
+            str(vector_id)
+            for vector_id in document.metadata.get("vector_ids", [])
+            if vector_id
+        ]
+
+        records = self._build_vector_records(
+            external_doc_id=external_doc_id,
+            document=document,
+            chunks=chunks,
+        )
+        self.vector_store.upsert(records)
+        self._delete_old_vectors_after_reindex(
+            old_vector_ids=old_vector_ids,
+            current_vector_ids=[record.id for record in records],
+        )
+
+        updated_metadata = {
+            **document.metadata,
+            "pipeline_stage": "indexed",
+            "chunk_count": len(chunks),
+            "vector_count": len(records),
+            "vector_ids": [record.id for record in records],
+        }
+        self._documents[external_doc_id] = KnowledgeDocument(
+            document_id=document.document_id,
+            external_doc_id=document.external_doc_id,
+            title=document.title,
+            status="indexed",
+            source=document.source,
+            metadata=updated_metadata,
+        )
+        return {
+            "external_doc_id": external_doc_id,
+            "status": "indexed",
+            "source": self.config.source,
+            "chunk_count": len(chunks),
+            "vector_count": len(records),
+            "vector_ids": [record.id for record in records],
+        }
 
     def reindex_document(self, external_doc_id: str) -> dict:
-        self._raise_pending("reindex_document", "H8")
+        return self.index_document(external_doc_id)
 
     def list_document_chunks(self, external_doc_id: str) -> list[dict]:
         self._raise_pending("list_document_chunks", "H4")
@@ -194,6 +240,87 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
     @staticmethod
     def _component_status(component: object | None) -> str:
         return "pending" if component is None else "ready"
+
+    def _delete_old_vectors_after_reindex(
+        self,
+        old_vector_ids: list[str],
+        current_vector_ids: list[str],
+    ) -> None:
+        current_ids = set(current_vector_ids)
+        old_ids_to_delete = [
+            vector_id for vector_id in old_vector_ids if vector_id not in current_ids
+        ]
+        if old_ids_to_delete:
+            self.vector_store.delete(old_ids_to_delete)
+
+    def _build_vector_records(
+        self,
+        external_doc_id: str,
+        document: KnowledgeDocument,
+        chunks: list[DocumentChunkCandidate],
+    ) -> list[VectorRecord]:
+        if not chunks:
+            return []
+        embeddings = self.embedding_provider.embed_batch(
+            [chunk.content for chunk in chunks]
+        )
+        if len(embeddings) != len(chunks):
+            raise RuntimeError(
+                "EmbeddingProvider returned a vector count that did not match chunks."
+            )
+        return [
+            VectorRecord(
+                id=self._chunk_vector_id(external_doc_id, chunk),
+                vector=embedding.vector,
+                text=chunk.content,
+                metadata=self._chunk_vector_metadata(
+                    document=document,
+                    external_doc_id=external_doc_id,
+                    chunk=chunk,
+                    embedding=embedding,
+                ),
+            )
+            for chunk, embedding in zip(chunks, embeddings, strict=True)
+        ]
+
+    @staticmethod
+    def _chunk_vector_id(
+        external_doc_id: str,
+        chunk: DocumentChunkCandidate,
+    ) -> str:
+        return f"document_chunk:{external_doc_id}:{chunk.chunk_index}"
+
+    @staticmethod
+    def _chunk_vector_metadata(
+        document: KnowledgeDocument,
+        external_doc_id: str,
+        chunk: DocumentChunkCandidate,
+        embedding: EmbeddingVector,
+    ) -> dict[str, Any]:
+        return {
+            "source_type": "document",
+            "source": document.source,
+            "document_id": document.document_id,
+            "external_doc_id": external_doc_id,
+            "chunk_id": f"{external_doc_id}:{chunk.chunk_index}",
+            "chunk_index": chunk.chunk_index,
+            "title": chunk.title or document.title,
+            "document_title": document.title,
+            "content_hash": chunk.content_hash,
+            "token_count": chunk.token_count,
+            "char_count": chunk.char_count,
+            "start_char": chunk.start_char,
+            "end_char": chunk.end_char,
+            "page_number": chunk.page_number,
+            "section_path": chunk.section_path,
+            "paragraph_start_index": chunk.paragraph_start_index,
+            "paragraph_end_index": chunk.paragraph_end_index,
+            "embedding_provider": embedding.provider,
+            "embedding_model": embedding.model,
+            "embedding_dimension": embedding.dimension,
+            "embedding_text_hash": embedding.text_hash,
+            "chunk_metadata": chunk.metadata,
+        }
 
     @staticmethod
     def _raise_pending(method_name: str, task_id: str) -> NoReturn:

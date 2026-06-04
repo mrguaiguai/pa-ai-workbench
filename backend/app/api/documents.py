@@ -106,7 +106,7 @@ def index_document(
     return DocumentIndexResponse(
         document=DocumentRead.model_validate(updated),
         chunk_count=chunk_count,
-        message="Document parsed and chunked. Vector indexing is pending.",
+        message="Document parsed, chunked, embedded, and indexed.",
     )
 
 
@@ -123,7 +123,7 @@ def reindex_document(
     return DocumentIndexResponse(
         document=DocumentRead.model_validate(updated),
         chunk_count=chunk_count,
-        message="Document chunks rebuilt. Vector indexing is pending.",
+        message="Document chunks rebuilt, embedded, and indexed.",
     )
 
 
@@ -165,7 +165,7 @@ def retry_document_index(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return DocumentRetryIndexResponse(
         document=DocumentRead.model_validate(updated),
-        message="Document chunks rebuilt. Vector indexing is pending.",
+        message="Document chunks rebuilt, embedded, and indexed.",
     )
 
 

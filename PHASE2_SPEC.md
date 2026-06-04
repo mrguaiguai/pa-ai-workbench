@@ -1041,7 +1041,7 @@ configured
 | H5 | 文档 parse/chunk/index 状态流转 | [x] |
 | H6 | VectorStore 抽象与 MockVectorStore | [x] |
 | H7 | Local Chroma VectorStore | [x] |
-| H8 | 文档索引管线接入 EmbeddingProvider | [ ] |
+| H8 | 文档索引管线接入 EmbeddingProvider | [x] |
 | H9 | 真实 retrieve 接入 document chunks | [ ] |
 | H10 | Citation evidence 真实绑定 | [ ] |
 | H11 | `/api/rag/retrieve` 调试接口 | [ ] |

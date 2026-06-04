@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 from fastapi import UploadFile
 from sqlmodel import Session
@@ -14,9 +15,15 @@ from app.storage.file_store import save_upload_file
 from knowledge_engine.chunking import Chunker
 from knowledge_engine.chunking import DocumentChunkCandidate
 from knowledge_engine.chunking import ParagraphChunker
+from knowledge_engine.embeddings.base import EmbeddingProvider
+from knowledge_engine.embeddings.factory import get_embedding_provider
+from knowledge_engine.embeddings.schemas import EmbeddingVector
 from knowledge_engine.parsers import DocumentParser
 from knowledge_engine.parsers import FileDocumentParser
 from knowledge_engine.parsers import ParsedDocument
+from knowledge_engine.vectorstores import VectorRecord
+from knowledge_engine.vectorstores import VectorStore
+from knowledge_engine.vectorstores import get_vector_store
 
 MAX_ERROR_MESSAGE_CHARS = 500
 
@@ -101,8 +108,12 @@ def index_document_chunks(
     document: Document,
     parser: DocumentParser | None = None,
     chunker: Chunker | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
+    vector_store: VectorStore | None = None,
 ) -> tuple[Document, int]:
     try:
+        resolved_embedding_provider = embedding_provider or get_embedding_provider()
+        resolved_vector_store = vector_store or get_vector_store()
         _transition_document(
             session=session,
             document=document,
@@ -132,27 +143,48 @@ def index_document_chunks(
         )
         resolved_chunker = chunker or ParagraphChunker()
         chunks = resolved_chunker.chunk(parsed)
-        _replace_document_chunks(session, document, chunks)
+        existing_vector_ids = _document_vector_ids(session, document.id)
+        indexed_chunks = _replace_document_chunks(session, document, chunks)
         _transition_document(
             session=session,
             document=document,
             status="chunked",
             step="chunk",
             event_status="completed",
-            message="Document chunking completed; vector indexing is pending.",
+            message="Document chunking completed.",
             metadata={"chunk_count": len(chunks)},
         )
-        _record_event(
+
+        _transition_document(
             session=session,
             document=document,
+            status="indexing",
             step="index",
-            status="deferred",
-            message="Vector indexing is deferred until vector store and embedding pipeline tasks.",
-            metadata={"chunk_count": len(chunks)},
+            event_status="started",
+            message="Document vector indexing started.",
+            metadata={"chunk_count": len(indexed_chunks)},
         )
-        session.commit()
-        session.refresh(document)
-        return document, len(chunks)
+        _index_chunks_with_embeddings(
+            session=session,
+            document=document,
+            chunks=indexed_chunks,
+            embedding_provider=resolved_embedding_provider,
+            vector_store=resolved_vector_store,
+            old_vector_ids=existing_vector_ids,
+        )
+        _transition_document(
+            session=session,
+            document=document,
+            status="indexed",
+            step="index",
+            event_status="completed",
+            message="Document vector indexing completed.",
+            metadata={
+                "chunk_count": len(indexed_chunks),
+                "vector_count": len(indexed_chunks),
+            },
+        )
+        return document, len(indexed_chunks)
     except Exception as exc:
         _fail_document_step(session, document, failed_step="index", exc=exc)
         raise DocumentWorkflowError(str(exc)) from exc
@@ -163,6 +195,8 @@ def reindex_document_chunks(
     document: Document,
     parser: DocumentParser | None = None,
     chunker: Chunker | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
+    vector_store: VectorStore | None = None,
 ) -> tuple[Document, int]:
     _record_event(
         session=session,
@@ -177,6 +211,8 @@ def reindex_document_chunks(
         document=document,
         parser=parser,
         chunker=chunker,
+        embedding_provider=embedding_provider,
+        vector_store=vector_store,
     )
 
 
@@ -238,12 +274,25 @@ def _replace_document_chunks(
     session: Session,
     document: Document,
     chunks: list[DocumentChunkCandidate],
-) -> None:
+) -> list[DocumentChunk]:
     for existing in list_document_chunks(session, document.id):
         session.delete(existing)
     session.flush()
+    models: list[DocumentChunk] = []
     for candidate in chunks:
-        session.add(_chunk_candidate_to_model(document, candidate))
+        model = _chunk_candidate_to_model(document, candidate)
+        session.add(model)
+        models.append(model)
+    session.flush()
+    return models
+
+
+def _document_vector_ids(session: Session, document_id: str) -> list[str]:
+    return [
+        chunk.vector_id
+        for chunk in list_document_chunks(session, document_id)
+        if chunk.vector_id
+    ]
 
 
 def _chunk_candidate_to_model(
@@ -272,6 +321,131 @@ def _chunk_candidate_to_model(
         embedding_status="pending",
         vector_id=None,
     )
+
+
+def _index_chunks_with_embeddings(
+    session: Session,
+    document: Document,
+    chunks: list[DocumentChunk],
+    embedding_provider: EmbeddingProvider,
+    vector_store: VectorStore,
+    old_vector_ids: list[str] | None = None,
+) -> None:
+    if not chunks:
+        _delete_old_vectors_after_reindex(
+            session=session,
+            document=document,
+            vector_store=vector_store,
+            old_vector_ids=old_vector_ids or [],
+            current_vector_ids=[],
+        )
+        session.commit()
+        return
+
+    embeddings = embedding_provider.embed_batch([chunk.content for chunk in chunks])
+    if len(embeddings) != len(chunks):
+        raise DocumentWorkflowError(
+            "EmbeddingProvider returned a vector count that did not match chunks."
+        )
+
+    records = [
+        _chunk_to_vector_record(document, chunk, embedding)
+        for chunk, embedding in zip(chunks, embeddings, strict=True)
+    ]
+    vector_store.upsert(records)
+    _delete_old_vectors_after_reindex(
+        session=session,
+        document=document,
+        vector_store=vector_store,
+        old_vector_ids=old_vector_ids or [],
+        current_vector_ids=[record.id for record in records],
+    )
+
+    updated_at = utc_now()
+    for chunk, record in zip(chunks, records, strict=True):
+        chunk.embedding_status = "indexed"
+        chunk.vector_id = record.id
+        chunk.updated_at = updated_at
+        session.add(chunk)
+    session.commit()
+
+
+def _delete_old_vectors_after_reindex(
+    session: Session,
+    document: Document,
+    vector_store: VectorStore,
+    old_vector_ids: list[str],
+    current_vector_ids: list[str],
+) -> None:
+    current_ids = set(current_vector_ids)
+    old_ids_to_delete = [
+        vector_id for vector_id in old_vector_ids if vector_id not in current_ids
+    ]
+    if not old_ids_to_delete:
+        return
+
+    deleted_count = vector_store.delete(old_ids_to_delete)
+    _record_event(
+        session=session,
+        document=document,
+        step="index",
+        status="deleted",
+        message="Existing document vectors deleted after successful reindex.",
+        metadata={
+            "requested_vector_count": len(old_ids_to_delete),
+            "deleted_vector_count": deleted_count,
+        },
+    )
+
+
+def _chunk_to_vector_record(
+    document: Document,
+    chunk: DocumentChunk,
+    embedding: EmbeddingVector,
+) -> VectorRecord:
+    return VectorRecord(
+        id=_chunk_vector_id(chunk),
+        vector=embedding.vector,
+        text=chunk.content,
+        metadata=_chunk_vector_metadata(document, chunk, embedding),
+    )
+
+
+def _chunk_vector_id(chunk: DocumentChunk) -> str:
+    return f"document_chunk:{chunk.id}"
+
+
+def _chunk_vector_metadata(
+    document: Document,
+    chunk: DocumentChunk,
+    embedding: EmbeddingVector,
+) -> dict[str, Any]:
+    return {
+        "source_type": "document",
+        "source": chunk.source,
+        "document_id": document.id,
+        "external_doc_id": document.external_doc_id,
+        "chunk_id": chunk.id,
+        "chunk_index": chunk.chunk_index,
+        "title": chunk.title or document.title,
+        "document_title": document.title,
+        "business_area": chunk.business_area,
+        "document_type": chunk.document_type,
+        "content_hash": chunk.content_hash,
+        "token_count": chunk.token_count,
+        "char_count": chunk.char_count,
+        "start_char": chunk.start_char,
+        "end_char": chunk.end_char,
+        "page_number": chunk.page_number,
+        "section_path": _from_json(chunk.section_path) or [],
+        "paragraph_start_index": chunk.paragraph_start_index,
+        "paragraph_end_index": chunk.paragraph_end_index,
+        "embedding_provider": embedding.provider,
+        "embedding_model": embedding.model,
+        "embedding_dimension": embedding.dimension,
+        "embedding_text_hash": embedding.text_hash,
+        "chunk_metadata": _from_json(chunk.metadata_json) or {},
+    }
 
 
 def _transition_document(
@@ -349,3 +523,12 @@ def _record_event(
 
 def _to_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _from_json(value: str | None) -> Any:
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
