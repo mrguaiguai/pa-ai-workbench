@@ -342,6 +342,17 @@ class WikiPageCreateRequest(BaseModel):
     citations: list[WikiCitationPayload] = Field(default_factory=list)
 
 
+class WikiDraftFromOutputRequest(BaseModel):
+    slug: str | None = None
+    title: str | None = None
+    summary: str | None = None
+    tags: list[str] | None = None
+    business_area: str | None = None
+    page_type: str | None = None
+    created_by: str | None = None
+    metadata: dict | None = None
+
+
 class WikiPageUpdateRequest(BaseModel):
     title: str | None = None
     summary: str | None = None

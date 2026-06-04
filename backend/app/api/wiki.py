@@ -12,12 +12,14 @@ from app.models import WikiCitation
 from app.models import WikiPage as WikiPageModel
 from app.schemas import EvidenceRead
 from app.schemas import WikiCitationRead
+from app.schemas import WikiDraftFromOutputRequest
 from app.schemas import WikiPageCreateRequest
 from app.schemas import WikiPageRead
 from app.schemas import WikiPageSummaryRead
 from app.schemas import WikiPageUpdateRequest
 from app.schemas import WikiSearchResponse
 from app.services.wiki_service import citation_metadata
+from app.services.wiki_service import create_wiki_draft_from_output
 from app.services.wiki_service import create_wiki_page_record
 from app.services.wiki_service import get_wiki_page_record
 from app.services.wiki_service import list_wiki_citation_records
@@ -30,6 +32,7 @@ from app.services.wiki_service import read_wiki_page
 from app.services.wiki_service import search_wiki_page_records
 from app.services.wiki_service import search_wiki_pages
 from app.services.wiki_service import update_wiki_page_record
+from app.services.wiki_service import WikiDraftSourceNotFoundError
 from app.services.wiki_service import WikiPageConflictError
 from app.services.wiki_service import WikiPageNotFoundError
 from knowledge_engine.schemas import WikiPage
@@ -72,6 +75,29 @@ def create_wiki(
         page = create_wiki_page_record(session=session, payload=payload)
     except WikiPageConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _page_record_to_read(session=session, page=page)
+
+
+@router.post(
+    "/drafts/from-output/{output_id}",
+    response_model=WikiPageRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_wiki_draft_from_output_api(
+    output_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    payload: WikiDraftFromOutputRequest | None = None,
+) -> WikiPageRead:
+    try:
+        page = create_wiki_draft_from_output(
+            session=session,
+            output_id=output_id,
+            payload=payload,
+        )
+    except WikiDraftSourceNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _page_record_to_read(session=session, page=page)
