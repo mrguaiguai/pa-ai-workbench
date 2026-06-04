@@ -1055,7 +1055,7 @@ configured
 | I3 | Wiki draft / publish 状态 | [x] |
 | I4 | 从 output 生成 Wiki 草稿 service | [x] |
 | I5 | Wiki 页面索引进入 VectorStore | [x] |
-| I6 | retrieve 同时支持 document + wiki evidence | [ ] |
+| I6 | retrieve 同时支持 document + wiki evidence | [x] |
 | I7 | Wiki search/read 使用真实 WikiStore | [ ] |
 
 ### 阶段 J：Agent 接入真实 RAG / Wiki

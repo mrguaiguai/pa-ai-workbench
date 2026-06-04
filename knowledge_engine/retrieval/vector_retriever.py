@@ -32,7 +32,7 @@ class VectorRetriever:
             VectorSearchRequest(
                 query_vector=query_embedding.vector,
                 top_k=request.top_k,
-                filters=self._document_filters(request.filters),
+                filters=self._vector_filters(request.filters),
                 score_threshold=request.score_threshold,
             )
         )
@@ -40,14 +40,17 @@ class VectorRetriever:
             [self._to_evidence(result) for result in results]
         )
 
-    @staticmethod
-    def _document_filters(filters: dict[str, Any] | None) -> dict[str, Any]:
+    @classmethod
+    def _vector_filters(cls, filters: dict[str, Any] | None) -> dict[str, Any]:
         normalized = {
             key: value
             for key, value in (filters or {}).items()
             if value is not None and key != "source_type"
         }
-        return {**normalized, "source_type": "document"}
+        source_type = cls._source_type_filter((filters or {}).get("source_type"))
+        if source_type:
+            normalized["source_type"] = source_type
+        return normalized
 
     def _to_evidence(self, result: VectorSearchResult) -> Evidence:
         metadata = result.record.metadata
@@ -65,6 +68,7 @@ class VectorRetriever:
             source=self.source,
             metadata=self._evidence_metadata(metadata),
             source_type=self._evidence_source_type(metadata),
+            wiki_page_id=self._optional_str(metadata.get("wiki_page_id")),
         )
 
     @staticmethod
@@ -86,3 +90,14 @@ class VectorRetriever:
         if raw in {"wiki", "wiki_page", "wiki-page"}:
             return "wiki_page"
         return raw or "document_chunk"
+
+    @staticmethod
+    def _source_type_filter(value: Any) -> str | None:
+        normalized = str(value or "").strip().lower()
+        if not normalized or normalized in {"all", "any", "*"}:
+            return None
+        if normalized in {"document", "document_chunk", "chunk"}:
+            return "document"
+        if normalized in {"wiki", "wiki_page", "wiki-page"}:
+            return "wiki_page"
+        return normalized
