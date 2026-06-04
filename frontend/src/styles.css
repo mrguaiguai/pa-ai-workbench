@@ -520,7 +520,7 @@ p {
 
 .library-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -759,6 +759,64 @@ p {
   font-size: 0.78rem;
   font-weight: 800;
   padding: 4px 8px;
+}
+
+.document-pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.document-pipeline span {
+  min-height: 24px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  color: #52636e;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 4px 8px;
+}
+
+.document-pipeline span.done {
+  border-color: #bfd9cb;
+  background: #eef7f1;
+  color: #256340;
+}
+
+.document-pipeline span.active {
+  border-color: #c4d9e3;
+  background: #edf6fa;
+  color: #176b87;
+}
+
+.document-pipeline span.failed {
+  border-color: #edc7c2;
+  background: #fff1ef;
+  color: #9b382d;
+}
+
+.document-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  color: #9b382d;
+  font-size: 0.78rem;
+}
+
+.document-error span {
+  min-height: 22px;
+  border-radius: 8px;
+  background: #fff1ef;
+  font-weight: 800;
+  padding: 3px 7px;
+}
+
+.document-error strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
 }
 
 .document-actions {

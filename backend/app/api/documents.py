@@ -52,7 +52,7 @@ async def upload_document(
         source=source,
         keywords_json=keywords_json,
     )
-    return DocumentUploadResponse(document=DocumentRead.model_validate(document))
+    return DocumentUploadResponse(document=_document_read(session, document))
 
 
 @router.get("", response_model=DocumentListResponse)
@@ -61,7 +61,7 @@ def list_document_records(
 ) -> DocumentListResponse:
     documents = list_documents(session)
     return DocumentListResponse(
-        items=[DocumentRead.model_validate(document) for document in documents],
+        items=[_document_read(session, document) for document in documents],
         total=len(documents),
     )
 
@@ -74,7 +74,7 @@ def read_document(
     document = get_document(session, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    return DocumentRead.model_validate(document)
+    return _document_read(session, document)
 
 
 @router.post("/{document_id}/parse", response_model=DocumentParseResponse)
@@ -88,7 +88,7 @@ def parse_document(
     except DocumentWorkflowError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return DocumentParseResponse(
-        document=DocumentRead.model_validate(updated),
+        document=_document_read(session, updated),
         parse_metadata=parse_metadata,
     )
 
@@ -104,7 +104,7 @@ def index_document(
     except DocumentWorkflowError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return DocumentIndexResponse(
-        document=DocumentRead.model_validate(updated),
+        document=_document_read(session, updated),
         chunk_count=chunk_count,
         message="Document parsed, chunked, embedded, and indexed.",
     )
@@ -121,7 +121,7 @@ def reindex_document(
     except DocumentWorkflowError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return DocumentIndexResponse(
-        document=DocumentRead.model_validate(updated),
+        document=_document_read(session, updated),
         chunk_count=chunk_count,
         message="Document chunks rebuilt, embedded, and indexed.",
     )
@@ -164,7 +164,7 @@ def retry_document_index(
     except DocumentWorkflowError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return DocumentRetryIndexResponse(
-        document=DocumentRead.model_validate(updated),
+        document=_document_read(session, updated),
         message="Document chunks rebuilt, embedded, and indexed.",
     )
 
@@ -174,3 +174,39 @@ def _require_document(session: Session, document_id: str):
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
     return document
+
+
+def _document_read(session: Session, document) -> DocumentRead:
+    chunks = list_document_chunks(session, document.id)
+    indexed_count = sum(1 for chunk in chunks if chunk.embedding_status == "indexed")
+    failed_count = sum(1 for chunk in chunks if chunk.embedding_status == "failed")
+    pending_count = len(chunks) - indexed_count - failed_count
+    return DocumentRead.model_validate(document).model_copy(
+        update={
+            "chunk_count": len(chunks),
+            "indexed_chunk_count": indexed_count,
+            "pending_chunk_count": pending_count,
+            "failed_chunk_count": failed_count,
+            "embedding_status": _embedding_status(
+                chunk_count=len(chunks),
+                indexed_count=indexed_count,
+                failed_count=failed_count,
+            ),
+        }
+    )
+
+
+def _embedding_status(
+    chunk_count: int,
+    indexed_count: int,
+    failed_count: int,
+) -> str:
+    if chunk_count == 0:
+        return "none"
+    if failed_count:
+        return "failed"
+    if indexed_count == chunk_count:
+        return "indexed"
+    if indexed_count:
+        return "partial"
+    return "pending"

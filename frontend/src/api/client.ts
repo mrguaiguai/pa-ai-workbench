@@ -43,6 +43,12 @@ export type Document = {
   summary: string | null;
   status: string;
   error_message: string | null;
+  failed_step: string | null;
+  chunk_count: number;
+  indexed_chunk_count: number;
+  pending_chunk_count: number;
+  failed_chunk_count: number;
+  embedding_status: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -31,6 +31,9 @@ const initialForm: LibraryForm = {
   source: "manual",
 };
 
+const runningStatuses = new Set(["parsing", "chunking", "indexing"]);
+const parsedStatuses = new Set(["parsed", "chunked", "indexing", "indexed"]);
+
 function formatFileSize(size: number | null) {
   if (size === null) {
     return "-";
@@ -63,6 +66,74 @@ function errorMessage(error: unknown) {
   return "Unknown error";
 }
 
+function stageClass(state: string) {
+  if (state.includes("失败") || state === "failed") {
+    return "failed";
+  }
+  if (state.includes("中") || state === "partial" || state === "pending") {
+    return "active";
+  }
+  if (state.includes("完成") || state.includes("已") || state === "indexed") {
+    return "done";
+  }
+  return "idle";
+}
+
+function parseStatus(document: Document) {
+  if (document.status === "failed" && document.failed_step === "parse") {
+    return "解析失败";
+  }
+  if (document.status === "parsing") {
+    return "解析中";
+  }
+  if (parsedStatuses.has(document.status) || document.chunk_count > 0) {
+    return "已解析";
+  }
+  return "待解析";
+}
+
+function chunkStatus(document: Document) {
+  if (document.status === "failed" && document.failed_step === "chunk") {
+    return "分块失败";
+  }
+  if (document.status === "chunking") {
+    return "分块中";
+  }
+  if (document.chunk_count > 0) {
+    return `${document.chunk_count} chunks`;
+  }
+  return "待分块";
+}
+
+function embeddingStatus(document: Document) {
+  if (document.embedding_status === "indexed") {
+    return `${document.indexed_chunk_count}/${document.chunk_count} embedded`;
+  }
+  if (document.embedding_status === "partial") {
+    return `${document.indexed_chunk_count}/${document.chunk_count} embedding`;
+  }
+  if (document.embedding_status === "failed") {
+    return "embedding 失败";
+  }
+  if (document.status === "indexing" || document.embedding_status === "pending") {
+    return "embedding 中";
+  }
+  return "待 embedding";
+}
+
+function indexStatus(document: Document) {
+  if (document.status === "indexed") {
+    return "已索引";
+  }
+  if (document.status === "indexing") {
+    return "索引中";
+  }
+  if (document.status === "failed" && document.failed_step === "index") {
+    return "索引失败";
+  }
+  return "待索引";
+}
+
 export function LibraryPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -74,6 +145,14 @@ export function LibraryPage() {
 
   const indexedCount = useMemo(
     () => documents.filter((document) => document.status === "indexed").length,
+    [documents],
+  );
+  const processingCount = useMemo(
+    () => documents.filter((document) => runningStatuses.has(document.status)).length,
+    [documents],
+  );
+  const failedCount = useMemo(
+    () => documents.filter((document) => document.status === "failed").length,
     [documents],
   );
 
@@ -156,6 +235,14 @@ export function LibraryPage() {
         <div className="library-stat">
           <span>已索引</span>
           <strong>{indexedCount}</strong>
+        </div>
+        <div className="library-stat">
+          <span>处理中</span>
+          <strong>{processingCount}</strong>
+        </div>
+        <div className="library-stat">
+          <span>失败</span>
+          <strong>{failedCount}</strong>
         </div>
         <div className="library-stat">
           <span>后端</span>
@@ -246,6 +333,26 @@ export function LibraryPage() {
                       <span>{formatFileSize(document.file_size)}</span>
                       <span>{formatDate(document.created_at)}</span>
                     </div>
+                    <div className="document-pipeline" aria-label="处理状态">
+                      <span className={stageClass(parseStatus(document))}>
+                        解析：{parseStatus(document)}
+                      </span>
+                      <span className={stageClass(chunkStatus(document))}>
+                        分块：{chunkStatus(document)}
+                      </span>
+                      <span className={stageClass(document.embedding_status || "")}>
+                        向量：{embeddingStatus(document)}
+                      </span>
+                      <span className={stageClass(indexStatus(document))}>
+                        索引：{indexStatus(document)}
+                      </span>
+                    </div>
+                    {document.status === "failed" ? (
+                      <div className="document-error">
+                        <span>{document.failed_step || "workflow"}</span>
+                        <strong>{document.error_message || "处理失败"}</strong>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="document-actions">

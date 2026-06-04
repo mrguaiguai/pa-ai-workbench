@@ -27,6 +27,11 @@ class DocumentRead(BaseModel):
     status: str
     error_message: str | None = None
     failed_step: str | None = None
+    chunk_count: int = 0
+    indexed_chunk_count: int = 0
+    pending_chunk_count: int = 0
+    failed_chunk_count: int = 0
+    embedding_status: str | None = None
     created_at: datetime
     updated_at: datetime
 
