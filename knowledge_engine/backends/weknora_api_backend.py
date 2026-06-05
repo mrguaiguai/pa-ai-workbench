@@ -1,6 +1,7 @@
 import json
 import mimetypes
 import os
+from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 from urllib.error import HTTPError
@@ -138,6 +139,28 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "error_message": data.get("error_message") or None,
             "metadata": self._document_metadata(data, {}),
         }
+
+    def list_document_chunks(
+        self,
+        external_doc_id: str,
+        page: int = 1,
+        page_size: int = 100,
+    ) -> list[dict]:
+        self._require_configured()
+        query = urlencode(
+            {
+                "page": max(page, 1),
+                "page_size": min(max(page_size, 1), 100),
+                "chunk_type": "text",
+            }
+        )
+        data = self._request_json("GET", f"/api/v1/chunks/{external_doc_id}?{query}")
+        items = self._unwrap_items(data)
+        return [
+            self._to_document_chunk_preview(item, external_doc_id)
+            for item in items
+            if isinstance(item, dict)
+        ]
 
     def retrieve(
         self,
@@ -482,6 +505,56 @@ class WeKnoraApiBackend(KnowledgeEngine):
         return metadata
 
     @staticmethod
+    def _to_document_chunk_preview(item: dict, external_doc_id: str) -> dict:
+        content = str(item.get("content") or "")
+        raw_metadata = item.get("metadata")
+        metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+        for key in (
+            "id",
+            "seq_id",
+            "knowledge_id",
+            "knowledge_base_id",
+            "tag_id",
+            "chunk_index",
+            "is_enabled",
+            "status",
+            "start_at",
+            "end_at",
+            "pre_chunk_id",
+            "next_chunk_id",
+            "chunk_type",
+            "parent_chunk_id",
+            "relation_chunks",
+            "indirect_relation_chunks",
+            "image_info",
+            "created_at",
+            "updated_at",
+        ):
+            if key in item and item.get(key) not in (None, ""):
+                metadata[f"weknora_{key}"] = item.get(key)
+        metadata["source"] = "weknora_api"
+        return {
+            "id": item.get("id"),
+            "external_doc_id": item.get("knowledge_id") or external_doc_id,
+            "chunk_index": int(item.get("chunk_index") or 0),
+            "title": item.get("title"),
+            "content": content,
+            "content_hash": item.get("content_hash") or _content_hash(content),
+            "token_count": int(item.get("token_count") or 0),
+            "char_count": len(content),
+            "start_char": _optional_int(item.get("start_at")),
+            "end_char": _optional_int(item.get("end_at")),
+            "page_number": _optional_int(item.get("page_number")),
+            "section_path": item.get("section_path"),
+            "paragraph_start_index": None,
+            "paragraph_end_index": None,
+            "source": "weknora_api",
+            "metadata": metadata,
+            "embedding_status": "indexed" if item.get("is_enabled", True) else "disabled",
+            "vector_id": item.get("vector_id"),
+        }
+
+    @staticmethod
     def _evidence_id(
         source_type: str,
         chunk_id: str | None,
@@ -560,3 +633,16 @@ def _shorten(value: str, limit: int = 240) -> str:
     if len(collapsed) <= limit:
         return collapsed
     return collapsed[: limit - 3] + "..."
+
+
+def _content_hash(value: str) -> str:
+    return sha256(value.encode("utf-8")).hexdigest()
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

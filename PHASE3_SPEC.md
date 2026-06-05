@@ -911,7 +911,7 @@ WeKnora service account 配置。
 | P3-M1-B2 | WeKnoraKnowledgeBackend 文档上传/状态适配 | [x] |
 | P3-M1-B3 | WeKnoraKnowledgeBackend retrieve 适配 | [x] |
 | P3-M1-B4 | Evidence / Citation 标准化与 contract tests | [x] |
-| P3-M1-B5 | 文档 chunk / evidence 预览 API 接入 | [ ] |
+| P3-M1-B5 | 文档 chunk / evidence 预览 API 接入 | [x] |
 
 #### P3-M1-B1：WeKnora RAG API 审计与响应映射
 
@@ -1036,7 +1036,7 @@ curl chunks API + 前端页面检查。
 风险：
 若 WeKnora 不支持 chunk list，需要 M1 fallback 为检索 evidence preview，并明确标记。
 
-状态：[ ]
+状态：[x]
 
 ### M1-C：WeKnora Wiki Adapter
 

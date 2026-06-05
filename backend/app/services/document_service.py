@@ -276,12 +276,66 @@ def retry_index_document(session: Session, document: Document) -> Document:
 
 
 def list_document_chunks(session: Session, document_id: str) -> list[DocumentChunk]:
+    document = session.get(Document, document_id)
+    if document and document.knowledge_backend == "weknora_api" and document.external_doc_id:
+        try:
+            return _list_weknora_document_chunks(document)
+        except KnowledgeBackendUnavailableError as exc:
+            _record_event(
+                session=session,
+                document=document,
+                step="weknora_chunks",
+                status="failed",
+                message="WeKnora document chunk preview failed.",
+                error_message=str(exc)[:MAX_ERROR_MESSAGE_CHARS],
+            )
+            session.commit()
+    return _list_local_document_chunks(session, document_id)
+
+
+def _list_local_document_chunks(session: Session, document_id: str) -> list[DocumentChunk]:
     statement = (
         select(DocumentChunk)
         .where(DocumentChunk.document_id == document_id)
         .order_by(DocumentChunk.chunk_index)
     )
     return list(session.exec(statement).all())
+
+
+def _list_weknora_document_chunks(document: Document) -> list[DocumentChunk]:
+    raw_chunks = _weknora_backend().list_document_chunks(document.external_doc_id or "")
+    now = utc_now()
+    chunks: list[DocumentChunk] = []
+    for index, raw in enumerate(raw_chunks):
+        metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+        chunks.append(
+            DocumentChunk(
+                id=str(raw.get("id") or f"weknora_chunk_{document.id}_{index}"),
+                document_id=document.id,
+                external_doc_id=str(raw.get("external_doc_id") or document.external_doc_id or ""),
+                chunk_index=int(raw.get("chunk_index") or index),
+                title=raw.get("title") or document.title,
+                content=str(raw.get("content") or ""),
+                content_hash=str(raw.get("content_hash") or ""),
+                token_count=int(raw.get("token_count") or 0),
+                char_count=int(raw.get("char_count") or len(str(raw.get("content") or ""))),
+                start_char=raw.get("start_char"),
+                end_char=raw.get("end_char"),
+                page_number=raw.get("page_number"),
+                section_path=_to_json(raw.get("section_path")) if raw.get("section_path") else None,
+                paragraph_start_index=raw.get("paragraph_start_index"),
+                paragraph_end_index=raw.get("paragraph_end_index"),
+                business_area=document.business_area,
+                document_type=document.document_type,
+                source=str(raw.get("source") or "weknora_api"),
+                metadata_json=_to_json(metadata),
+                embedding_status=str(raw.get("embedding_status") or "indexed"),
+                vector_id=raw.get("vector_id"),
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    return sorted(chunks, key=lambda chunk: chunk.chunk_index)
 
 
 def list_document_events(session: Session, document_id: str) -> list[DocumentProcessingEvent]:
@@ -397,7 +451,7 @@ def _replace_document_chunks(
     document: Document,
     chunks: list[DocumentChunkCandidate],
 ) -> list[DocumentChunk]:
-    for existing in list_document_chunks(session, document.id):
+    for existing in _list_local_document_chunks(session, document.id):
         session.delete(existing)
     session.flush()
     models: list[DocumentChunk] = []
@@ -412,7 +466,7 @@ def _replace_document_chunks(
 def _document_vector_ids(session: Session, document_id: str) -> list[str]:
     return [
         chunk.vector_id
-        for chunk in list_document_chunks(session, document_id)
+        for chunk in _list_local_document_chunks(session, document_id)
         if chunk.vector_id
     ]
 
