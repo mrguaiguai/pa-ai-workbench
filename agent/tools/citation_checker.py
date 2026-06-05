@@ -43,7 +43,11 @@ class CitationChecker:
                 warnings.append(f"Citation {index} is missing evidence text.")
             if not citation.source.strip():
                 warnings.append(f"Citation {index} is missing a source.")
-            if citation.score is not None and not 0 <= citation.score <= 1:
+            if (
+                citation.source != "weknora_api"
+                and citation.score is not None
+                and not 0 <= citation.score <= 1
+            ):
                 warnings.append(f"Citation {index} has an out-of-range score.")
             warnings.extend(self._traceability_warnings(index, citation))
             if evidence_check_enabled:

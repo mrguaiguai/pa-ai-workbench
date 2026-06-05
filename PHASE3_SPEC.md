@@ -910,7 +910,7 @@ WeKnora service account 配置。
 | P3-M1-B1 | WeKnora RAG API 审计与响应映射 | [x] |
 | P3-M1-B2 | WeKnoraKnowledgeBackend 文档上传/状态适配 | [x] |
 | P3-M1-B3 | WeKnoraKnowledgeBackend retrieve 适配 | [x] |
-| P3-M1-B4 | Evidence / Citation 标准化与 contract tests | [ ] |
+| P3-M1-B4 | Evidence / Citation 标准化与 contract tests | [x] |
 | P3-M1-B5 | 文档 chunk / evidence 预览 API 接入 | [ ] |
 
 #### P3-M1-B1：WeKnora RAG API 审计与响应映射
@@ -1011,7 +1011,7 @@ contract tests 覆盖 document_chunk 和 wiki_page。
 风险：
 WeKnora 返回字段缺失时必须 fail closed，不生成伪 citation。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-B5：文档 chunk / evidence 预览 API 接入
 
