@@ -909,7 +909,7 @@ WeKnora service account 配置。
 | --- | --- | --- |
 | P3-M1-B1 | WeKnora RAG API 审计与响应映射 | [x] |
 | P3-M1-B2 | WeKnoraKnowledgeBackend 文档上传/状态适配 | [x] |
-| P3-M1-B3 | WeKnoraKnowledgeBackend retrieve 适配 | [ ] |
+| P3-M1-B3 | WeKnoraKnowledgeBackend retrieve 适配 | [x] |
 | P3-M1-B4 | Evidence / Citation 标准化与 contract tests | [ ] |
 | P3-M1-B5 | 文档 chunk / evidence 预览 API 接入 | [ ] |
 
@@ -986,7 +986,7 @@ adapter contract test + smoke retrieve。
 风险：
 WeKnora score 范围和 PA score 假设不同，需要 normalize 或保留 metadata。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-B4：Evidence / Citation 标准化与 contract tests
 

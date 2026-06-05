@@ -146,14 +146,22 @@ class WeKnoraApiBackend(KnowledgeEngine):
         top_k: int = 8,
     ) -> list[Evidence]:
         self._require_configured()
-        payload = {
-            "query": query,
-            "filters": filters or {},
-            "top_k": top_k,
-        }
-        data = self._request_json("POST", "/api/retrieve", payload)
-        items = data.get("items", []) if isinstance(data, dict) else data
-        return [self._to_evidence(item) for item in items]
+        normalized_query = query.strip()
+        if not normalized_query:
+            return []
+        filters = filters or {}
+        payload = self._retrieve_payload(normalized_query, filters)
+        data = self._request_json("POST", "/api/v1/knowledge-search", payload)
+        items = self._unwrap_items(data)
+        source_type_filter = self._normalized_source_type(filters.get("source_type"))
+        evidence_items = [self._to_evidence(item) for item in items if isinstance(item, dict)]
+        if source_type_filter:
+            evidence_items = [
+                evidence
+                for evidence in evidence_items
+                if evidence.source_type == source_type_filter
+            ]
+        return evidence_items[: max(top_k, 0)]
 
     def search_wiki(
         self,
@@ -348,11 +356,46 @@ class WeKnoraApiBackend(KnowledgeEngine):
             message = f"{message}; pending subtasks: {pending}"
         return message
 
+    def _retrieve_payload(self, query: str, filters: dict) -> dict:
+        payload: dict[str, object] = {"query": query}
+        knowledge_base_ids = _list_filter(
+            filters.get("knowledge_base_ids")
+            or filters.get("knowledge_base_id")
+            or filters.get("kb_ids")
+            or filters.get("kb_id")
+        )
+        if not knowledge_base_ids and self.default_kb_id:
+            knowledge_base_ids = [self.default_kb_id]
+        if knowledge_base_ids:
+            payload["knowledge_base_ids"] = knowledge_base_ids
+
+        knowledge_ids = _list_filter(
+            filters.get("knowledge_ids")
+            or filters.get("document_ids")
+            or filters.get("external_doc_ids")
+            or filters.get("external_doc_id")
+        )
+        if knowledge_ids:
+            payload["knowledge_ids"] = knowledge_ids
+        return payload
+
+    @staticmethod
+    def _unwrap_items(value: dict | list) -> list:
+        data = WeKnoraApiBackend._unwrap_data(value)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            for key in ("items", "results", "data"):
+                items = data.get(key)
+                if isinstance(items, list):
+                    return items
+        return []
+
     @staticmethod
     def _to_evidence(item: dict) -> Evidence:
-        metadata = dict(item.get("metadata", {}) or {})
+        metadata = WeKnoraApiBackend._search_result_metadata(item)
         source_type = WeKnoraApiBackend._source_type(item, metadata)
-        chunk_id = item.get("chunk_id")
+        chunk_id = item.get("chunk_id") or item.get("id")
         wiki_page_id = item.get("wiki_page_id") or item.get("wiki_id")
         evidence_id = (
             item.get("evidence_id")
@@ -363,10 +406,19 @@ class WeKnoraApiBackend(KnowledgeEngine):
         metadata.setdefault("citation_source_type", source_type)
         return Evidence(
             document_id=item.get("document_id"),
-            external_doc_id=item.get("external_doc_id") or item.get("doc_id"),
+            external_doc_id=(
+                item.get("external_doc_id")
+                or item.get("doc_id")
+                or item.get("knowledge_id")
+            ),
             chunk_id=chunk_id,
-            title=item.get("title", "Untitled evidence"),
-            text=item.get("text", item.get("content", "")),
+            title=(
+                item.get("title")
+                or item.get("knowledge_title")
+                or item.get("knowledge_filename")
+                or "Untitled evidence"
+            ),
+            text=item.get("text") or item.get("content") or item.get("matched_content") or "",
             score=item.get("score"),
             source="weknora_api",
             metadata=metadata,
@@ -383,9 +435,51 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return "document_chunk"
         if normalized in {"wiki", "wiki_page", "wiki-page"}:
             return "wiki_page"
+        match_type = str(item.get("match_type") or metadata.get("match_type") or "").strip().lower()
+        if match_type in {"wiki", "wiki_page", "4"}:
+            return "wiki_page"
         if item.get("wiki_page_id") or item.get("wiki_id"):
             return "wiki_page"
         return "document_chunk"
+
+    @staticmethod
+    def _normalized_source_type(value: object) -> str | None:
+        normalized = str(value or "").strip().lower()
+        if normalized in {"document", "document_chunk", "chunk"}:
+            return "document_chunk"
+        if normalized in {"wiki", "wiki_page", "wiki-page"}:
+            return "wiki_page"
+        return None
+
+    @staticmethod
+    def _search_result_metadata(item: dict) -> dict:
+        raw_metadata = item.get("metadata")
+        metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+        chunk_metadata = item.get("chunk_metadata")
+        if isinstance(chunk_metadata, dict):
+            metadata["chunk_metadata"] = chunk_metadata
+        for key in (
+            "knowledge_base_id",
+            "knowledge_id",
+            "chunk_index",
+            "start_at",
+            "end_at",
+            "seq",
+            "match_type",
+            "sub_chunk_id",
+            "chunk_type",
+            "parent_chunk_id",
+            "image_info",
+            "knowledge_filename",
+            "knowledge_source",
+            "knowledge_channel",
+            "matched_content",
+            "knowledge_description",
+        ):
+            if key in item and item.get(key) not in (None, ""):
+                metadata[f"weknora_{key}"] = item.get(key)
+        metadata["score_semantics"] = "weknora_rrf_or_backend_score"
+        return metadata
 
     @staticmethod
     def _evidence_id(
@@ -416,6 +510,18 @@ def _bool_string(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     return "true" if str(value).strip().lower() in {"1", "true", "yes", "on"} else "false"
+
+
+def _list_filter(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [part.strip() for part in value.split(",")]
+    elif isinstance(value, (list, tuple, set)):
+        values = [str(part).strip() for part in value]
+    else:
+        values = [str(value).strip()]
+    return [item for item in values if item]
 
 
 def _multipart_body(boundary: str, file_path: Path, fields: dict[str, str]) -> bytes:
