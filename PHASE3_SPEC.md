@@ -1171,7 +1171,7 @@ API response 检查 + 前端 Bindings/Sources 展示。
 风险：
 WeKnora 不保存 PA output id，需要 PA metadata 补充。
 
-状态：[ ]
+状态：[x]
 
 ### M1-D：PA Agent 证据工作流
 

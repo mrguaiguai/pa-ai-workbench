@@ -1,4 +1,7 @@
+from datetime import UTC
+from datetime import datetime
 from typing import Annotated
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -176,6 +179,16 @@ def _wiki_summary_to_read(page: WikiPageSummary) -> WikiPageSummaryRead:
 
 def _page_record_to_read(session: Session, page: WikiPageModel) -> WikiPageRead:
     citations = list_wiki_citation_records(session=session, wiki_page_id=page.id)
+    wiki_citations = [_citation_record_to_read(citation) for citation in citations]
+    metadata = {
+        **page_metadata(page),
+        "source_output_id": page.source_output_id,
+        "source_document_ids": page_source_document_ids(page),
+        "source_citation_ids": page_source_citation_ids(page),
+        "wiki_citations": [
+            _citation_record_to_metadata(citation) for citation in citations
+        ],
+    }
     return WikiPageRead(
         id=page.id,
         slug=page.slug,
@@ -191,9 +204,9 @@ def _page_record_to_read(session: Session, page: WikiPageModel) -> WikiPageRead:
         source_document_ids=page_source_document_ids(page),
         source_citation_ids=page_source_citation_ids(page),
         citations=[_citation_record_to_evidence(page, citation) for citation in citations],
-        wiki_citations=[_citation_record_to_read(citation) for citation in citations],
+        wiki_citations=wiki_citations,
         source="wiki",
-        metadata=page_metadata(page),
+        metadata=metadata,
         created_by=page.created_by,
         published_at=page.published_at,
         embedding_status=page.embedding_status,
@@ -205,7 +218,7 @@ def _page_record_to_read(session: Session, page: WikiPageModel) -> WikiPageRead:
 
 
 def _wiki_page_to_read(page: WikiPage) -> WikiPageRead:
-    metadata = page.metadata or {}
+    metadata = _normalized_wiki_page_metadata(page)
     return WikiPageRead(
         id=metadata.get("id"),
         slug=page.slug,
@@ -253,6 +266,134 @@ def _wiki_page_to_read(page: WikiPage) -> WikiPageRead:
     )
 
 
+def _citation_record_to_metadata(citation: WikiCitation) -> dict:
+    return {
+        "id": citation.id,
+        "wiki_page_id": citation.wiki_page_id,
+        "document_id": citation.document_id,
+        "external_doc_id": citation.external_doc_id,
+        "chunk_id": citation.chunk_id,
+        "output_id": citation.output_id,
+        "citation_id": citation.citation_id,
+        "evidence_id": citation.evidence_id,
+        "source_type": citation.source_type,
+        "excerpt": citation.excerpt,
+        "score": citation.score,
+        "metadata": citation_metadata(citation),
+        "created_at": citation.created_at,
+    }
+
+
+def _normalized_wiki_page_metadata(page: WikiPage) -> dict:
+    metadata = dict(page.metadata or {})
+    source_output_id = _first_string(
+        metadata.get("source_output_id"),
+        metadata.get("pa_source_output_id"),
+    )
+    source_refs = _unique_strings(
+        metadata.get("source_refs"),
+        metadata.get("weknora_source_refs"),
+    )
+    chunk_refs = _unique_strings(
+        metadata.get("chunk_refs"),
+        metadata.get("weknora_chunk_refs"),
+    )
+    source_document_ids = _unique_strings(
+        metadata.get("source_document_ids"),
+        metadata.get("pa_source_document_ids"),
+        _source_ids_from_refs(source_refs),
+    )
+    source_citation_ids = _unique_strings(
+        metadata.get("source_citation_ids"),
+        metadata.get("pa_source_citation_ids"),
+    )
+    wiki_citations = [
+        citation
+        for citation in _metadata_list(metadata, "wiki_citations")
+        if isinstance(citation, dict)
+    ]
+    if not wiki_citations:
+        wiki_citations = _wiki_reference_citations(
+            page=page,
+            metadata=metadata,
+            source_output_id=source_output_id,
+            source_refs=source_refs,
+            chunk_refs=chunk_refs,
+            source_citation_ids=source_citation_ids,
+        )
+
+    if source_output_id:
+        metadata["source_output_id"] = source_output_id
+    metadata["source_document_ids"] = source_document_ids
+    metadata["source_citation_ids"] = source_citation_ids
+    if source_refs:
+        metadata["source_refs"] = source_refs
+    if chunk_refs:
+        metadata["chunk_refs"] = chunk_refs
+    metadata["wiki_citations"] = wiki_citations
+    return metadata
+
+
+def _wiki_reference_citations(
+    page: WikiPage,
+    metadata: dict,
+    source_output_id: str | None,
+    source_refs: list[str],
+    chunk_refs: list[str],
+    source_citation_ids: list[str],
+) -> list[dict]:
+    ref_count = max(len(source_refs), len(chunk_refs), len(source_citation_ids))
+    if ref_count == 0:
+        return []
+
+    wiki_page_id = _first_string(
+        metadata.get("id"),
+        metadata.get("pa_wiki_page_id"),
+        metadata.get("wiki_page_id"),
+        page.slug,
+    )
+    created_at = _first_datetime(
+        metadata.get("created_at"),
+        metadata.get("updated_at"),
+        metadata.get("published_at"),
+    )
+    citations: list[dict] = []
+    for index in range(ref_count):
+        source_ref = source_refs[index] if index < len(source_refs) else None
+        external_doc_id, source_title = _split_source_ref(source_ref)
+        chunk_id = chunk_refs[index] if index < len(chunk_refs) else None
+        citation_id = (
+            source_citation_ids[index] if index < len(source_citation_ids) else None
+        )
+        evidence_id = f"document_chunk:{chunk_id}" if chunk_id else None
+        citations.append(
+            {
+                "id": citation_id or evidence_id or f"wiki_ref:{wiki_page_id}:{index + 1}",
+                "wiki_page_id": wiki_page_id,
+                "external_doc_id": external_doc_id,
+                "chunk_id": chunk_id,
+                "output_id": source_output_id,
+                "citation_id": citation_id,
+                "evidence_id": evidence_id,
+                "source_type": "document_chunk" if chunk_id or external_doc_id else "wiki_page",
+                "excerpt": _reference_excerpt(
+                    source_title=source_title,
+                    external_doc_id=external_doc_id,
+                    chunk_id=chunk_id,
+                    citation_id=citation_id,
+                ),
+                "metadata": {
+                    "reference_only": True,
+                    "source_ref": source_ref,
+                    "source_title": source_title,
+                    "weknora_ref_index": index,
+                },
+                "created_at": created_at,
+            }
+        )
+    return citations
+
+
 def _metadata_list(metadata: dict, key: str) -> list:
     value = metadata.get(key)
     return value if isinstance(value, list) else []
@@ -272,7 +413,7 @@ def _wiki_citation_metadata_to_read(citation: dict) -> WikiCitationRead:
         excerpt=str(citation.get("excerpt") or ""),
         score=citation.get("score"),
         metadata=citation.get("metadata") if isinstance(citation.get("metadata"), dict) else {},
-        created_at=citation.get("created_at"),
+        created_at=_first_datetime(citation.get("created_at")),
     )
 
 
@@ -311,3 +452,80 @@ def _citation_record_to_evidence(
         source="wiki",
         metadata=citation_metadata(citation),
     )
+
+
+def _first_string(*values: Any) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def _unique_strings(*values: Any) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: Any) -> None:
+        if value is None:
+            return
+        if isinstance(value, (list, tuple, set)):
+            for item in value:
+                add(item)
+            return
+        text = str(value).strip()
+        if not text or text in seen:
+            return
+        seen.add(text)
+        result.append(text)
+
+    for value in values:
+        add(value)
+    return result
+
+
+def _source_ids_from_refs(source_refs: list[str]) -> list[str]:
+    ids: list[str] = []
+    for ref in source_refs:
+        source_id, _ = _split_source_ref(ref)
+        if source_id:
+            ids.append(source_id)
+    return ids
+
+
+def _split_source_ref(source_ref: str | None) -> tuple[str | None, str | None]:
+    if not source_ref:
+        return None, None
+    source_id, _, title = source_ref.partition("|")
+    return _first_string(source_id), _first_string(title)
+
+
+def _reference_excerpt(
+    source_title: str | None,
+    external_doc_id: str | None,
+    chunk_id: str | None,
+    citation_id: str | None,
+) -> str:
+    if source_title:
+        return source_title
+    if chunk_id:
+        return f"WeKnora chunk reference: {chunk_id}"
+    if external_doc_id:
+        return f"WeKnora source reference: {external_doc_id}"
+    if citation_id:
+        return f"PA citation reference: {citation_id}"
+    return "Wiki source reference"
+
+
+def _first_datetime(*values: Any) -> datetime:
+    for value in values:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str) and value.strip():
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+    return datetime.now(UTC)
