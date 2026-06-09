@@ -224,6 +224,44 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return None
         return self._to_wiki_page(data, slug)
 
+    def create_wiki_page(
+        self,
+        page: dict,
+        kb_id: str | None = None,
+    ) -> WikiPage:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        payload = self._wiki_page_payload(page)
+        data = self._request_json(
+            "POST",
+            f"{self._wiki_base_path(resolved_kb_id)}/pages",
+            payload,
+        )
+        data = self._unwrap_data(data)
+        if not isinstance(data, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora Wiki create returned invalid JSON")
+        return self._to_wiki_page(data, str(payload.get("slug") or ""))
+
+    def update_wiki_page(
+        self,
+        slug: str,
+        page: dict,
+        kb_id: str | None = None,
+    ) -> WikiPage:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        payload = self._wiki_page_payload({**page, "slug": slug})
+        encoded_slug = quote(slug.strip(), safe="/")
+        data = self._request_json(
+            "PUT",
+            f"{self._wiki_base_path(resolved_kb_id)}/pages/{encoded_slug}",
+            payload,
+        )
+        data = self._unwrap_data(data)
+        if not isinstance(data, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora Wiki update returned invalid JSON")
+        return self._to_wiki_page(data, slug)
+
     def _request_json(self, method: str, path: str, payload: dict | None = None) -> dict | list:
         body = None
         headers = {"Accept": "application/json"}
@@ -402,6 +440,28 @@ class WeKnoraApiBackend(KnowledgeEngine):
     @staticmethod
     def _wiki_base_path(kb_id: str) -> str:
         return f"/api/v1/knowledgebase/{quote(kb_id, safe='')}/wiki"
+
+    @staticmethod
+    def _wiki_page_payload(page: dict) -> dict:
+        page_metadata = page.get("page_metadata")
+        metadata = dict(page_metadata) if isinstance(page_metadata, dict) else {}
+        extra_metadata = page.get("metadata")
+        if isinstance(extra_metadata, dict):
+            metadata.update(extra_metadata)
+        payload = {
+            "slug": str(page.get("slug") or "").strip(),
+            "title": str(page.get("title") or "Untitled").strip() or "Untitled",
+            "page_type": str(page.get("page_type") or page.get("type") or "wiki"),
+            "status": str(page.get("status") or "draft"),
+            "content": str(page.get("content") or page.get("content_markdown") or ""),
+            "summary": str(page.get("summary") or ""),
+            "page_metadata": metadata,
+        }
+        for key in ("aliases", "source_refs", "chunk_refs", "in_links", "out_links"):
+            value = page.get(key)
+            if isinstance(value, list):
+                payload[key] = value
+        return payload
 
     @staticmethod
     def _unwrap_items(value: dict | list) -> list:

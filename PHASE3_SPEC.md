@@ -1044,7 +1044,7 @@ curl chunks API + 前端页面检查。
 | --- | --- | --- |
 | P3-M1-C1 | WeKnora Wiki API 审计与响应映射 | [x] |
 | P3-M1-C2 | Wiki search/read 适配 | [x] |
-| P3-M1-C3 | Wiki draft/create/update 适配 | [ ] |
+| P3-M1-C3 | Wiki draft/create/update 适配 | [x] |
 | P3-M1-C4 | Wiki publish/index 状态适配 | [ ] |
 | P3-M1-C5 | Wiki citation/source refs 标准化 | [ ] |
 
@@ -1121,7 +1121,7 @@ smoke：output -> draft -> read。
 风险：
 WeKnora 若无直接 draft API，需要本地 draft + publish sync 策略。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-C4：Wiki publish/index 状态适配
 

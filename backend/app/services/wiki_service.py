@@ -6,6 +6,7 @@ from sqlmodel import Session
 from sqlmodel import select
 
 from app import pathing as _pathing  # noqa: F401
+from app.config import get_settings
 from app.models import Citation
 from app.models import GeneratedOutput
 from app.models import utc_now
@@ -19,9 +20,11 @@ from agent.model_gateway import ChatMessage
 from agent.model_gateway import ChatMessageRole
 from agent.model_gateway import ChatRequest
 from agent.model_gateway import get_model_gateway
+from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend
 from knowledge_engine.embeddings.base import EmbeddingProvider
 from knowledge_engine.embeddings.factory import get_embedding_provider
 from knowledge_engine.embeddings.schemas import EmbeddingVector
+from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.factory import create_knowledge_engine
 from knowledge_engine.schemas import Evidence
 from knowledge_engine.schemas import WikiPage
@@ -153,6 +156,7 @@ def create_wiki_page_record(
     _replace_wiki_citations(session, page.id, payload.citations)
     session.commit()
     session.refresh(page)
+    _sync_page_to_weknora(session=session, page=page, operation="create")
     return page
 
 
@@ -235,7 +239,7 @@ def update_wiki_page_record(
     if "source_citation_ids" in updates:
         page.source_citation_ids_json = _to_json(updates["source_citation_ids"] or [])
     if "metadata" in updates:
-        page.metadata_json = _to_json(updates["metadata"] or {})
+        page.metadata_json = _to_json({**page_metadata(page), **(updates["metadata"] or {})})
     if "citations" in updates:
         _replace_wiki_citations(session, page.id, payload.citations or [])
 
@@ -243,6 +247,7 @@ def update_wiki_page_record(
     session.add(page)
     session.commit()
     session.refresh(page)
+    _sync_page_to_weknora(session=session, page=page, operation="update")
     return page
 
 
@@ -297,6 +302,181 @@ def read_wiki_page(
         return SqlModelWikiStore(session).read(slug=slug, kb_id=kb_id)
     engine = create_knowledge_engine()
     return engine.read_wiki_page(slug=slug, kb_id=kb_id)
+
+
+def _sync_page_to_weknora(
+    session: Session,
+    page: WikiPageModel,
+    operation: str,
+) -> None:
+    settings = get_settings()
+    if settings.knowledge_backend != "weknora_api":
+        return
+
+    metadata = page_metadata(page)
+    kb_id = str(metadata.get("kb_id") or settings.weknora_default_kb_id or "").strip()
+    if not kb_id:
+        _mark_weknora_sync_failed(
+            session=session,
+            page=page,
+            operation=operation,
+            error="WEKNORA_DEFAULT_KB_ID is not configured",
+        )
+        return
+
+    payload = _weknora_wiki_payload(session=session, page=page, metadata=metadata)
+    should_update = operation == "update" and bool(
+        metadata.get("weknora_id") or metadata.get("weknora_sync_status") == "synced"
+    )
+    try:
+        if should_update:
+            synced = _weknora_backend(settings).update_wiki_page(
+                slug=page.slug,
+                page=payload,
+                kb_id=kb_id,
+            )
+        else:
+            synced = _weknora_backend(settings).create_wiki_page(
+                page=payload,
+                kb_id=kb_id,
+            )
+    except KnowledgeBackendUnavailableError as exc:
+        _mark_weknora_sync_failed(
+            session=session,
+            page=page,
+            operation=operation,
+            error=str(exc),
+        )
+        return
+
+    synced_metadata = synced.metadata or {}
+    _set_page_metadata(
+        session=session,
+        page=page,
+        metadata={
+            **metadata,
+            "kb_id": kb_id,
+            "weknora_id": synced_metadata.get("id"),
+            "weknora_slug": synced.slug,
+            "weknora_knowledge_base_id": synced_metadata.get("knowledge_base_id") or kb_id,
+            "weknora_status": synced_metadata.get("status"),
+            "weknora_version": synced_metadata.get("version"),
+            "weknora_sync_status": "synced",
+            "weknora_sync_operation": operation,
+            "weknora_synced_at": utc_now().isoformat(),
+            "weknora_sync_error": None,
+            "weknora_source_refs": synced_metadata.get("source_refs")
+            or payload.get("source_refs")
+            or [],
+            "weknora_chunk_refs": synced_metadata.get("chunk_refs")
+            or payload.get("chunk_refs")
+            or [],
+        },
+    )
+
+
+def _weknora_backend(settings=None) -> WeKnoraApiBackend:
+    settings = settings or get_settings()
+    return WeKnoraApiBackend(
+        base_url=settings.weknora_base_url,
+        service_token=settings.weknora_service_token,
+        timeout=settings.weknora_timeout_seconds,
+        workspace_id=settings.weknora_workspace_id,
+        default_kb_id=settings.weknora_default_kb_id,
+    )
+
+
+def _weknora_wiki_payload(
+    session: Session,
+    page: WikiPageModel,
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    citations = list_wiki_citation_records(session=session, wiki_page_id=page.id)
+    source_refs = _weknora_source_refs(page=page, citations=citations)
+    chunk_refs = _weknora_chunk_refs(citations)
+    return {
+        "slug": page.slug,
+        "title": page.title,
+        "summary": page.summary or "",
+        "content": page.content_markdown,
+        "page_type": page.page_type or "wiki",
+        "status": page.status or WikiPageStatus.DRAFT,
+        "source_refs": source_refs,
+        "chunk_refs": chunk_refs,
+        "page_metadata": {
+            **metadata,
+            "pa_wiki_page_id": page.id,
+            "pa_source_output_id": page.source_output_id,
+            "pa_source_document_ids": page_source_document_ids(page),
+            "pa_source_citation_ids": page_source_citation_ids(page),
+            "pa_tags": page_tags(page),
+            "pa_business_area": page.business_area,
+            "pa_created_by": page.created_by,
+            "source": metadata.get("source") or "pa_ai_workbench",
+        },
+    }
+
+
+def _weknora_source_refs(
+    page: WikiPageModel,
+    citations: list[WikiCitation],
+) -> list[str]:
+    refs: list[str] = []
+    for citation in citations:
+        source_id = citation.external_doc_id or citation.document_id
+        if not source_id:
+            continue
+        title = citation_metadata(citation).get("citation_title") or page.title
+        ref = f"{source_id}|{title}"
+        if ref not in refs:
+            refs.append(ref)
+    if refs:
+        return refs
+    for source_id in page_source_document_ids(page):
+        ref = f"{source_id}|{page.title}"
+        if ref not in refs:
+            refs.append(ref)
+    return refs
+
+
+def _weknora_chunk_refs(citations: list[WikiCitation]) -> list[str]:
+    refs: list[str] = []
+    for citation in citations:
+        if citation.chunk_id and citation.chunk_id not in refs:
+            refs.append(citation.chunk_id)
+    return refs
+
+
+def _mark_weknora_sync_failed(
+    session: Session,
+    page: WikiPageModel,
+    operation: str,
+    error: str,
+) -> None:
+    metadata = page_metadata(page)
+    _set_page_metadata(
+        session=session,
+        page=page,
+        metadata={
+            **metadata,
+            "weknora_sync_status": "failed",
+            "weknora_sync_operation": operation,
+            "weknora_synced_at": None,
+            "weknora_sync_error": _excerpt(error, 240),
+        },
+    )
+
+
+def _set_page_metadata(
+    session: Session,
+    page: WikiPageModel,
+    metadata: dict[str, Any],
+) -> None:
+    page.metadata_json = _to_json(metadata)
+    page.updated_at = utc_now()
+    session.add(page)
+    session.commit()
+    session.refresh(page)
 
 
 def page_tags(page: WikiPageModel) -> list[str]:
