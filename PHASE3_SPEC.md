@@ -1046,7 +1046,7 @@ curl chunks API + 前端页面检查。
 | P3-M1-C2 | Wiki search/read 适配 | [x] |
 | P3-M1-C3 | Wiki draft/create/update 适配 | [x] |
 | P3-M1-C4 | Wiki publish/index 状态适配 | [x] |
-| P3-M1-C5 | Wiki citation/source refs 标准化 | [ ] |
+| P3-M1-C5 | Wiki citation/source refs 标准化 | [x] |
 
 #### P3-M1-C1：WeKnora Wiki API 审计与响应映射
 
