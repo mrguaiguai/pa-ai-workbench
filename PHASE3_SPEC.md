@@ -1473,7 +1473,7 @@ manual: history -> draft -> wiki page。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M1-F1 | M1 WeKnora RAG E2E smoke | [ ] |
+| P3-M1-F1 | M1 WeKnora RAG E2E smoke | [~] |
 | P3-M1-F2 | M1 Wiki E2E smoke | [ ] |
 | P3-M1-F3 | M1 Agent E2E smoke | [ ] |
 | P3-M1-F4 | M1 frontend build 与主流程浏览器检查 | [x] |
@@ -1490,19 +1490,34 @@ manual: history -> draft -> wiki page。
 输入：
 脱敏 PDF/DOCX/MD。
 
+前置条件：
+WeKnora 本地或内网环境必须已经具备可用模型配置，且 `WEKNORA_DEFAULT_KB_ID`
+对应知识库已绑定可用于索引的 `embedding_model_id`。DeepSeek 可作为
+`KnowledgeQA` 对话 / Agent LLM，但当前 M1 RAG 索引仍必须单独配置
+Embedding 模型；可选来源包括 OpenAI-compatible gateway、SiliconFlow、
+Jina、阿里 DashScope、Ollama 或其他 WeKnora 支持的 Embedding provider。
+缺少 Embedding 模型或 KB 未绑定 `embedding_model_id` 时，F1 必须明确 fail，
+不得用 mock、keyword-only 或已存在 chunk 假装通过。
+
 输出：
 non-mock document_chunk evidence。
 
 验收标准：
-evidence source 为 `weknora_api`，citation 可追溯。
+上传脱敏文档后 WeKnora 文档状态到达 indexed；PA Adapter 返回
+`source=weknora_api`、`source_type=document_chunk` 的 evidence，且 citation
+可追溯到 WeKnora knowledge/chunk ID。
 
 验证方式：
-`python backend/scripts/smoke_weknora_rag_m1.py`。
+先确认 WeKnora connection smoke 通过，再运行
+`python backend/scripts/smoke_weknora_rag_m1.py`。脚本或手动验收需在上传前
+检查 KB 的 `embedding_model_id` 非空，并确认模型记录可用；如果本地仅配置
+DeepSeek chat model 而没有 Embedding model，本任务保持未完成。
 
 风险：
-真实服务不可用时必须 fail，不 fallback。
+真实服务不可用、模型缺失、Embedding endpoint 不可用、KB 未绑定
+`embedding_model_id` 或文档长时间停留在 processing 时必须 fail，不 fallback。
 
-状态：[ ]
+状态：[~]
 
 #### P3-M1-F2：M1 Wiki E2E smoke
 
