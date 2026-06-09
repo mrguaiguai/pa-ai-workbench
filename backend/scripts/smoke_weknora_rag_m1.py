@@ -27,6 +27,7 @@ from pathlib import Path
 import sys
 import time
 from tempfile import TemporaryDirectory
+from uuid import uuid4
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -44,7 +45,7 @@ from knowledge_engine.schemas import KnowledgeDocument  # noqa: E402
 
 
 SMOKE_TITLE = "PA M1 RAG Smoke Sanitized Fixture"
-SMOKE_QUERY = "pa-m1-rag-smoke-citation-anchor"
+SMOKE_QUERY_PREFIX = "pam1ragsmokeanchor"
 TERMINAL_INDEXED_STATUSES = {"indexed"}
 TERMINAL_FAILED_STATUSES = {"failed"}
 PROGRESS_STATUSES = {"uploaded", "parsing", "chunking", "indexing", "unknown"}
@@ -133,11 +134,11 @@ def _run_live_smoke(config: SmokeConfig, temp_dir: Path) -> dict[str, str]:
         default_kb_id=config.default_kb_id,
         timeout=config.timeout_seconds,
     )
-    document_path = _write_sanitized_fixture(temp_dir)
+    document_path, query = _write_sanitized_fixture(temp_dir)
     document = _upload_fixture(backend, document_path)
     external_doc_id = _require_external_doc_id(document)
     status = _wait_until_indexed(backend, external_doc_id, config)
-    evidence = _retrieve_evidence(backend, external_doc_id)
+    evidence = _retrieve_evidence(backend, external_doc_id, query)
     _assert_traceable_document_evidence(evidence, external_doc_id)
     return {
         "external_doc_id": external_doc_id,
@@ -149,22 +150,25 @@ def _run_live_smoke(config: SmokeConfig, temp_dir: Path) -> dict[str, str]:
     }
 
 
-def _write_sanitized_fixture(temp_dir: Path) -> Path:
-    path = temp_dir / "pa-m1-rag-smoke-sanitized.md"
+def _write_sanitized_fixture(temp_dir: Path) -> tuple[Path, str]:
+    run_id = uuid4().hex[:12]
+    query = f"{SMOKE_QUERY_PREFIX}{run_id}"
+    path = temp_dir / f"pa-m1-rag-smoke-sanitized-{run_id}.md"
     path.write_text(
         "\n".join(
             [
                 "# PA M1 RAG Smoke Sanitized Fixture",
                 "",
                 "This document is synthetic and contains no real pilot data.",
-                f"The citation anchor is {SMOKE_QUERY}.",
+                f"The smoke run id is {run_id}.",
+                f"The citation anchor is {query}.",
                 "A passing smoke must retrieve this sentence from WeKnora.",
                 "",
             ]
         ),
         encoding="utf-8",
     )
-    return path
+    return path, query
 
 
 def _upload_fixture(backend: WeKnoraApiBackend, document_path: Path) -> KnowledgeDocument:
@@ -225,21 +229,31 @@ def _wait_until_indexed(
     )
 
 
-def _retrieve_evidence(backend: WeKnoraApiBackend, external_doc_id: str) -> Evidence:
+def _retrieve_evidence(
+    backend: WeKnoraApiBackend,
+    external_doc_id: str,
+    query: str,
+) -> Evidence:
     try:
         evidence_items = backend.retrieve(
-            query=SMOKE_QUERY,
+            query=query,
             filters={
                 "external_doc_ids": [external_doc_id],
                 "source_type": "document_chunk",
             },
-            top_k=3,
+            top_k=20,
         )
     except KnowledgeBackendUnavailableError as exc:
         raise SmokeError(f"retrieve failed: {exc}") from exc
     if not evidence_items:
         raise SmokeError("retrieve returned no evidence for uploaded smoke document")
-    return evidence_items[0]
+    for evidence in evidence_items:
+        if evidence.external_doc_id == external_doc_id:
+            return evidence
+    raise SmokeError(
+        "retrieve returned evidence, but none matched uploaded document "
+        f"{external_doc_id}"
+    )
 
 
 def _assert_traceable_document_evidence(evidence: Evidence, external_doc_id: str) -> None:

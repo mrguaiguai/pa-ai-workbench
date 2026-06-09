@@ -1477,7 +1477,7 @@ manual: history -> draft -> wiki page。
 | P3-M1-F2 | M1 Wiki E2E smoke | [x] |
 | P3-M1-F3 | M1 Agent E2E smoke | [x] |
 | P3-M1-F4 | M1 frontend build 与主流程浏览器检查 | [x] |
-| P3-M1-F5 | M1 release checklist 与安全检查 | [ ] |
+| P3-M1-F5 | M1 release checklist 与安全检查 | [x] |
 
 #### P3-M1-F1：M1 WeKnora RAG E2E smoke
 
@@ -1617,7 +1617,7 @@ mock 关闭、WeKnora 配置存在、敏感文件未提交。
 风险：
 根目录不是 git repo，需在 `pa-ai-workbench` repo 内检查。
 
-状态：[ ]
+状态：[x]
 
 ### M2-A：稳定性与错误处理
 
