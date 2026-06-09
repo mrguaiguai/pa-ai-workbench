@@ -1043,7 +1043,7 @@ curl chunks API + 前端页面检查。
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | P3-M1-C1 | WeKnora Wiki API 审计与响应映射 | [x] |
-| P3-M1-C2 | Wiki search/read 适配 | [ ] |
+| P3-M1-C2 | Wiki search/read 适配 | [x] |
 | P3-M1-C3 | Wiki draft/create/update 适配 | [ ] |
 | P3-M1-C4 | Wiki publish/index 状态适配 | [ ] |
 | P3-M1-C5 | Wiki citation/source refs 标准化 | [ ] |
@@ -1096,7 +1096,7 @@ curl search/read + contract fixtures。
 风险：
 slug 与 WeKnora page id 可能不是一一对应，需要 metadata 保存外部 id。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-C3：Wiki draft/create/update 适配
 

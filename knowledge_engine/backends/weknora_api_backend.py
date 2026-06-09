@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 from urllib.error import HTTPError
 from urllib.error import URLError
+from urllib.parse import quote
 from urllib.parse import urlencode
 from urllib.request import Request
 from urllib.request import urlopen
@@ -193,21 +194,17 @@ class WeKnoraApiBackend(KnowledgeEngine):
         limit: int = 10,
     ) -> list[WikiPageSummary]:
         self._require_configured()
-        query_params = {"query": query, "limit": limit}
-        if kb_id:
-            query_params["kb_id"] = kb_id
-        data = self._request_json("GET", f"/api/wiki/search?{urlencode(query_params)}")
-        items = data.get("items", []) if isinstance(data, dict) else data
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        query_params = {"q": query, "limit": max(limit, 1)}
+        data = self._request_json(
+            "GET",
+            f"{self._wiki_base_path(resolved_kb_id)}/search?{urlencode(query_params)}",
+        )
+        items = self._unwrap_wiki_pages(data)
         return [
-            WikiPageSummary(
-                slug=item.get("slug", item.get("id", "")),
-                title=item.get("title", "Untitled"),
-                page_type=item.get("page_type", item.get("type", "wiki")),
-                summary=item.get("summary", ""),
-                source="weknora_api",
-                metadata=item.get("metadata", {}),
-            )
+            self._to_wiki_page_summary(item)
             for item in items
+            if isinstance(item, dict)
         ]
 
     def read_wiki_page(
@@ -216,22 +213,16 @@ class WeKnoraApiBackend(KnowledgeEngine):
         kb_id: str | None = None,
     ) -> WikiPage | None:
         self._require_configured()
-        query_params = {"kb_id": kb_id} if kb_id else {}
-        suffix = f"?{urlencode(query_params)}" if query_params else ""
-        data = self._request_json("GET", f"/api/wiki/pages/{slug}{suffix}")
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        encoded_slug = quote(slug.strip(), safe="/")
+        data = self._request_json(
+            "GET",
+            f"{self._wiki_base_path(resolved_kb_id)}/pages/{encoded_slug}",
+        )
+        data = self._unwrap_data(data)
         if not data or not isinstance(data, dict):
             return None
-        citations = [self._to_evidence(item) for item in data.get("citations", [])]
-        return WikiPage(
-            slug=data.get("slug", slug),
-            title=data.get("title", "Untitled"),
-            page_type=data.get("page_type", data.get("type", "wiki")),
-            summary=data.get("summary", ""),
-            content=data.get("content", ""),
-            citations=citations,
-            source="weknora_api",
-            metadata=data.get("metadata", {}),
-        )
+        return self._to_wiki_page(data, slug)
 
     def _request_json(self, method: str, path: str, payload: dict | None = None) -> dict | list:
         body = None
@@ -402,6 +393,16 @@ class WeKnoraApiBackend(KnowledgeEngine):
             payload["knowledge_ids"] = knowledge_ids
         return payload
 
+    def _wiki_kb_id(self, kb_id: str | None = None) -> str:
+        resolved = (kb_id or self.default_kb_id or "").strip()
+        if not resolved:
+            raise KnowledgeBackendUnavailableError("WEKNORA_DEFAULT_KB_ID is not configured")
+        return resolved
+
+    @staticmethod
+    def _wiki_base_path(kb_id: str) -> str:
+        return f"/api/v1/knowledgebase/{quote(kb_id, safe='')}/wiki"
+
     @staticmethod
     def _unwrap_items(value: dict | list) -> list:
         data = WeKnoraApiBackend._unwrap_data(value)
@@ -409,6 +410,18 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return data
         if isinstance(data, dict):
             for key in ("items", "results", "data"):
+                items = data.get(key)
+                if isinstance(items, list):
+                    return items
+        return []
+
+    @staticmethod
+    def _unwrap_wiki_pages(value: dict | list) -> list:
+        data = WeKnoraApiBackend._unwrap_data(value)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            for key in ("pages", "items", "results", "data"):
                 items = data.get(key)
                 if isinstance(items, list):
                     return items
@@ -553,6 +566,58 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "embedding_status": "indexed" if item.get("is_enabled", True) else "disabled",
             "vector_id": item.get("vector_id"),
         }
+
+    @staticmethod
+    def _to_wiki_page_summary(item: dict) -> WikiPageSummary:
+        metadata = WeKnoraApiBackend._wiki_page_metadata(item)
+        return WikiPageSummary(
+            slug=str(item.get("slug") or item.get("id") or ""),
+            title=str(item.get("title") or "Untitled"),
+            page_type=str(item.get("page_type") or item.get("type") or "wiki"),
+            summary=str(item.get("summary") or ""),
+            source="weknora_api",
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _to_wiki_page(item: dict, fallback_slug: str) -> WikiPage:
+        metadata = WeKnoraApiBackend._wiki_page_metadata(item)
+        return WikiPage(
+            slug=str(item.get("slug") or fallback_slug),
+            title=str(item.get("title") or "Untitled"),
+            page_type=str(item.get("page_type") or item.get("type") or "wiki"),
+            summary=str(item.get("summary") or ""),
+            content=str(item.get("content") or item.get("content_markdown") or ""),
+            citations=[],
+            source="weknora_api",
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _wiki_page_metadata(item: dict) -> dict:
+        raw_page_metadata = item.get("page_metadata")
+        metadata = dict(raw_page_metadata) if isinstance(raw_page_metadata, dict) else {}
+        raw_metadata = item.get("metadata")
+        if isinstance(raw_metadata, dict):
+            metadata.update(raw_metadata)
+        for key in (
+            "id",
+            "tenant_id",
+            "knowledge_base_id",
+            "status",
+            "aliases",
+            "source_refs",
+            "chunk_refs",
+            "in_links",
+            "out_links",
+            "version",
+            "created_at",
+            "updated_at",
+        ):
+            if key in item and item.get(key) not in (None, ""):
+                metadata[key] = item.get(key)
+        metadata["source"] = "weknora_api"
+        return metadata
 
     @staticmethod
     def _evidence_id(
