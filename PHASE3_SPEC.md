@@ -1475,7 +1475,7 @@ manual: history -> draft -> wiki page。
 | --- | --- | --- |
 | P3-M1-F1 | M1 WeKnora RAG E2E smoke | [x] |
 | P3-M1-F2 | M1 Wiki E2E smoke | [x] |
-| P3-M1-F3 | M1 Agent E2E smoke | [ ] |
+| P3-M1-F3 | M1 Agent E2E smoke | [x] |
 | P3-M1-F4 | M1 frontend build 与主流程浏览器检查 | [x] |
 | P3-M1-F5 | M1 release checklist 与安全检查 | [ ] |
 
@@ -1567,7 +1567,7 @@ outputs + citations。
 风险：
 模型输出差异导致断言要聚焦 citation 与状态，不断言完整文本。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-F4：M1 frontend build 与主流程浏览器检查
 

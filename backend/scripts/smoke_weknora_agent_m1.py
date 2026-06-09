@@ -1,20 +1,36 @@
-"""Smoke-check Agent RetrieverTool with WeKnora evidence.
+"""Live M1 smoke for PA Agent workflows with WeKnora evidence.
 
-This fixture smoke covers P3-M1-D1. It verifies that a normal Agent workflow
-can use ``RetrieverTool`` with ``KNOWLEDGE_BACKEND=weknora_api`` and receive
-traceable, non-mock citations without changing workflow business logic.
+This smoke intentionally requires a real WeKnora service. It runs PA's
+run_analysis service for QA, policy, and case workflows, then verifies each
+workflow persists non-mock WeKnora citations. It also runs a scoped no-evidence
+QA case and verifies the Agent emits an evidence warning.
 
-The script uses sanitized fixture responses and does not require a live
-WeKnora service, secrets, uploads, databases, or real pilot documents.
+Required environment:
+    KNOWLEDGE_BACKEND=weknora_api
+    MOCK_MODE=false
+    WEKNORA_BASE_URL=...
+    WEKNORA_SERVICE_TOKEN=...
+    WEKNORA_DEFAULT_KB_ID=...
+
+Optional query overrides:
+    WEKNORA_AGENT_SMOKE_QA_QUERY
+    WEKNORA_AGENT_SMOKE_POLICY_QUERY
+    WEKNORA_AGENT_SMOKE_CASE_QUERY
+
+The chat model defaults to the local mock provider unless the operator has
+configured a real provider. This smoke focuses on citation/status behavior, not
+model prose.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from dataclasses import dataclass
+import json
 import os
+from pathlib import Path
 import sys
+from tempfile import TemporaryDirectory
 from typing import Any
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -23,166 +39,231 @@ if str(BACKEND_ROOT) not in sys.path:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
-
-def _set_smoke_env() -> None:
-    os.environ["KNOWLEDGE_BACKEND"] = "weknora_api"
-    os.environ["WEKNORA_BASE_URL"] = "fixture://weknora"
-    os.environ["WEKNORA_SERVICE_TOKEN"] = "fixture-token"
-    os.environ["WEKNORA_DEFAULT_KB_ID"] = "kb-agent-fixture"
-    os.environ["MOCK_MODE"] = "false"
-    os.environ["CHAT_MODEL_PROVIDER"] = "mock"
-    os.environ["CHAT_MODEL_NAME"] = "mock-chat"
-    os.environ["CHAT_MODEL_API_KEY"] = ""
-    os.environ["MOCK_MODEL_MODE"] = "true"
-
-
-_set_smoke_env()
-
-from agent.agents.qa_agent import KnowledgeQaWorkflow  # noqa: E402
-from agent.context import AgentContext  # noqa: E402
-from agent.schemas import AgentRequest  # noqa: E402
-from agent.schemas import AgentTaskType  # noqa: E402
-from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend  # noqa: E402
+from app.config import Settings  # noqa: E402
+from app.config import get_settings  # noqa: E402
 
 
 class SmokeError(RuntimeError):
-    """Raised when the WeKnora Agent fixture contract fails."""
+    """Raised when the live Agent smoke fails."""
+
+
+@dataclass(frozen=True)
+class SmokeConfig:
+    base_url: str
+    service_token: str
+    default_kb_id: str
+    timeout_seconds: int
+    knowledge_backend: str
+    mock_mode: bool
+    qa_query: str
+    policy_query: str
+    case_query: str
+
+    @classmethod
+    def from_settings(cls) -> "SmokeConfig":
+        settings = Settings()
+        return cls(
+            base_url=settings.weknora_base_url.rstrip("/"),
+            service_token=settings.weknora_service_token,
+            default_kb_id=settings.weknora_default_kb_id,
+            timeout_seconds=settings.weknora_timeout_seconds,
+            knowledge_backend=settings.knowledge_backend,
+            mock_mode=settings.mock_mode,
+            qa_query=_str_env(
+                "WEKNORA_AGENT_SMOKE_QA_QUERY",
+                "PA M1 smoke knowledge QA evidence",
+            ),
+            policy_query=_str_env(
+                "WEKNORA_AGENT_SMOKE_POLICY_QUERY",
+                "PA M1 smoke policy analysis evidence",
+            ),
+            case_query=_str_env(
+                "WEKNORA_AGENT_SMOKE_CASE_QUERY",
+                "PA M1 smoke case review evidence",
+            ),
+        )
+
+
+WORKFLOW_RUNS = (
+    ("knowledge_qa", "qa_query", "Knowledge QA"),
+    ("policy_analysis", "policy_query", "Policy Analysis"),
+    ("case_review", "case_query", "Case Review"),
+)
 
 
 def main() -> int:
+    config = SmokeConfig.from_settings()
     try:
-        result = _run_fixture_smoke()
+        _validate_config(config)
+        _set_model_defaults()
+        get_settings.cache_clear()
+        with TemporaryDirectory(prefix="pa-weknora-agent-smoke-") as temp_dir:
+            result = _run_live_smoke(config=config, temp_dir=Path(temp_dir))
     except Exception as exc:  # noqa: BLE001
-        print(f"WeKnora Agent smoke failed: {exc}", file=sys.stderr)
+        print(f"WeKnora Agent E2E smoke failed: {exc}", file=sys.stderr)
         return 1
-    print("WeKnora Agent smoke passed (fixture)")
-    print(f"- request path: {result['path']}")
-    print(f"- backend: {result['backend']}")
-    print(f"- citations: {result['citation_count']}")
-    print(f"- sources: {', '.join(result['sources'])}")
-    print(f"- source types: {', '.join(result['source_types'])}")
-    print(f"- evidence ids: {', '.join(result['evidence_ids'])}")
+
+    print("WeKnora Agent E2E smoke passed (live)")
+    print(f"- base URL: {config.base_url}")
+    print(f"- knowledge base: {config.default_kb_id}")
+    for workflow in result["workflows"]:
+        print(
+            "- {task_type}: citations={citation_count}, "
+            "sources={sources}, source_types={source_types}".format(**workflow)
+        )
+    print(f"- no evidence warning: {result['no_evidence_warning']}")
     return 0
 
 
-def _run_fixture_smoke() -> dict[str, Any]:
-    requests: list[dict[str, Any]] = []
-    original_request_json = WeKnoraApiBackend._request_json
+def _validate_config(config: SmokeConfig) -> None:
+    missing = []
+    if config.knowledge_backend.strip().lower() != "weknora_api":
+        missing.append("KNOWLEDGE_BACKEND=weknora_api")
+    if config.mock_mode:
+        missing.append("MOCK_MODE=false")
+    if not config.base_url:
+        missing.append("WEKNORA_BASE_URL")
+    if not config.service_token:
+        missing.append("WEKNORA_SERVICE_TOKEN")
+    if not config.default_kb_id:
+        missing.append("WEKNORA_DEFAULT_KB_ID")
+    if config.timeout_seconds <= 0:
+        missing.append("WEKNORA_TIMEOUT_SECONDS")
+    if config.base_url.startswith("fixture://"):
+        missing.append("live WEKNORA_BASE_URL")
+    if missing:
+        raise SmokeError("missing or invalid required env: " + ", ".join(missing))
 
-    def fixture_request_json(
-        self: WeKnoraApiBackend,
-        method: str,
-        path: str,
-        payload: dict | None = None,
-    ) -> dict:
-        requests.append(
-            {
-                "backend": self.__class__.__name__,
-                "method": method,
-                "path": path,
-                "payload": payload,
-            }
-        )
-        if method != "POST" or path != "/api/v1/knowledge-search":
-            raise SmokeError(f"unexpected WeKnora request: {method} {path}")
-        return {
-            "success": True,
-            "data": [
-                {
-                    "id": "chunk-agent-001",
-                    "content": (
-                        "Sanitized WeKnora document evidence for the Agent "
-                        "retriever smoke."
-                    ),
-                    "knowledge_id": "wk-agent-doc-001",
-                    "knowledge_base_id": "kb-agent-fixture",
-                    "knowledge_title": "Agent Fixture Document",
-                    "chunk_index": 1,
-                    "score": 0.041,
-                    "match_type": 2,
-                    "chunk_type": "text",
-                    "metadata": {"business_area": "public_affairs"},
-                },
-                {
-                    "source_type": "wiki_page",
-                    "wiki_page_id": "wiki-agent-page-001",
-                    "wiki_title": "Agent Fixture Wiki",
-                    "content": (
-                        "Sanitized WeKnora wiki evidence for the Agent "
-                        "retriever smoke."
-                    ),
-                    "knowledge_base_id": "kb-agent-fixture",
-                    "score": 0.063,
-                    "metadata": {
-                        "slug": "agent-fixture-wiki",
-                        "business_area": "public_affairs",
-                    },
-                },
-            ],
-        }
 
-    WeKnoraApiBackend._request_json = fixture_request_json
-    try:
-        workflow = KnowledgeQaWorkflow()
-        request = AgentRequest(
-            task_id="smoke-weknora-agent-m1",
-            conversation_id="smoke-conversation",
-            task_type=AgentTaskType.KNOWLEDGE_QA,
-            query_or_topic="What does the sanitized WeKnora fixture say?",
-            business_area="public_affairs",
-            extra_requirements="Use only retrieved WeKnora evidence.",
-        )
-        result = workflow(request, AgentContext(request=request))
-    finally:
-        WeKnoraApiBackend._request_json = original_request_json
+def _set_model_defaults() -> None:
+    os.environ.setdefault("CHAT_MODEL_PROVIDER", "mock")
+    os.environ.setdefault("CHAT_MODEL_NAME", "mock-chat")
+    os.environ.setdefault("MOCK_MODEL_MODE", "true")
 
-    if len(requests) != 1:
-        raise SmokeError(f"expected one retrieve request, got {len(requests)}")
-    retrieve_request = requests[0]
-    payload = retrieve_request["payload"]
-    if not isinstance(payload, dict):
-        raise SmokeError("missing WeKnora retrieve payload")
-    if payload.get("query") != "What does the sanitized WeKnora fixture say?":
-        raise SmokeError(f"query was not mapped to WeKnora payload: {payload}")
-    if payload.get("knowledge_base_ids") != ["kb-agent-fixture"]:
-        raise SmokeError(f"default KB id was not mapped: {payload}")
-    if result.content.get("citation_count") != 2:
-        raise SmokeError(f"unexpected citation_count: {result.content}")
-    if result.warnings:
-        raise SmokeError("expected no citation warnings: " + "; ".join(result.warnings))
 
-    citations = result.citations
-    if len(citations) != 2:
-        raise SmokeError(f"expected 2 citations, got {len(citations)}")
-    if {citation.source for citation in citations} != {"weknora_api"}:
-        raise SmokeError("Agent returned non-WeKnora citations")
+def _run_live_smoke(config: SmokeConfig, temp_dir: Path) -> dict[str, Any]:
+    import app.models  # noqa: F401
+    from sqlmodel import Session
+    from sqlmodel import SQLModel
+    from sqlmodel import create_engine
 
-    source_types = {citation.source_type for citation in citations}
-    if source_types != {"document_chunk", "wiki_page"}:
-        raise SmokeError(f"unexpected source types: {source_types}")
-    for citation in citations:
-        if not citation.evidence_id:
-            raise SmokeError("citation is missing evidence_id")
-        if not citation.title.strip() or not citation.text.strip():
-            raise SmokeError("citation is missing title/text")
-        if citation.source_type == "document_chunk":
-            if citation.chunk_id != "chunk-agent-001":
-                raise SmokeError(f"unexpected chunk_id: {citation.chunk_id}")
-            if citation.external_doc_id != "wk-agent-doc-001":
-                raise SmokeError(f"unexpected external_doc_id: {citation.external_doc_id}")
-        if citation.source_type == "wiki_page" and (
-            citation.wiki_page_id != "wiki-agent-page-001"
-        ):
-            raise SmokeError(f"unexpected wiki_page_id: {citation.wiki_page_id}")
-
+    engine = create_engine(f"sqlite:///{temp_dir / 'agent_smoke.db'}")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        workflow_results = [
+            _run_workflow(session=session, config=config, task_type=task_type, query_attr=query_attr)
+            for task_type, query_attr, _label in WORKFLOW_RUNS
+        ]
+        no_evidence_warning = _run_no_evidence_case(session=session)
     return {
-        "path": retrieve_request["path"],
-        "backend": retrieve_request["backend"],
-        "citation_count": len(citations),
-        "sources": sorted({citation.source for citation in citations}),
-        "source_types": sorted(str(citation.source_type) for citation in citations),
-        "evidence_ids": sorted(str(citation.evidence_id) for citation in citations),
+        "workflows": workflow_results,
+        "no_evidence_warning": no_evidence_warning,
     }
+
+
+def _run_workflow(
+    session: Any,
+    config: SmokeConfig,
+    task_type: str,
+    query_attr: str,
+) -> dict[str, Any]:
+    from app.schemas import CitationRead
+    from app.services.analysis_service import run_analysis
+
+    query = getattr(config, query_attr)
+    _conversation, _messages, task, output, citations = run_analysis(
+        session=session,
+        task_type=task_type,
+        query_or_topic=query,
+        title=f"P3-M1-F3 {task_type} live smoke",
+        business_area="public_affairs",
+        extra_requirements="Use only retrieved WeKnora evidence and cite every factual claim.",
+    )
+    if task.status != "completed":
+        raise SmokeError(f"{task_type} task did not complete: {task.status}")
+    if output.status != "completed":
+        raise SmokeError(f"{task_type} output did not complete: {output.status}")
+
+    reads = [CitationRead.model_validate(citation) for citation in citations]
+    if not reads:
+        raise SmokeError(f"{task_type} returned no citations")
+    for citation in reads:
+        _assert_real_weknora_citation(task_type=task_type, citation=citation)
+    warnings = _json_list(output.warnings_json)
+    if warnings:
+        raise SmokeError(f"{task_type} returned warnings despite citations: {warnings}")
+    return {
+        "task_type": task_type,
+        "citation_count": len(reads),
+        "sources": ",".join(sorted({citation.source for citation in reads})),
+        "source_types": ",".join(
+            sorted({str(citation.source_type or "unknown") for citation in reads})
+        ),
+    }
+
+
+def _run_no_evidence_case(session: Any) -> str:
+    from app.services.analysis_service import run_analysis
+
+    _conversation, _messages, task, output, citations = run_analysis(
+        session=session,
+        task_type="knowledge_qa",
+        query_or_topic="P3-M1-F3 no evidence scoped query",
+        title="P3-M1-F3 no evidence live smoke",
+        document_ids=["pa-m1-f3-nonexistent-document-id"],
+        extra_requirements="This scoped smoke should not use evidence outside document_ids.",
+    )
+    if task.status != "completed":
+        raise SmokeError(f"no-evidence task did not complete: {task.status}")
+    if citations:
+        raise SmokeError("no-evidence scoped run unexpectedly persisted citations")
+    warnings = _json_list(output.warnings_json)
+    matching = [
+        warning
+        for warning in warnings
+        if "No evidence" in warning or "No evidence was found" in warning
+    ]
+    if not matching:
+        raise SmokeError(f"no-evidence run did not emit expected warning: {warnings}")
+    return matching[0]
+
+
+def _assert_real_weknora_citation(task_type: str, citation: Any) -> None:
+    if citation.source != "weknora_api":
+        raise SmokeError(f"{task_type} returned non-WeKnora citation: {citation.source}")
+    if not citation.evidence_id:
+        raise SmokeError(f"{task_type} citation is missing evidence_id")
+    if citation.source_type not in {"document_chunk", "wiki_page"}:
+        raise SmokeError(f"{task_type} citation has invalid source_type: {citation.source_type}")
+    if not citation.title.strip() or not citation.text.strip():
+        raise SmokeError(f"{task_type} citation is missing title/text")
+    if citation.source_type == "document_chunk":
+        if not citation.chunk_id:
+            raise SmokeError(f"{task_type} document citation is missing chunk_id")
+        if not citation.document_id and not citation.external_doc_id:
+            raise SmokeError(f"{task_type} document citation is missing document id")
+    if citation.source_type == "wiki_page" and not citation.wiki_page_id:
+        raise SmokeError(f"{task_type} wiki citation is missing wiki_page_id")
+
+
+def _json_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        data = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(item) for item in data]
+
+
+def _str_env(name: str, default: str) -> str:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    stripped = value.strip()
+    return stripped or default
 
 
 if __name__ == "__main__":
