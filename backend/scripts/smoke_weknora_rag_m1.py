@@ -1,14 +1,32 @@
-"""Smoke-check WeKnora retrieve response mapping for PA Evidence.
+"""Live M1 smoke for PA -> WeKnora RAG retrieval.
 
-This is a sanitized fixture contract test. It does not require a live
-WeKnora service and does not use real pilot documents.
+This smoke intentionally requires a real WeKnora service. It uploads a
+sanitized temporary Markdown document through PA's WeKnora adapter, waits for
+WeKnora indexing, then verifies PA receives non-mock document_chunk evidence
+with traceable citation identifiers.
+
+Required environment:
+    KNOWLEDGE_BACKEND=weknora_api
+    MOCK_MODE=false
+    WEKNORA_BASE_URL=...
+    WEKNORA_SERVICE_TOKEN=...
+    WEKNORA_DEFAULT_KB_ID=...
+
+Optional environment:
+    WEKNORA_RAG_SMOKE_WAIT_SECONDS=180
+    WEKNORA_RAG_SMOKE_POLL_SECONDS=5
+
+The script does not print service tokens or real document content.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+import os
 from pathlib import Path
 import sys
-from typing import Any
+import time
+from tempfile import TemporaryDirectory
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -18,141 +36,245 @@ if str(BACKEND_ROOT) not in sys.path:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
+from app.config import Settings  # noqa: E402
 from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend  # noqa: E402
+from knowledge_engine.errors import KnowledgeBackendUnavailableError  # noqa: E402
+from knowledge_engine.schemas import Evidence  # noqa: E402
+from knowledge_engine.schemas import KnowledgeDocument  # noqa: E402
+
+
+SMOKE_TITLE = "PA M1 RAG Smoke Sanitized Fixture"
+SMOKE_QUERY = "pa-m1-rag-smoke-citation-anchor"
+TERMINAL_INDEXED_STATUSES = {"indexed"}
+TERMINAL_FAILED_STATUSES = {"failed"}
+PROGRESS_STATUSES = {"uploaded", "parsing", "chunking", "indexing", "unknown"}
 
 
 class SmokeError(RuntimeError):
-    """Raised when the retrieve fixture contract fails."""
+    """Raised when the live RAG smoke fails."""
 
 
-class FixtureRetrieveBackend(WeKnoraApiBackend):
-    def __init__(self) -> None:
-        super().__init__(
-            base_url="fixture://weknora",
-            service_token="fixture-token",
-            default_kb_id="kb-default",
-            timeout=5,
+@dataclass(frozen=True)
+class SmokeConfig:
+    base_url: str
+    service_token: str
+    default_kb_id: str
+    timeout_seconds: int
+    wait_seconds: int
+    poll_seconds: int
+    knowledge_backend: str
+    mock_mode: bool
+
+    @classmethod
+    def from_settings(cls) -> "SmokeConfig":
+        settings = Settings()
+        return cls(
+            base_url=settings.weknora_base_url.rstrip("/"),
+            service_token=settings.weknora_service_token,
+            default_kb_id=settings.weknora_default_kb_id,
+            timeout_seconds=settings.weknora_timeout_seconds,
+            wait_seconds=_int_env("WEKNORA_RAG_SMOKE_WAIT_SECONDS", 180),
+            poll_seconds=_int_env("WEKNORA_RAG_SMOKE_POLL_SECONDS", 5),
+            knowledge_backend=settings.knowledge_backend,
+            mock_mode=settings.mock_mode,
         )
-        self.requests: list[dict[str, Any]] = []
-
-    def _request_json(
-        self,
-        method: str,
-        path: str,
-        payload: dict | None = None,
-    ) -> dict | list:
-        self.requests.append({"method": method, "path": path, "payload": payload})
-        if path != "/api/v1/knowledge-search":
-            raise SmokeError(f"unexpected path: {path}")
-        return {
-            "success": True,
-            "data": [
-                {
-                    "id": "chunk-policy-001",
-                    "content": "sanitized policy evidence",
-                    "knowledge_id": "wk-doc-001",
-                    "knowledge_base_id": "kb-default",
-                    "knowledge_title": "Fixture Policy",
-                    "knowledge_filename": "fixture-policy.md",
-                    "chunk_index": 3,
-                    "start_at": 10,
-                    "end_at": 38,
-                    "seq": 4,
-                    "score": 0.031,
-                    "match_type": 2,
-                    "chunk_type": "text",
-                    "parent_chunk_id": "parent-001",
-                    "knowledge_source": "smoke",
-                    "knowledge_channel": "api",
-                    "metadata": {"business_area": "public_affairs"},
-                    "chunk_metadata": {"section": "scope"},
-                },
-                {
-                    "id": "chunk-case-002",
-                    "content": "sanitized case evidence",
-                    "knowledge_id": "wk-doc-002",
-                    "knowledge_base_id": "kb-default",
-                    "knowledge_title": "Fixture Case",
-                    "chunk_index": 1,
-                    "score": 0.02,
-                    "match_type": 1,
-                    "chunk_type": "text",
-                },
-            ],
-        }
 
 
 def main() -> int:
+    config = SmokeConfig.from_settings()
     try:
-        result = _run_fixture_smoke()
+        _validate_config(config)
+        with TemporaryDirectory(prefix="pa-weknora-rag-smoke-") as temp_dir:
+            result = _run_live_smoke(config, Path(temp_dir))
     except Exception as exc:  # noqa: BLE001
-        print(f"WeKnora RAG smoke failed: {exc}", file=sys.stderr)
+        print(f"WeKnora RAG E2E smoke failed: {exc}", file=sys.stderr)
         return 1
-    print("WeKnora RAG smoke passed (fixture)")
-    print(f"- request path: {result['path']}")
-    print(f"- knowledge ids: {', '.join(result['knowledge_ids'])}")
+
+    print("WeKnora RAG E2E smoke passed (live)")
+    print(f"- base URL: {config.base_url}")
+    print(f"- knowledge base: {config.default_kb_id}")
+    print(f"- external doc id: {result['external_doc_id']}")
+    print(f"- indexed status: {result['status']}")
     print(f"- evidence id: {result['evidence_id']}")
+    print(f"- chunk id: {result['chunk_id']}")
     print(f"- source: {result['source']}")
-    print(f"- total returned: {result['total']}")
+    print(f"- source type: {result['source_type']}")
     return 0
 
 
-def _run_fixture_smoke() -> dict[str, Any]:
-    backend = FixtureRetrieveBackend()
-    evidence = backend.retrieve(
-        query="policy",
-        filters={
-            "document_ids": ["wk-doc-001"],
-            "knowledge_base_ids": ["kb-default"],
-            "source_type": "document_chunk",
-        },
-        top_k=1,
-    )
-    if len(backend.requests) != 1:
-        raise SmokeError(f"expected one request, got {len(backend.requests)}")
-    request = backend.requests[0]
-    payload = request["payload"]
-    if request["method"] != "POST":
-        raise SmokeError(f"unexpected method: {request['method']}")
-    if not isinstance(payload, dict):
-        raise SmokeError("missing retrieve payload")
-    if payload.get("query") != "policy":
-        raise SmokeError(f"query not mapped: {payload}")
-    if payload.get("knowledge_base_ids") != ["kb-default"]:
-        raise SmokeError(f"knowledge_base_ids not mapped: {payload}")
-    if payload.get("knowledge_ids") != ["wk-doc-001"]:
-        raise SmokeError(f"knowledge_ids not mapped: {payload}")
-    if len(evidence) != 1:
-        raise SmokeError(f"top_k/source_type filtering failed: {len(evidence)}")
-    item = evidence[0]
-    if item.source != "weknora_api":
-        raise SmokeError(f"unexpected evidence source: {item.source}")
-    if item.source_type != "document_chunk":
-        raise SmokeError(f"unexpected source_type: {item.source_type}")
-    if item.evidence_id != "document_chunk:chunk-policy-001":
-        raise SmokeError(f"unexpected evidence_id: {item.evidence_id}")
-    if item.chunk_id != "chunk-policy-001":
-        raise SmokeError(f"unexpected chunk_id: {item.chunk_id}")
-    if item.external_doc_id != "wk-doc-001":
-        raise SmokeError(f"unexpected external_doc_id: {item.external_doc_id}")
-    if item.title != "Fixture Policy" or not item.text:
-        raise SmokeError("title/text not mapped")
-    required_metadata = [
-        "weknora_knowledge_base_id",
-        "weknora_chunk_index",
-        "weknora_match_type",
-        "score_semantics",
-    ]
-    missing = [key for key in required_metadata if key not in item.metadata]
+def _validate_config(config: SmokeConfig) -> None:
+    missing = []
+    if config.knowledge_backend.strip().lower() != "weknora_api":
+        missing.append("KNOWLEDGE_BACKEND=weknora_api")
+    if config.mock_mode:
+        missing.append("MOCK_MODE=false")
+    if not config.base_url:
+        missing.append("WEKNORA_BASE_URL")
+    if not config.service_token:
+        missing.append("WEKNORA_SERVICE_TOKEN")
+    if not config.default_kb_id:
+        missing.append("WEKNORA_DEFAULT_KB_ID")
+    if config.timeout_seconds <= 0:
+        missing.append("WEKNORA_TIMEOUT_SECONDS")
+    if config.wait_seconds <= 0:
+        missing.append("WEKNORA_RAG_SMOKE_WAIT_SECONDS")
+    if config.poll_seconds <= 0:
+        missing.append("WEKNORA_RAG_SMOKE_POLL_SECONDS")
+    if config.base_url.startswith("fixture://"):
+        missing.append("live WEKNORA_BASE_URL")
     if missing:
-        raise SmokeError("missing metadata: " + ", ".join(missing))
+        raise SmokeError("missing or invalid required env: " + ", ".join(missing))
+
+
+def _run_live_smoke(config: SmokeConfig, temp_dir: Path) -> dict[str, str]:
+    backend = WeKnoraApiBackend(
+        base_url=config.base_url,
+        service_token=config.service_token,
+        default_kb_id=config.default_kb_id,
+        timeout=config.timeout_seconds,
+    )
+    document_path = _write_sanitized_fixture(temp_dir)
+    document = _upload_fixture(backend, document_path)
+    external_doc_id = _require_external_doc_id(document)
+    status = _wait_until_indexed(backend, external_doc_id, config)
+    evidence = _retrieve_evidence(backend, external_doc_id)
+    _assert_traceable_document_evidence(evidence, external_doc_id)
     return {
-        "path": request["path"],
-        "knowledge_ids": payload["knowledge_ids"],
-        "evidence_id": item.evidence_id,
-        "source": item.source,
-        "total": len(evidence),
+        "external_doc_id": external_doc_id,
+        "status": status,
+        "evidence_id": evidence.evidence_id or "",
+        "chunk_id": evidence.chunk_id or "",
+        "source": evidence.source,
+        "source_type": evidence.source_type,
     }
+
+
+def _write_sanitized_fixture(temp_dir: Path) -> Path:
+    path = temp_dir / "pa-m1-rag-smoke-sanitized.md"
+    path.write_text(
+        "\n".join(
+            [
+                "# PA M1 RAG Smoke Sanitized Fixture",
+                "",
+                "This document is synthetic and contains no real pilot data.",
+                f"The citation anchor is {SMOKE_QUERY}.",
+                "A passing smoke must retrieve this sentence from WeKnora.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _upload_fixture(backend: WeKnoraApiBackend, document_path: Path) -> KnowledgeDocument:
+    try:
+        return backend.upload_document(
+            str(document_path),
+            {
+                "title": SMOKE_TITLE,
+                "file_name": document_path.name,
+                "business_area": "public_affairs",
+                "document_type": "smoke",
+                "source": "pa_m1_rag_smoke",
+                "smoke_task": "P3-M1-F1",
+                "smoke_fixture": "sanitized",
+            },
+        )
+    except KnowledgeBackendUnavailableError as exc:
+        raise SmokeError(f"upload failed: {exc}") from exc
+
+
+def _require_external_doc_id(document: KnowledgeDocument) -> str:
+    if document.source != "weknora_api":
+        raise SmokeError(f"upload returned non-WeKnora source: {document.source}")
+    if not document.external_doc_id:
+        raise SmokeError("upload returned no external_doc_id")
+    return document.external_doc_id
+
+
+def _wait_until_indexed(
+    backend: WeKnoraApiBackend,
+    external_doc_id: str,
+    config: SmokeConfig,
+) -> str:
+    deadline = time.monotonic() + config.wait_seconds
+    last_status = ""
+    last_message = ""
+    while time.monotonic() <= deadline:
+        try:
+            status_payload = backend.get_document_status(external_doc_id)
+        except KnowledgeBackendUnavailableError as exc:
+            raise SmokeError(f"status check failed: {exc}") from exc
+        status = str(status_payload.get("status") or "unknown")
+        last_status = status
+        last_message = str(status_payload.get("message") or "")
+        if status in TERMINAL_INDEXED_STATUSES:
+            return status
+        if status in TERMINAL_FAILED_STATUSES:
+            detail = status_payload.get("error_message") or status_payload.get("failed_step")
+            raise SmokeError(f"WeKnora indexing failed for {external_doc_id}: {detail}")
+        if status not in PROGRESS_STATUSES:
+            raise SmokeError(f"unexpected WeKnora document status: {status}")
+        time.sleep(config.poll_seconds)
+
+    detail = f"; last message: {last_message}" if last_message else ""
+    raise SmokeError(
+        f"WeKnora document did not reach indexed within {config.wait_seconds}s "
+        f"(last status: {last_status or 'unknown'}{detail})"
+    )
+
+
+def _retrieve_evidence(backend: WeKnoraApiBackend, external_doc_id: str) -> Evidence:
+    try:
+        evidence_items = backend.retrieve(
+            query=SMOKE_QUERY,
+            filters={
+                "external_doc_ids": [external_doc_id],
+                "source_type": "document_chunk",
+            },
+            top_k=3,
+        )
+    except KnowledgeBackendUnavailableError as exc:
+        raise SmokeError(f"retrieve failed: {exc}") from exc
+    if not evidence_items:
+        raise SmokeError("retrieve returned no evidence for uploaded smoke document")
+    return evidence_items[0]
+
+
+def _assert_traceable_document_evidence(evidence: Evidence, external_doc_id: str) -> None:
+    if evidence.source != "weknora_api":
+        raise SmokeError(f"evidence source is not weknora_api: {evidence.source}")
+    if evidence.source_type != "document_chunk":
+        raise SmokeError(f"evidence source_type is not document_chunk: {evidence.source_type}")
+    if evidence.external_doc_id != external_doc_id:
+        raise SmokeError(
+            "evidence external_doc_id does not match uploaded document: "
+            f"{evidence.external_doc_id}"
+        )
+    if not evidence.chunk_id:
+        raise SmokeError("evidence is missing chunk_id")
+    if not evidence.evidence_id:
+        raise SmokeError("evidence is missing evidence_id")
+    if not evidence.text:
+        raise SmokeError("evidence is missing text")
+    if evidence.metadata.get("citation_source_type") != "document_chunk":
+        raise SmokeError("evidence metadata is missing citation_source_type=document_chunk")
+    if not (
+        evidence.metadata.get("weknora_knowledge_id")
+        or evidence.metadata.get("weknora_knowledge_base_id")
+    ):
+        raise SmokeError("evidence metadata is missing WeKnora trace fields")
+
+
+def _int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
 
 
 if __name__ == "__main__":

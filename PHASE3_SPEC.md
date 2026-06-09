@@ -1473,7 +1473,7 @@ manual: history -> draft -> wiki page。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M1-F1 | M1 WeKnora RAG E2E smoke | [~] |
+| P3-M1-F1 | M1 WeKnora RAG E2E smoke | [x] |
 | P3-M1-F2 | M1 Wiki E2E smoke | [ ] |
 | P3-M1-F3 | M1 Agent E2E smoke | [ ] |
 | P3-M1-F4 | M1 frontend build 与主流程浏览器检查 | [x] |
@@ -1517,7 +1517,7 @@ DeepSeek chat model 而没有 Embedding model，本任务保持未完成。
 真实服务不可用、模型缺失、Embedding endpoint 不可用、KB 未绑定
 `embedding_model_id` 或文档长时间停留在 processing 时必须 fail，不 fallback。
 
-状态：[~]
+状态：[x]
 
 #### P3-M1-F2：M1 Wiki E2E smoke
 
