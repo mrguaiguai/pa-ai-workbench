@@ -463,6 +463,10 @@ export const apiClient = {
     request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(slug)}/publish`, {
       method: "POST",
     }),
+  reindexWikiPage: (slug: string) =>
+    request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(slug)}/reindex`, {
+      method: "POST",
+    }),
   createWikiDraftFromOutput: (outputId: string, payload: WikiDraftFromOutputRequest = {}) =>
     request<WikiPage>(`/api/wiki/drafts/from-output/${encodeURIComponent(outputId)}`, {
       method: "POST",

@@ -147,21 +147,78 @@ function statusLabel(status?: string | null) {
   return "draft";
 }
 
+function metadataString(metadata: Record<string, unknown> | undefined, key: string) {
+  const value = metadata?.[key];
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  return String(value);
+}
+
 function indexStatus(page: WikiPageDetail | null) {
   if (!page) {
     return "not loaded";
   }
+  const status = statusLabel(page.status);
+  const syncStatus = metadataString(page.metadata, "weknora_sync_status");
+  const weknoraIndexStatus = metadataString(page.metadata, "weknora_index_status");
+  if (status !== "published") {
+    return "draft not searchable";
+  }
+  if (syncStatus === "failed") {
+    return "sync failed";
+  }
   if (page.embedding_status === "indexed" || page.indexed_at || page.vector_id) {
-    return "indexed";
+    return "indexed searchable";
+  }
+  if (page.embedding_status === "indexing" || weknoraIndexStatus === "indexing") {
+    return "indexing";
   }
   if (page.embedding_status) {
     return page.embedding_status;
   }
-  return "not indexed";
+  return "published not indexed";
 }
 
 function indexStatusClass(page: WikiPageDetail | null) {
   return indexStatus(page).replace(/\s+/g, "-").toLowerCase();
+}
+
+function ragAvailability(page: WikiPageDetail | null) {
+  const status = indexStatus(page);
+  if (status === "indexed searchable") {
+    return {
+      label: "可被 RAG 检索",
+      className: "searchable",
+      hint: "页面已发布并完成索引。",
+    };
+  }
+  if (status === "indexing") {
+    return {
+      label: "索引中",
+      className: "indexing",
+      hint: "页面已发布，但索引完成前不要视为可检索。",
+    };
+  }
+  if (status === "sync failed") {
+    return {
+      label: "同步失败",
+      className: "failed",
+      hint: "发布或同步 WeKnora 失败，需要查看错误并重试。",
+    };
+  }
+  if (status === "published not indexed") {
+    return {
+      label: "未进入 RAG",
+      className: "not-indexed",
+      hint: "页面已发布，但尚未完成索引。",
+    };
+  }
+  return {
+    label: "草稿不可检索",
+    className: "draft",
+    hint: "发布前不会进入 RAG 检索。",
+  };
 }
 
 function evidenceTypeLabel(sourceType?: string | null) {
@@ -200,6 +257,7 @@ export function WikiPage() {
   const [pageState, setPageState] = useState<LoadState>("idle");
   const [saveState, setSaveState] = useState<LoadState>("idle");
   const [publishState, setPublishState] = useState<LoadState>("idle");
+  const [indexState, setIndexState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
 
@@ -209,6 +267,7 @@ export function WikiPage() {
   );
   const isEditing = editorMode === "create" || editorMode === "edit";
   const pageStatus = statusLabel(page?.status);
+  const availability = ragAvailability(page);
 
   const upsertResult = (nextPage: WikiPageDetail) => {
     const nextSummary = summaryFromPage(nextPage);
@@ -258,6 +317,7 @@ export function WikiPage() {
         setSelectedSlug(response.slug);
         setEditorMode("view");
         setEditorError(null);
+        setIndexState("idle");
         setPageState("idle");
         upsertResult(response);
       })
@@ -294,6 +354,7 @@ export function WikiPage() {
     setEditorForm(emptyEditorForm);
     setEditorMode("create");
     setEditorError(null);
+    setIndexState("idle");
     setError(null);
   };
 
@@ -352,6 +413,7 @@ export function WikiPage() {
         setEditorForm(formFromPage(response));
         setEditorMode("view");
         setSaveState("idle");
+        setIndexState("idle");
         upsertResult(response);
       })
       .catch((saveError: unknown) => {
@@ -373,11 +435,33 @@ export function WikiPage() {
         setPage(response);
         setSelectedSlug(response.slug);
         setPublishState("idle");
+        setIndexState("idle");
         upsertResult(response);
       })
       .catch((publishError: unknown) => {
         setError(errorMessage(publishError));
         setPublishState("error");
+      });
+  };
+
+  const reindexPage = () => {
+    if (!page || indexState === "loading") {
+      return;
+    }
+
+    setIndexState("loading");
+    setError(null);
+    apiClient
+      .reindexWikiPage(page.slug)
+      .then((response) => {
+        setPage(response);
+        setSelectedSlug(response.slug);
+        setIndexState("idle");
+        upsertResult(response);
+      })
+      .catch((indexError: unknown) => {
+        setError(errorMessage(indexError));
+        setIndexState("error");
       });
   };
 
@@ -602,7 +686,10 @@ export function WikiPage() {
         ) : page ? (
           <article className="wiki-article">
             <div className="wiki-article-title">
-              <span>{pageStatus}</span>
+              <div className="wiki-status-pills">
+                <span>{pageStatus}</span>
+                <span className={availability.className}>{availability.label}</span>
+              </div>
               <h2>{page.title}</h2>
               <p>{page.summary}</p>
             </div>
@@ -630,22 +717,45 @@ export function WikiPage() {
         <section className="wiki-side-section" aria-label="索引状态">
           <div className="wiki-panel-heading">
             <span>Index</span>
-            <strong>{indexStatus(page)}</strong>
+            <div className="heading-actions">
+              <strong>{indexStatus(page)}</strong>
+              <button
+                className={indexState === "loading" ? "icon-button loading" : "icon-button"}
+                type="button"
+                title="重新索引"
+                disabled={!page || pageStatus !== "published" || indexState === "loading"}
+                onClick={reindexPage}
+              >
+                {indexState === "loading" ? (
+                  <Loader2 size={16} aria-hidden="true" />
+                ) : (
+                  <RefreshCw size={16} aria-hidden="true" />
+                )}
+              </button>
+            </div>
           </div>
 
           {page ? (
             <div className="wiki-index-card">
-              <div className={`wiki-index-state ${indexStatusClass(page)}`}>
+              <div className={`wiki-index-state ${indexStatusClass(page)} ${availability.className}`}>
                 <ShieldCheck size={16} aria-hidden="true" />
-                <span>{indexStatus(page)}</span>
+                <span>{availability.label}</span>
               </div>
+              <p className="wiki-index-hint">{availability.hint}</p>
               <div className="wiki-ref-list">
                 <span>{`status: ${page.status ?? "draft"}`}</span>
                 <span>{`published: ${formatDateTime(page.published_at)}`}</span>
                 <span>{`indexed: ${formatDateTime(page.indexed_at)}`}</span>
                 <span>{`embedding: ${page.embedding_status ?? "not set"}`}</span>
                 <span>{`vector: ${page.vector_id ?? "not set"}`}</span>
+                <span>{`weknora sync: ${metadataString(page.metadata, "weknora_sync_status") ?? "not set"}`}</span>
+                <span>{`weknora index: ${metadataString(page.metadata, "weknora_index_status") ?? "not set"}`}</span>
               </div>
+              {metadataString(page.metadata, "weknora_sync_error") ? (
+                <div className="wiki-index-error">
+                  {metadataString(page.metadata, "weknora_sync_error")}
+                </div>
+              ) : null}
             </div>
           ) : (
             <EmptyState text="未选择页面" compact />

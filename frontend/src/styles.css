@@ -1853,16 +1853,57 @@ p {
   padding: 8px 10px;
 }
 
-.wiki-index-state.indexed {
+.wiki-index-state.indexed,
+.wiki-index-state.indexed-searchable,
+.wiki-index-state.searchable {
   border-color: #bfd9cb;
   background: #eef7f1;
   color: #256340;
 }
 
-.wiki-index-state.failed {
+.wiki-index-state.indexing {
+  border-color: #c4d9e3;
+  background: #edf6fa;
+  color: #176b87;
+}
+
+.wiki-index-state.published-not-indexed,
+.wiki-index-state.not-indexed {
+  border-color: #edd8a8;
+  background: #fff8e8;
+  color: #7a5312;
+}
+
+.wiki-index-state.draft-not-searchable,
+.wiki-index-state.draft {
+  border-color: #d8e0e5;
+  background: #f8fafb;
+  color: #52636e;
+}
+
+.wiki-index-state.failed,
+.wiki-index-state.sync-failed {
   border-color: #edc7c2;
   background: #fff1ef;
   color: #9b382d;
+}
+
+.wiki-index-hint {
+  color: #52636e;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.wiki-index-error {
+  border: 1px solid #edc7c2;
+  border-radius: 8px;
+  background: #fff1ef;
+  color: #9b382d;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
 }
 
 .wiki-ref-list {
@@ -2026,6 +2067,12 @@ p {
   padding-bottom: 16px;
 }
 
+.wiki-status-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .wiki-article-title span {
   display: inline-flex;
   min-height: 26px;
@@ -2036,6 +2083,31 @@ p {
   font-size: 0.76rem;
   font-weight: 800;
   padding: 0 8px;
+}
+
+.wiki-article-title span.searchable {
+  background: #eef7f1;
+  color: #256340;
+}
+
+.wiki-article-title span.indexing {
+  background: #edf6fa;
+  color: #176b87;
+}
+
+.wiki-article-title span.not-indexed {
+  background: #fff8e8;
+  color: #7a5312;
+}
+
+.wiki-article-title span.failed {
+  background: #fff1ef;
+  color: #9b382d;
+}
+
+.wiki-article-title span.draft {
+  background: #f2f6f8;
+  color: #52636e;
 }
 
 .wiki-article-title h2 {
