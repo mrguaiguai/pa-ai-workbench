@@ -406,7 +406,8 @@ p {
 }
 
 .runtime-status-card.configured,
-.runtime-status-card.real-ready {
+.runtime-status-card.real-ready,
+.runtime-status-card.weknora-connected {
   border-color: #bfd9cb;
   background: #f4faf6;
 }
@@ -417,6 +418,7 @@ p {
 }
 
 .runtime-status-card.missing-config,
+.runtime-status-card.weknora-unavailable,
 .runtime-status-card.error {
   border-color: #edc7c2;
   background: #fff6f4;
@@ -459,7 +461,8 @@ p {
 }
 
 .runtime-status-card.configured .runtime-status-title strong,
-.runtime-status-card.real-ready .runtime-status-title strong {
+.runtime-status-card.real-ready .runtime-status-title strong,
+.runtime-status-card.weknora-connected .runtime-status-title strong {
   background: #dff0e5;
   color: #256340;
 }
@@ -470,6 +473,7 @@ p {
 }
 
 .runtime-status-card.missing-config .runtime-status-title strong,
+.runtime-status-card.weknora-unavailable .runtime-status-title strong,
 .runtime-status-card.error .runtime-status-title strong {
   background: #ffe1dc;
   color: #9b382d;

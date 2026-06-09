@@ -22,6 +22,18 @@ export type StatusResponse = {
   environment: string;
   knowledge_backend: string;
   mock_mode: boolean;
+  weknora: {
+    mode: string;
+    status: "mock" | "disabled" | "missing_config" | "connected" | "unavailable" | string;
+    connected: boolean;
+    configured: boolean;
+    base_url_configured: boolean;
+    service_token_configured: boolean;
+    workspace_configured: boolean;
+    kb_configured: boolean;
+    health_status: string | null;
+    message: string | null;
+  };
   memory_recent_limit: number;
   database: string;
   counts: Record<string, number>;

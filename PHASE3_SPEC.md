@@ -1338,7 +1338,7 @@ targeted tests。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M1-E1 | 首页/状态页展示 WeKnora backend 状态 | [ ] |
+| P3-M1-E1 | 首页/状态页展示 WeKnora backend 状态 | [x] |
 | P3-M1-E2 | 资料库 WeKnora 索引状态与错误展示 | [ ] |
 | P3-M1-E3 | 分析台 Real WeKnora RAG evidence 展示 | [ ] |
 | P3-M1-E4 | Wiki draft/publish/index 状态展示 | [ ] |
@@ -1367,7 +1367,7 @@ frontend build + browser check。
 风险：
 不要显示 token 或私有 endpoint 细节。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-E2：资料库 WeKnora 索引状态与错误展示
 

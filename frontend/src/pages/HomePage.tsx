@@ -59,6 +59,10 @@ function statusClass(value: string) {
   return value.replace(/\s+/g, "-").toLowerCase();
 }
 
+function configuredLabel(label: string, configured: boolean | undefined) {
+  return `${label}: ${configured ? "configured" : "missing"}`;
+}
+
 export function HomePage({ navigateTo }: HomePageProps) {
   const [status, setStatus] = useState<StatusState>({
     state: "loading",
@@ -133,6 +137,46 @@ export function HomePage({ navigateTo }: HomePageProps) {
     const backendReady = status.state === "ready";
     const model = modelReady ? modelStatus.data : null;
     const backend = backendReady ? status.data : null;
+    const weknora = backend?.weknora;
+    const ragStatus =
+      backendReady && weknora?.mode === "weknora_api"
+        ? weknora.connected && !backend?.mock_mode
+          ? "weknora connected"
+          : weknora.status === "missing_config"
+            ? "missing config"
+            : "weknora unavailable"
+        : backendReady
+          ? backend?.mock_mode || model?.mock_mode
+            ? "mock fallback"
+            : "real ready"
+          : status.state === "loading"
+            ? "loading"
+            : "error";
+    const ragPrimary =
+      backendReady && weknora?.mode === "weknora_api"
+        ? "weknora_api"
+        : backend?.knowledge_backend ?? "unknown";
+    const ragSecondary =
+      backendReady && weknora?.mode === "weknora_api"
+        ? weknora.message || "WeKnora status unavailable"
+        : backendReady
+          ? `${counts?.document_chunks ?? 0} chunks indexed/stored`
+          : "backend status unavailable";
+    const ragDetails =
+      backend && weknora?.mode === "weknora_api"
+        ? [
+            configuredLabel("auth", weknora.service_token_configured),
+            configuredLabel("workspace", weknora.workspace_configured),
+            configuredLabel("kb", weknora.kb_configured),
+            `health: ${weknora.health_status ?? weknora.status}`,
+          ]
+        : backend
+          ? [
+              `backend mock: ${backend.mock_mode ? "yes" : "no"}`,
+              `model mock: ${model?.mock_mode ? "yes" : "no"}`,
+              `database: ${backend.database}`,
+            ]
+          : [status.state === "loading" ? "loading" : status.error ?? "error"];
     return [
       {
         id: "chat",
@@ -187,27 +231,10 @@ export function HomePage({ navigateTo }: HomePageProps) {
         label: "RAG Pipeline",
         icon: Cable,
         state: backendReady && modelReady ? "ready" : status.state,
-        status:
-          backendReady
-            ? backend?.mock_mode || model?.mock_mode
-              ? "mock fallback"
-              : "real ready"
-            : status.state === "loading"
-              ? "loading"
-              : "error",
-        primary: backend?.knowledge_backend ?? "unknown",
-        secondary:
-          backendReady
-            ? `${counts?.document_chunks ?? 0} chunks indexed/stored`
-            : "backend status unavailable",
-        details:
-          backend
-            ? [
-                `backend mock: ${backend.mock_mode ? "yes" : "no"}`,
-                `model mock: ${model?.mock_mode ? "yes" : "no"}`,
-                `database: ${backend.database}`,
-              ]
-            : [status.state === "loading" ? "loading" : status.error ?? "error"],
+        status: ragStatus,
+        primary: ragPrimary,
+        secondary: ragSecondary,
+        details: ragDetails,
       },
     ];
   }, [counts, modelStatus, status]);

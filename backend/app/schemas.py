@@ -283,6 +283,19 @@ class AnalysisRunResponse(BaseModel):
     citations: list[CitationRead]
 
 
+class WeKnoraStatus(BaseModel):
+    mode: str
+    status: str
+    connected: bool
+    configured: bool
+    base_url_configured: bool
+    service_token_configured: bool
+    workspace_configured: bool
+    kb_configured: bool
+    health_status: str | None = None
+    message: str | None = None
+
+
 class StatusResponse(BaseModel):
     status: str
     service: str
@@ -290,6 +303,7 @@ class StatusResponse(BaseModel):
     environment: str
     knowledge_backend: str
     mock_mode: bool
+    weknora: WeKnoraStatus
     memory_recent_limit: int
     database: str
     counts: dict[str, int]
