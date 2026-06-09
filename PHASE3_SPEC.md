@@ -1619,14 +1619,155 @@ mock 关闭、WeKnora 配置存在、敏感文件未提交。
 
 状态：[x]
 
+### M2/M3 开发前置原则
+
+M2/M3 必须把 M1 暴露出的模型配置问题制度化处理：
+
+1. 每个阶段都必须有 release checker 或等价验收脚本。
+2. release checker 必须 fail closed；不能用 mock、keyword-only、旧 chunk 或
+   推断结果代替真实通过。
+3. WeKnora RAG / Wiki 相关验收必须显式检查 KnowledgeQA 模型、Embedding
+   模型、KB 的 `embedding_model_id`、vector dimension、DocReader、Redis 和
+   vector store。
+4. mock / extracted fallback 只能在显式开发或 M3 fallback 验收中使用，不能在
+   试点或 release 环境静默接管。
+5. 所有错误、日志、调试 trace 和回归资料必须脱敏，不保存 token、完整 prompt、
+   完整文档正文或长段 chunk。
+
 ### M2-A：稳定性与错误处理
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
+| P3-M2-A0 | WeKnora runtime preflight 与模型配置 gate | [ ] |
 | P3-M2-A1 | WeKnora Adapter 超时、重试、错误码规范 | [ ] |
 | P3-M2-A2 | 文档处理状态轮询与失败恢复 | [ ] |
 | P3-M2-A3 | Wiki 发布/索引异步状态恢复 | [ ] |
 | P3-M2-A4 | Agent 无证据和弱证据策略增强 | [ ] |
+
+#### P3-M2-A0：WeKnora runtime preflight 与模型配置 gate
+
+目标：
+在进入 M2 功能开发前，提供机器可执行 preflight，提前发现 M1 出现过的
+模型、Embedding、KB 绑定和向量维度问题。
+
+范围：
+新增或扩展 checker / smoke，不改业务功能。检查 PA env、WeKnora health、
+workspace、KB、KnowledgeQA model、Embedding model、KB `embedding_model_id`、
+vector dimension、DocReader、Redis、vector store。
+
+输出：
+`backend/scripts/check_m2_preflight.py` 或合并到 M2 release checker 的
+preflight gate；文档记录失败项与修复提示。
+
+验收标准：
+缺少 Embedding 模型、KB 未绑定 `embedding_model_id`、dimension mismatch、
+DocReader/Redis/vector store 不可用、`MOCK_MODE=true` 或 mock backend 时均
+返回 non-zero；通过时不打印 token、endpoint 私密细节或长文本。
+
+验证方式：
+`backend/.venv/bin/python backend/scripts/check_m2_preflight.py`；在一个故意缺失
+Embedding 或 KB 绑定的环境中确认失败。
+
+风险：
+WeKnora API 可能没有统一模型检查接口；若只能通过上传/检索验证，必须使用脱敏
+fixture，并把副作用写清楚。
+
+状态：[ ]
+
+#### P3-M2-A1：WeKnora Adapter 超时、重试、错误码规范
+
+目标：
+让 WeKnora 调用错误可分类、可展示、可重试，并避免所有失败都变成
+`KnowledgeBackendUnavailableError`。
+
+范围：
+typed errors、HTTP status/error_code 映射、timeout 分类、retryable 标记、
+指数退避策略、用户可读 message。
+
+输出：
+Adapter 错误类型、错误映射表、单元测试和最小 smoke。
+
+验收标准：
+401/403、404、429、5xx、timeout、invalid JSON、network error 都能返回稳定
+错误类型；只对明确 retryable 的错误重试；日志不泄漏 token。
+
+验证方式：
+fixture HTTP server / monkeypatch tests + `python -m compileall knowledge_engine backend/app`。
+
+风险：
+过度重试会放大 WeKnora 压力；默认重试次数必须保守。
+
+状态：[ ]
+
+#### P3-M2-A2：文档处理状态轮询与失败恢复
+
+目标：
+让上传、解析、chunk、embedding、indexing 的异步状态可恢复、可重试、可解释。
+
+范围：
+文档状态刷新、失败原因展示、重试入口、processing 超时提示、幂等重试保护。
+
+输出：
+后端状态 API、前端状态展示和 targeted smoke。
+
+验收标准：
+文档长时间 processing、parse failed、embedding failed、index failed 都有明确
+状态与下一步操作；重试不会产生重复无主记录。
+
+验证方式：
+mock/fixture 状态序列测试 + live 脱敏文档 smoke。
+
+风险：
+WeKnora 原始状态命名可能变化，映射必须集中在 Adapter 层。
+
+状态：[ ]
+
+#### P3-M2-A3：Wiki 发布/索引异步状态恢复
+
+目标：
+让 Wiki draft、sync、publish、indexing、retrievable 的状态闭环可恢复。
+
+范围：
+Wiki sync 状态、WeKnora index 状态、失败重试、发布确认后的异步等待/刷新。
+
+输出：
+后端 Wiki 状态字段/API、前端状态展示、Wiki smoke。
+
+验收标准：
+sync failed、publish failed、indexing timeout、published but not retrievable 都能
+被识别；未进入 WeKnora 的 Wiki 不得显示为可检索。
+
+验证方式：
+fixture 状态测试 + `smoke_weknora_wiki_m1.py` 或 M2 扩展 smoke。
+
+风险：
+WeKnora Wiki 没有显式 index job 时，需要用 publish -> retrieve 验证作为最终
+ready 信号。
+
+状态：[ ]
+
+#### P3-M2-A4：Agent 无证据和弱证据策略增强
+
+目标：
+Agent 在无 evidence、弱 evidence、source_type 不匹配时给出可信提示，不编造结论。
+
+范围：
+QA / policy / case workflows、warning taxonomy、弱证据阈值、用户可读建议。
+
+输出：
+Agent warning 规范、prompt 更新、回归 smoke。
+
+验收标准：
+无 evidence 时不生成伪 citation；弱 evidence 时明确标记不确定；所有非 mock
+citation 仍通过 CitationChecker。
+
+验证方式：
+scoped no-evidence smoke、低分 evidence fixture、Agent citation smoke。
+
+风险：
+过严策略可能降低可用性；M2 先以透明提示优先。
+
+状态：[ ]
 
 ### M2-B：引用定位与检索调试
 
@@ -1637,6 +1778,97 @@ mock 关闭、WeKnora 配置存在、敏感文件未提交。
 | P3-M2-B3 | Evidence dedup 与 score 展示规范 | [ ] |
 | P3-M2-B4 | 检索参数 top_k/source_type/filter 前端调试面板 | [ ] |
 
+#### P3-M2-B1：Citation 跳转到文档 chunk 或 Wiki page
+
+目标：
+用户能从 citation 回到对应 document chunk 或 Wiki page。
+
+范围：
+citation locator API、chunk/Wiki anchors、前端跳转状态。
+
+输出：
+定位接口和前端跳转体验。
+
+验收标准：
+document_chunk citation 可打开对应文档预览并定位 chunk；wiki_page citation 可打开
+对应 Wiki 页面；缺失定位信息时展示 fail-closed 提示。
+
+验证方式：
+fixture citations + 浏览器检查。
+
+风险：
+WeKnora chunk id 与 PA 本地缓存 id 不一致，需要 external id 映射优先。
+
+状态：[ ]
+
+#### P3-M2-B2：RAG retrieve 调试接口对接 WeKnora
+
+目标：
+给试点排障提供只读 retrieve debug，不绕过 Adapter。
+
+范围：
+debug API、request/response metadata、trace id、脱敏 excerpt、source_type/filter。
+
+输出：
+`/api/rag/debug` 或等价接口，返回标准化 debug trace。
+
+验收标准：
+能显示 query、filters、top_k、命中 source_type、score、evidence_id、chunk/wiki id；
+不返回 token、原始 WeKnora 响应全量或长段正文。
+
+验证方式：
+targeted API smoke + git secret scan。
+
+风险：
+debug trace 容易泄漏资料；默认仅脱敏摘要。
+
+状态：[ ]
+
+#### P3-M2-B3：Evidence dedup 与 score 展示规范
+
+目标：
+减少重复 citation，并让 score/rank 在 UI 中可解释。
+
+范围：
+dedup key、score normalize/display、rank metadata、document/wiki 混合结果展示。
+
+输出：
+dedup 规范、后端 helper、前端展示规则。
+
+验收标准：
+同一 evidence_id 或同一 external_doc_id+chunk_id 不重复展示；score 缺失时不伪造
+精确分数。
+
+验证方式：
+fixture retrieve results + Agent citation regression。
+
+风险：
+不同 WeKnora 检索模式 score 语义不同，UI 不应过度解释。
+
+状态：[ ]
+
+#### P3-M2-B4：检索参数 top_k/source_type/filter 前端调试面板
+
+目标：
+让试点用户和开发者能调试检索范围，而不直接调用 WeKnora。
+
+范围：
+top_k、source_type、document_ids、kb_id、业务标签等 Adapter 支持的 filter。
+
+输出：
+前端调试面板和后端参数校验。
+
+验收标准：
+参数变更只影响 PA debug/retrieve API；非法参数有可读错误；默认值不改变 M1 主流程。
+
+验证方式：
+frontend build + API smoke + 浏览器检查。
+
+风险：
+参数过多会干扰业务用户；调试面板默认折叠或仅在调试模式显示。
+
+状态：[ ]
+
 ### M2-C：前端体验产品化
 
 | 任务 | 名称 | 状态 |
@@ -1646,6 +1878,94 @@ mock 关闭、WeKnora 配置存在、敏感文件未提交。
 | P3-M2-C3 | Wiki 编辑体验与发布确认 | [ ] |
 | P3-M2-C4 | 历史页按任务类型、证据状态筛选 | [ ] |
 
+#### P3-M2-C1：资料库批量状态刷新与筛选
+
+目标：
+资料库能高效管理 WeKnora 文档处理状态。
+
+范围：
+批量刷新、状态筛选、错误筛选、重试入口。
+
+输出：
+资料库 UI 与后端列表参数。
+
+验收标准：
+uploaded/processing/indexed/failed/unavailable 可筛选；批量刷新不会阻塞页面。
+
+验证方式：
+frontend build + fixture 状态浏览器检查。
+
+风险：
+频繁刷新会压 WeKnora；需要节流。
+
+状态：[ ]
+
+#### P3-M2-C2：分析台 evidence 展开、复制、定位体验
+
+目标：
+分析台 evidence 可读、可复制、可定位。
+
+范围：
+evidence 展开、citation metadata、copy、jump to source、无 evidence/弱 evidence 状态。
+
+输出：
+分析台 UI 改进。
+
+验收标准：
+用户能区分 document_chunk / wiki_page、真实 WeKnora / mock、可定位 / 不可定位。
+
+验证方式：
+frontend build + Agent smoke 数据浏览器检查。
+
+风险：
+长 excerpt 不能撑破布局；默认截断。
+
+状态：[ ]
+
+#### P3-M2-C3：Wiki 编辑体验与发布确认
+
+目标：
+降低误发布和发布后不可检索的风险。
+
+范围：
+编辑保存状态、发布确认、source refs 展示、publish/index 状态。
+
+输出：
+Wiki 编辑页 UX 更新。
+
+验收标准：
+发布前显示来源与风险；发布后状态从 syncing/indexing 到 retrievable 或 failed。
+
+验证方式：
+frontend build + Wiki smoke + 浏览器检查。
+
+风险：
+WeKnora 异步状态不完整时，必须用 retrieve 验证补足。
+
+状态：[ ]
+
+#### P3-M2-C4：历史页按任务类型、证据状态筛选
+
+目标：
+让试点反馈能快速定位具体任务和证据质量问题。
+
+范围：
+task_type、status、citation source、source_type、warning filter。
+
+输出：
+历史页筛选和后端列表参数。
+
+验收标准：
+能筛出无 evidence、mock output、真实 WeKnora citations、失败任务。
+
+验证方式：
+frontend build + fixture 历史数据检查。
+
+风险：
+历史数据字段可能不全；缺失字段应显示 unknown，不伪造真实状态。
+
+状态：[ ]
+
 ### M2-D：运维与可观测
 
 | 任务 | 名称 | 状态 |
@@ -1654,15 +1974,242 @@ mock 关闭、WeKnora 配置存在、敏感文件未提交。
 | P3-M2-D2 | PA task / adapter request id 串联 | [ ] |
 | P3-M2-D3 | 试点反馈问题模板与回归清单 | [ ] |
 | P3-M2-D4 | 内网部署 README 和故障排查文档 | [ ] |
+| P3-M2-D5 | M2 release checker 与回归 gate | [ ] |
+
+#### P3-M2-D1：WeKnora 调用日志元数据与脱敏
+
+目标：
+记录足够排障的调用元数据，同时避免泄漏。
+
+范围：
+operation、request_id、status_code、duration_ms、retry_count、error_code、truncated excerpt。
+
+输出：
+结构化日志 helper 和脱敏规则。
+
+验收标准：
+日志不包含 token、完整 prompt、完整文档正文、长段 chunk 或私有 endpoint 细节。
+
+验证方式：
+unit tests + grep secret pattern + 手动检查样例日志。
+
+风险：
+过度脱敏会降低排障能力；保留 id 和短摘要。
+
+状态：[ ]
+
+#### P3-M2-D2：PA task / adapter request id 串联
+
+目标：
+让一次用户操作能串起 PA task、document/wiki 操作和 WeKnora adapter 调用。
+
+范围：
+correlation id、task id、conversation id、document/wiki id、adapter operation id。
+
+输出：
+请求 id 传播规范和日志字段。
+
+验收标准：
+从 task id 能找到相关 adapter 调用；从 adapter error 能回到用户操作。
+
+验证方式：
+targeted smoke + 日志样例检查。
+
+风险：
+不要把用户正文放进 id 或日志字段。
+
+状态：[ ]
+
+#### P3-M2-D3：试点反馈问题模板与回归清单
+
+目标：
+把试点问题转成可复现回归项。
+
+范围：
+问题模板、脱敏资料要求、复现步骤、期望/实际、关联 task/request id。
+
+输出：
+`docs/PHASE3_M2_PILOT_FEEDBACK_TEMPLATE.md` 和回归 checklist。
+
+验收标准：
+每个试点问题都能归档为 bug / config / data / product feedback / out-of-scope。
+
+验证方式：
+用 2-3 个已知场景填充样例。
+
+风险：
+不能要求用户上传真实敏感资料。
+
+状态：[ ]
+
+#### P3-M2-D4：内网部署 README 和故障排查文档
+
+目标：
+沉淀 M1/M2 真实部署经验，降低环境配置反复踩坑。
+
+范围：
+启动顺序、模型/Embedding/KB preflight、常见错误、恢复步骤、rollback。
+
+输出：
+`docs/PHASE3_M2_INTRANET_RUNBOOK.md` 或等价 runbook。
+
+验收标准：
+包含 M1 模型配置问题的排查路径：DeepSeek chat model 不等于 Embedding model；
+KB 必须绑定 `embedding_model_id`。
+
+验证方式：
+文档 review + preflight/checker 命令可复制执行。
+
+风险：
+不要记录真实 token、KB id、endpoint。
+
+状态：[ ]
+
+#### P3-M2-D5：M2 release checker 与回归 gate
+
+目标：
+M2 结束时有独立 release gate，而不是复用 M1 口径。
+
+范围：
+preflight、错误恢复、异步状态恢复、citation 定位、retrieve debug、日志脱敏、
+git safety。
+
+输出：
+`backend/scripts/check_m2_release.py` 和 `docs/PHASE3_M2_RELEASE_CHECKLIST.md`。
+
+验收标准：
+任一 blocking gate 失败时返回 non-zero；默认不运行有副作用 live smoke，必须显式
+参数开启；输出不打印 secrets。
+
+验证方式：
+static checker + optional live M2 smokes。
+
+风险：
+checker 过慢会被绕过；拆分 static 与 live gates。
+
+状态：[ ]
 
 ### M3-A：Adapter 抽象增强
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
+| P3-M3-A0 | backend capability matrix 与 fallback fail-closed 规则 | [ ] |
 | P3-M3-A1 | KnowledgeBackend contract tests 完整化 | [ ] |
 | P3-M3-A2 | mock / weknora_api / extracted parity matrix | [ ] |
 | P3-M3-A3 | backend feature flags 与能力探测 | [ ] |
 | P3-M3-A4 | 多 KB / workspace 映射抽象 | [ ] |
+
+#### P3-M3-A0：backend capability matrix 与 fallback fail-closed 规则
+
+目标：
+在实现 fallback 前定义哪些能力可降级、哪些必须失败，避免静默 mock 掩盖问题。
+
+范围：
+mock、weknora_api、extracted 的 capability matrix；release/dev/test mode fallback
+规则；状态 API 暴露。
+
+输出：
+capability matrix 文档和 fail-closed 决策表。
+
+验收标准：
+release/试点环境不得自动 fallback mock；extracted fallback 只能显式选择；缺少
+citation trace 时不能标记为真实引用。
+
+验证方式：
+文档 review + config matrix tests。
+
+风险：
+规则不清会让 M3 重复 M1 的 mock 掩盖问题。
+
+状态：[ ]
+
+#### P3-M3-A1：KnowledgeBackend contract tests 完整化
+
+目标：
+让所有 backend 都通过同一接口契约，差异显式记录。
+
+范围：
+upload/status/chunks/retrieve/wiki search/read/create/update/publish/citation。
+
+输出：
+contract test suite 和 backend fixture。
+
+验收标准：
+mock/weknora_api/extracted 的支持能力、缺失能力和错误行为都有测试覆盖。
+
+验证方式：
+`python -m compileall agent knowledge_engine backend/app` + contract tests。
+
+风险：
+live WeKnora tests 有副作用，必须与 static contract 分开。
+
+状态：[ ]
+
+#### P3-M3-A2：mock / weknora_api / extracted parity matrix
+
+目标：
+产品、测试和开发清楚每个 backend 能力差异。
+
+范围：
+能力、数据事实源、citation trace、状态恢复、Wiki、debug、质量限制。
+
+输出：
+parity matrix 文档和状态页摘要。
+
+验收标准：
+每个能力标记 supported / partial / unsupported / dev-only；unsupported 不可静默成功。
+
+验证方式：
+文档 review + capability matrix tests。
+
+风险：
+mock 只能用于开发，不应被描述成等价生产能力。
+
+状态：[ ]
+
+#### P3-M3-A3：backend feature flags 与能力探测
+
+目标：
+让前端和 Agent 按能力展示/执行，而不是按 backend 名硬编码。
+
+范围：
+capabilities API、feature flags、frontend gating、Agent guardrails。
+
+输出：
+标准 capabilities schema 和 UI/Agent 使用规范。
+
+验收标准：
+不支持的能力 UI 不显示或显示不可用；Agent 不调用 unsupported 能力。
+
+验证方式：
+fixture backend capabilities + frontend build。
+
+风险：
+capability 不能泄漏内部 endpoint 或 secrets。
+
+状态：[ ]
+
+#### P3-M3-A4：多 KB / workspace 映射抽象
+
+目标：
+支持不同业务域、团队或试点空间映射到不同 WeKnora workspace/KB。
+
+范围：
+KB selector、workspace mapping、metadata、权限边界、默认 KB fallback 规则。
+
+输出：
+映射配置和 Adapter 参数传递。
+
+验收标准：
+不同 KB 的 document/wiki/retrieve 不串数据；缺少映射时 fail closed 或明确使用默认。
+
+验证方式：
+fixture multi-KB tests + live smoke 可选。
+
+风险：
+多 KB 是权限风险点，不能只靠前端隐藏。
+
+状态：[ ]
 
 ### M3-B：Python extracted fallback
 
@@ -1673,6 +2220,95 @@ mock 关闭、WeKnora 配置存在、敏感文件未提交。
 | P3-M3-B3 | Wiki fallback 的最小同步策略 | [ ] |
 | P3-M3-B4 | 可切换 backend 的 E2E smoke | [ ] |
 
+#### P3-M3-B1：extracted fallback 与 WeKnora API schema 对齐
+
+目标：
+让 extracted fallback 返回与 WeKnora adapter 兼容的 PA schema。
+
+范围：
+Evidence、KnowledgeDocument、WikiPage、status、citation metadata。
+
+输出：
+schema adapter 和 fixture tests。
+
+验收标准：
+extracted 结果能被 Agent、CitationChecker、前端读取；source 必须明确为
+`extracted`，不得伪装 `weknora_api`。
+
+验证方式：
+contract tests。
+
+风险：
+fallback 质量不等于 WeKnora；必须在 UI 标识。
+
+状态：[ ]
+
+#### P3-M3-B2：Python chunk / retrieval 与 WeKnora 结果对照测试
+
+目标：
+量化 extracted 与 WeKnora 检索结果差异。
+
+范围：
+脱敏文档集、chunk 边界、top_k、source_type、score、citation trace。
+
+输出：
+parity report 和 regression fixtures。
+
+验收标准：
+差异被记录，不要求完全一致；关键 query 至少能返回可追溯 evidence。
+
+验证方式：
+offline fixtures + optional live comparison。
+
+风险：
+WeKnora 排名会变化，测试不能断言完整排序完全一致。
+
+状态：[ ]
+
+#### P3-M3-B3：Wiki fallback 的最小同步策略
+
+目标：
+无 WeKnora 时可保留本地 Wiki 最小链路，但不伪装可被 WeKnora 检索。
+
+范围：
+local draft/read/search、publish state、sync pending、恢复同步。
+
+输出：
+Wiki fallback 策略和状态字段。
+
+验收标准：
+本地 fallback Wiki 显示 source/fallback 状态；未同步 WeKnora 不显示 retrievable。
+
+验证方式：
+fixture wiki fallback tests。
+
+风险：
+本地 Wiki 可能与 WeKnora 冲突，需保留 sync conflict 状态。
+
+状态：[ ]
+
+#### P3-M3-B4：可切换 backend 的 E2E smoke
+
+目标：
+验证 mock / weknora_api / extracted 的显式切换不会互相污染。
+
+范围：
+环境变量、capabilities、upload/retrieve/wiki/agent smoke。
+
+输出：
+backend switch smoke scripts。
+
+验收标准：
+每种 backend 输出 source 正确；release mode 禁止 mock 自动接管；切换后缓存不串数据。
+
+验证方式：
+`check_m3_backend_switch.py` 或等价 smoke。
+
+风险：
+本地数据残留会污染结果；smoke 使用临时 DB/fixture。
+
+状态：[ ]
+
 ### M3-C：混合检索、重排、评估预留
 
 | 任务 | 名称 | 状态 |
@@ -1681,6 +2317,94 @@ mock 关闭、WeKnora 配置存在、敏感文件未提交。
 | P3-M3-C2 | PA retrieval quality golden set | [ ] |
 | P3-M3-C3 | RAG 质量指标与人工评价表 | [ ] |
 | P3-M3-C4 | Agent 输出 faithfulness 回归验收 | [ ] |
+
+#### P3-M3-C1：WeKnora hybrid/rerank 能力参数透出设计
+
+目标：
+为 hybrid search、rerank、阈值、权重等能力预留 PA 标准参数。
+
+范围：
+Adapter 参数设计、capability gating、debug trace。
+
+输出：
+设计文档和最小参数 schema。
+
+验收标准：
+未启用 rerank 时不传无效参数；启用时 debug trace 能显示 rerank 阶段。
+
+验证方式：
+contract tests + optional live debug。
+
+风险：
+WeKnora 参数变化快，PA schema 应保持保守。
+
+状态：[ ]
+
+#### P3-M3-C2：PA retrieval quality golden set
+
+目标：
+建立脱敏 query/evidence golden set，支撑质量回归。
+
+范围：
+公共事务常见任务 query、期望 source_type、最低可接受 evidence 条件。
+
+输出：
+golden set 文件和评测脚本。
+
+验收标准：
+不包含真实敏感资料；每条样例有 query、期望 citation 条件、人工说明。
+
+验证方式：
+offline evaluation + secret scan。
+
+风险：
+golden set 过小会误导质量判断；先覆盖核心路径。
+
+状态：[ ]
+
+#### P3-M3-C3：RAG 质量指标与人工评价表
+
+目标：
+定义检索质量、引用质量和可用性的统一评价方式。
+
+范围：
+recall proxy、citation traceability、source diversity、latency、manual rating。
+
+输出：
+评价表和指标说明。
+
+验收标准：
+试点评价能区分配置问题、检索问题、生成问题和资料质量问题。
+
+验证方式：
+用 golden set 生成一版样例报告。
+
+风险：
+不要把模型文案好坏误判成 RAG 检索质量。
+
+状态：[ ]
+
+#### P3-M3-C4：Agent 输出 faithfulness 回归验收
+
+目标：
+确保 Agent 输出忠实于 evidence，不因 prompt 或模型变化编造事实。
+
+范围：
+QA / policy / case 输出检查、citation coverage、unsupported claim warning。
+
+输出：
+faithfulness regression smoke。
+
+验收标准：
+关键事实都有 citation；无 evidence 时必须 warning；不支持 claims 被标记或移除。
+
+验证方式：
+golden set + Agent regression。
+
+风险：
+自动 faithfulness 只能辅助，关键样例需人工 review。
+
+状态：[ ]
 
 ## 11. 任务执行协议
 
@@ -1790,20 +2514,30 @@ M1 最小验收必须通过：
 
 M2 最小验收：
 
-1. WeKnora 常见错误有可读提示。
-2. 文档和 Wiki 异步状态可恢复。
-3. Citation 可定位。
-4. 检索调试可用。
-5. 试点反馈回归清单通过。
+1. M2 preflight 能检查 WeKnora health/auth/workspace/KB、KnowledgeQA model、
+   Embedding model、KB `embedding_model_id`、vector dimension、DocReader、
+   Redis、vector store，并在缺失 blocking 配置时 fail。
+2. WeKnora 常见错误有 typed error、可读提示、retryable 标记和脱敏日志。
+3. 文档和 Wiki 异步状态可恢复，失败可重试，未同步/未检索的对象不标记 ready。
+4. Citation 可定位到 document chunk 或 Wiki page，定位缺失时 fail closed。
+5. 检索调试可用，但不返回 token、原始 WeKnora 全量响应或长段正文。
+6. 试点反馈回归清单通过。
+7. M2 release checker 覆盖 preflight、错误恢复、状态恢复、citation 定位、
+   retrieve debug、日志脱敏和 git safety。
 
 ### 12.3 M3 最小验收
 
 M3 最小验收：
 
-1. backend contract tests 覆盖 mock / weknora_api / extracted。
-2. extracted fallback 可在无 WeKnora 环境跑通最小链路。
-3. 有 retrieval quality golden set。
-4. hybrid/rerank/评估能力有明确扩展接口。
+1. capability matrix 明确 mock / weknora_api / extracted 的 supported、partial、
+   unsupported、dev-only 能力。
+2. release/试点环境禁止静默 fallback mock；extracted fallback 必须显式选择。
+3. backend contract tests 覆盖 mock / weknora_api / extracted。
+4. extracted fallback 可在无 WeKnora 环境跑通最小链路，且 source 不伪装为
+   `weknora_api`。
+5. 可切换 backend 的 E2E smoke 通过，缓存和数据事实源不串。
+6. 有 retrieval quality golden set。
+7. hybrid/rerank/评估能力有明确扩展接口。
 
 ## 13. 后续阶段预留
 
