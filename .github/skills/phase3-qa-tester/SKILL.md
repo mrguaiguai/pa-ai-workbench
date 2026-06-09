@@ -15,6 +15,10 @@ No inference-only pass.
 
 For M1, mock/extracted success is not enough. M1 RAG/Wiki/Agent pass requires WeKnora-backed evidence or an explicit fixture-only contract-test result marked as non-release proof.
 
+For M2/M3, fixture/mock success is not release proof. Release pass requires real
+DeepSeek chat, DashScope Embedding readiness, WeKnora-backed RAG/Wiki live gates,
+real Agent LLM output, and non-mock citations.
+
 ## Read First
 
 Read:
@@ -57,6 +61,26 @@ M1 must prove:
 - Frontend build passes.
 - Release safety checks pass.
 
+## M2/M3 Required Checks
+
+M2 must prove:
+
+- PA chat uses `CHAT_MODEL_PROVIDER=openai_compatible` with `MOCK_MODEL_MODE=false`.
+- DeepSeek chat smoke passes.
+- WeKnora KnowledgeQA uses DeepSeek.
+- WeKnora Embedding uses DashScope.
+- KB has a valid `embedding_model_id` and vector dimension.
+- Agent QA / policy / case use real DeepSeek output and `source=weknora_api` citations.
+- Wiki draft uses real DeepSeek output, can publish, and retrieve returns `wiki_page` evidence.
+- Mock chat, mock RAG, keyword-only retrieve, old chunks, and fallback Wiki draft are not counted as release pass.
+
+M3 must additionally prove:
+
+- Local product runbook works from empty data.
+- Backend/frontend/status page expose Chat / Embedding / WeKnora / capability readiness.
+- Release mode fails closed instead of silently falling back to mock.
+- Golden set and faithfulness regression cover QA / policy / case / Wiki draft.
+
 ## Commands
 
 Choose relevant commands:
@@ -67,10 +91,19 @@ cd pa-ai-workbench/backend && python scripts/smoke_weknora_connection.py
 cd pa-ai-workbench/backend && python scripts/smoke_weknora_rag_m1.py
 cd pa-ai-workbench/backend && python scripts/smoke_weknora_agent_m1.py
 cd pa-ai-workbench/backend && python scripts/smoke_weknora_wiki_m1.py
+cd pa-ai-workbench/backend && python scripts/check_m2_preflight.py
+cd pa-ai-workbench/backend && python scripts/smoke_real_chat_model_m2.py
+cd pa-ai-workbench/backend && python scripts/smoke_weknora_agent_real_llm_m2.py
+cd pa-ai-workbench/backend && python scripts/smoke_wiki_real_llm_m2.py
+cd pa-ai-workbench/backend && python scripts/check_m2_release.py
+cd pa-ai-workbench/backend && python scripts/check_m3_local_product.py
 cd pa-ai-workbench/frontend && npm run build
 cd pa-ai-workbench && git status --short
 cd pa-ai-workbench && git status --ignored --short
 ```
+
+If a command does not exist yet and the task claims that gate is complete, mark the QA
+result as FAIL or BLOCKED rather than silently substituting an older smoke.
 
 Existing phase 2 regression checks may also be useful:
 
@@ -142,6 +175,8 @@ Commands run:
 
 Evidence:
 - source=weknora_api / mock / fixture-only
+- model_provider=openai_compatible / mock / unknown
+- embedding_provider=DashScope / mock / unknown
 
 Fixes applied:
 - ...

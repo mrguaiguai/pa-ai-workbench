@@ -63,7 +63,7 @@ cd pa-ai-workbench/backend
 
 If `.env` does not exist, create it from `.env.example`.
 
-Default MVP config:
+Default MVP config for development-only quickstart:
 
 ```text
 KNOWLEDGE_BACKEND=mock
@@ -72,6 +72,50 @@ DATABASE_URL=sqlite:///./data/pa_workbench.db
 UPLOAD_DIR=./uploads
 MEMORY_RECENT_LIMIT=10
 ```
+
+This mock quickstart is not M2/M3 product acceptance and cannot be used as release proof.
+
+## Real Local Product Setup (M2/M3)
+
+For M2/M3 real product validation, configure PA to use WeKnora and DeepSeek through the
+OpenAI-compatible gateway:
+
+```text
+KNOWLEDGE_BACKEND=weknora_api
+MOCK_MODE=false
+CHAT_MODEL_PROVIDER=openai_compatible
+MOCK_MODEL_MODE=false
+CHAT_MODEL_BASE_URL=<deepseek-compatible-base-url>
+CHAT_MODEL_API_KEY=<secret>
+CHAT_MODEL_NAME=<deepseek-model>
+```
+
+Configure WeKnora with real model credentials:
+
+```text
+DEEPSEEK_API_KEY=<secret>
+DASHSCOPE_API_KEY=<secret>
+```
+
+WeKnora must also have:
+
+```text
+KnowledgeQA model: DeepSeek
+Embedding model: DashScope
+KB embedding_model_id: bound to the DashScope embedding model
+DocReader / Redis / vector store: available
+```
+
+When the relevant scripts exist, run:
+
+```bash
+cd pa-ai-workbench/backend
+python scripts/check_m2_preflight.py
+python scripts/check_m2_release.py
+python scripts/check_m3_local_product.py
+```
+
+Do not print `.env` contents. Report only PASS/FAIL and sanitized configuration names.
 
 Never ask the user for real sensitive department files.
 
@@ -179,10 +223,12 @@ npm run build
 
 ### Knowledge backend unavailable
 
-For MVP, switch to:
+For development-only quickstart, switch to:
 
 ```text
 KNOWLEDGE_BACKEND=mock
 MOCK_MODE=true
 ```
 
+For M2/M3 release or local product validation, do not switch to mock. Report the missing
+WeKnora, DeepSeek, DashScope, KB, DocReader, Redis, or vector-store gate as BLOCKED.

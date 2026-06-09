@@ -1,11 +1,15 @@
 ---
 name: phase3-weknora-adapter
-description: Implementation skill for PA AI Workbench phase 3 WeKnora backend integration. Use when the user asks to execute PHASE3_SPEC WeKnora deployment, RAG adapter, Wiki adapter, Document/Evidence/Citation/WikiPage mapping, or adapter contract-test tasks.
+description: Implementation skill for PA AI Workbench phase 3 WeKnora backend integration. Use when the user asks to execute PHASE3_SPEC WeKnora deployment, RAG adapter, Wiki adapter, runtime preflight, capability matrix, Document/Evidence/Citation/WikiPage mapping, or adapter contract-test tasks.
 ---
 
 # Phase 3 WeKnora Adapter
 
 This skill implements phase 3 tasks that connect PA AI Workbench to WeKnora backend RAG/Wiki capability.
+
+For M2/M3, this skill also owns the WeKnora side of real runtime readiness:
+DeepSeek KnowledgeQA, DashScope Embedding, KB `embedding_model_id`, vector dimension,
+DocReader, Redis, vector store, capability reporting, and fallback boundaries.
 
 ## Core Rule
 
@@ -58,6 +62,10 @@ internal/application/service/
 - Preserve PA API contracts for frontend.
 - Add contract tests or smoke scripts for each adapter task.
 - Keep mock backend available for local development, but do not use mock as M1 pass evidence.
+- Add M2/M3 preflight gates for KnowledgeQA, Embedding, KB binding, DocReader, Redis, and vector store.
+- Surface capability matrix data without leaking endpoints, tokens, or raw WeKnora internals.
+- Keep extracted/mock fallback explicit and dev-only unless a fallback task is being validated.
+- Verify multi-KB/workspace mapping does not mix document, wiki, or retrieve facts.
 
 ## Standard Output Shapes
 
@@ -89,7 +97,7 @@ score or score metadata
 
 ```text
 Read PHASE3_SPEC
--> Pick one P3-M1-A/B/C task
+-> Pick one P3-M1/M2/M3 WeKnora or adapter task
 -> Inspect WeKnora API/source for that capability
 -> Plan files
 -> Implement adapter mapping
@@ -110,11 +118,18 @@ cd pa-ai-workbench && python -m compileall knowledge_engine backend/app agent
 cd pa-ai-workbench/backend && python scripts/smoke_weknora_connection.py
 cd pa-ai-workbench/backend && python scripts/smoke_weknora_rag_m1.py
 cd pa-ai-workbench/backend && python scripts/smoke_weknora_wiki_m1.py
+cd pa-ai-workbench/backend && python scripts/check_m2_preflight.py
+cd pa-ai-workbench/backend && python scripts/check_m2_release.py
+cd pa-ai-workbench/backend && python scripts/check_m3_local_product.py
 git status --short
 git status --ignored --short
 ```
 
 If real WeKnora is unavailable, use recorded sanitized fixtures for contract tests and clearly report that live smoke was not run.
+
+For M2/M3 release readiness, sanitized fixtures are not enough. Real gates must prove
+DeepSeek KnowledgeQA, DashScope Embedding, KB `embedding_model_id`, vector dimension,
+and live WeKnora RAG/Wiki behavior.
 
 ## Auto Commit
 
@@ -143,6 +158,8 @@ git commit -m "feat: complete P3-M1-B3 weknora retrieve adapter"
 - Do not expose WeKnora raw errors directly to frontend.
 - Do not make Agent workflows import WeKnora-specific client code.
 - Do not mark M1 tasks complete with only mock/extracted backend evidence.
+- Do not mark M2/M3 tasks complete if real model or embedding gates are missing.
+- Do not let fallback evidence use `source=weknora_api`.
 - Do not push automatically.
 
 ## Report Format
