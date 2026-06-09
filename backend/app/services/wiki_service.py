@@ -787,6 +787,8 @@ def _output_citation_to_wiki_payload(citation: Citation) -> WikiCitationPayload:
 def _output_weknora_source_refs(citations: list[Citation]) -> list[str]:
     refs: list[str] = []
     for citation in citations:
+        if not _is_weknora_citation(citation):
+            continue
         source_id = citation.external_doc_id or citation.document_id
         if not source_id:
             continue
@@ -799,6 +801,8 @@ def _output_weknora_source_refs(citations: list[Citation]) -> list[str]:
 def _output_weknora_chunk_refs(citations: list[WikiCitationPayload]) -> list[str]:
     refs: list[str] = []
     for citation in citations:
+        if citation.metadata.get("citation_source") != "weknora_api":
+            continue
         if citation.source_type == "document_chunk" and citation.chunk_id:
             if citation.chunk_id not in refs:
                 refs.append(citation.chunk_id)
@@ -811,6 +815,8 @@ def _output_weknora_evidence_refs(
     refs: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for citation in citations:
+        if citation.metadata.get("citation_source") != "weknora_api":
+            continue
         evidence_id = citation.evidence_id
         if not evidence_id:
             continue
@@ -832,6 +838,13 @@ def _output_weknora_evidence_refs(
             ref["wiki_page_id"] = str(citation.metadata["wiki_page_id"])
         refs.append(ref)
     return refs
+
+
+def _is_weknora_citation(citation: Citation) -> bool:
+    if citation.source == "weknora_api":
+        return True
+    metadata = _from_json(citation.metadata_json, default={})
+    return isinstance(metadata, dict) and metadata.get("source") == "weknora_api"
 
 
 def _generate_draft_with_model_gateway(

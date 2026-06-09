@@ -1,5 +1,7 @@
 import {
+  BookOpenText,
   FileClock,
+  FilePlus2,
   Loader2,
   RefreshCw,
   Search,
@@ -10,6 +12,7 @@ import {
   ApiError,
   Citation,
   GeneratedOutput,
+  WikiPage,
   apiClient,
 } from "../api/client";
 import {
@@ -22,6 +25,8 @@ import {
 } from "../components/workbench";
 
 type LoadState = "idle" | "loading" | "error";
+
+const SELECTED_WIKI_STORAGE_KEY = "pa_workbench:selected_wiki_slug";
 
 type HistoryFilters = {
   query: string;
@@ -84,6 +89,25 @@ function matchesFilter(output: GeneratedOutput, filters: HistoryFilters) {
   );
 }
 
+function citationMetadata(citation: Citation) {
+  if (!citation.metadata_json) {
+    return {} as Record<string, unknown>;
+  }
+  try {
+    const parsed = JSON.parse(citation.metadata_json);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function isWeKnoraCitation(citation: Citation) {
+  const metadata = citationMetadata(citation);
+  return citation.source === "weknora_api" || metadata.source === "weknora_api";
+}
+
 export function HistoryPage() {
   const [filters, setFilters] = useState<HistoryFilters>(initialFilters);
   const [outputs, setOutputs] = useState<GeneratedOutput[]>([]);
@@ -92,6 +116,9 @@ export function HistoryPage() {
   const [citations, setCitations] = useState<Citation[]>([]);
   const [historyState, setHistoryState] = useState<LoadState>("idle");
   const [detailState, setDetailState] = useState<LoadState>("idle");
+  const [draftState, setDraftState] = useState<LoadState>("idle");
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [createdDraft, setCreatedDraft] = useState<WikiPage | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const taskTypeOptions = useMemo(
@@ -110,6 +137,15 @@ export function HistoryPage() {
     () => parseWarningsJson(selectedOutput?.warnings_json),
     [selectedOutput],
   );
+  const citationSummary = useMemo(() => {
+    const weknoraCount = citations.filter(isWeKnoraCitation).length;
+    return {
+      weknoraCount,
+      mockCount: citations.filter((citation) => citation.source === "mock").length,
+      otherCount: citations.length - weknoraCount,
+      totalCount: citations.length,
+    };
+  }, [citations]);
   const displayContent = useMemo(() => formatContent(selectedOutput), [selectedOutput]);
 
   const loadDetail = (outputId: string) => {
@@ -121,6 +157,9 @@ export function HistoryPage() {
         setSelectedOutput(response.output);
         setSelectedOutputId(response.output.id);
         setCitations(response.citations);
+        setCreatedDraft(null);
+        setDraftError(null);
+        setDraftState("idle");
         setDetailState("idle");
       })
       .catch((detailError: unknown) => {
@@ -144,6 +183,9 @@ export function HistoryPage() {
           setSelectedOutputId(null);
           setSelectedOutput(null);
           setCitations([]);
+          setCreatedDraft(null);
+          setDraftError(null);
+          setDraftState("idle");
         }
       })
       .catch((historyError: unknown) => {
@@ -159,6 +201,39 @@ export function HistoryPage() {
   const onSelectOutput = (outputId: string) => {
     setSelectedOutputId(outputId);
     loadDetail(outputId);
+  };
+
+  const createWikiDraft = () => {
+    if (!selectedOutput || draftState === "loading") {
+      return;
+    }
+
+    setDraftState("loading");
+    setDraftError(null);
+    apiClient
+      .createWikiDraftFromOutput(selectedOutput.id, {
+        title: selectedOutput.title,
+        metadata: {
+          source: "history_page",
+          history_output_id: selectedOutput.id,
+        },
+      })
+      .then((page) => {
+        setCreatedDraft(page);
+        setDraftState("idle");
+      })
+      .catch((draftCreateError: unknown) => {
+        setDraftError(errorMessage(draftCreateError));
+        setDraftState("error");
+      });
+  };
+
+  const openCreatedDraft = () => {
+    if (!createdDraft) {
+      return;
+    }
+    window.sessionStorage.setItem(SELECTED_WIKI_STORAGE_KEY, createdDraft.slug);
+    window.location.hash = "/wiki";
   };
 
   return (
@@ -287,6 +362,54 @@ export function HistoryPage() {
       </section>
 
       <aside className="history-evidence-panel" aria-label="引用与警告">
+        <section className="history-side-section">
+          <div className="history-panel-heading">
+            <span>Wiki Draft</span>
+            <strong>{createdDraft?.status ?? "Ready"}</strong>
+          </div>
+
+          <div className="history-draft-summary">
+            <span>{`Total citations ${citationSummary.totalCount}`}</span>
+            <span>{`WeKnora ${citationSummary.weknoraCount}`}</span>
+            <span>{`Mock ${citationSummary.mockCount}`}</span>
+          </div>
+
+          {citationSummary.totalCount > 0 && citationSummary.weknoraCount === 0 ? (
+            <div className="history-draft-warning">
+              当前历史结果没有真实 WeKnora citation，草稿会保留引用但不会标记为真实 WeKnora 来源。
+            </div>
+          ) : null}
+
+          <button
+            className="secondary-action"
+            type="button"
+            disabled={!selectedOutput || draftState === "loading"}
+            onClick={createWikiDraft}
+          >
+            {draftState === "loading" ? (
+              <Loader2 size={16} aria-hidden="true" />
+            ) : (
+              <FilePlus2 size={16} aria-hidden="true" />
+            )}
+            <span>{draftState === "loading" ? "生成中" : "生成 Wiki 草稿"}</span>
+          </button>
+
+          {draftError ? <ErrorState message={draftError} /> : null}
+
+          {createdDraft ? (
+            <div className="history-draft-result">
+              <div>
+                <BookOpenText size={16} aria-hidden="true" />
+                <span>{createdDraft.title}</span>
+              </div>
+              <p>{createdDraft.slug}</p>
+              <button className="text-action" type="button" onClick={openCreatedDraft}>
+                查看草稿
+              </button>
+            </div>
+          ) : null}
+        </section>
+
         <section className="history-side-section">
           <div className="history-panel-heading">
             <span>Warnings</span>

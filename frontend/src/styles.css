@@ -2413,6 +2413,81 @@ p {
   margin-top: 14px;
 }
 
+.history-draft-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.history-draft-summary span {
+  min-height: 24px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f2f6f8;
+  color: #52636e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-draft-warning {
+  margin-top: 10px;
+  border: 1px solid #edd8a8;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #7a5312;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.45;
+  padding: 8px 10px;
+}
+
+.history-draft-result {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #f8fafb;
+  padding: 10px;
+}
+
+.history-draft-result > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-draft-result svg {
+  flex: 0 0 auto;
+  color: #176b87;
+}
+
+.history-draft-result span,
+.history-draft-result p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-draft-result span {
+  color: #17212b;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.history-draft-result p {
+  color: #6b7a86;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
 .history-output-detail pre {
   max-height: 680px;
   margin: 18px 0 0;
