@@ -1181,7 +1181,7 @@ WeKnora 不保存 PA output id，需要 PA metadata 补充。
 | P3-M1-D2 | QA workflow WeKnora evidence prompt | [x] |
 | P3-M1-D3 | Policy workflow WeKnora evidence prompt | [x] |
 | P3-M1-D4 | Case workflow WeKnora evidence prompt | [x] |
-| P3-M1-D5 | Wiki draft workflow WeKnora refs | [ ] |
+| P3-M1-D5 | Wiki draft workflow WeKnora refs | [x] |
 | P3-M1-D6 | CitationChecker fail-closed 策略 | [ ] |
 
 #### P3-M1-D1：RetrieverTool 切换 WeKnora evidence 验收
@@ -1307,7 +1307,7 @@ smoke output -> draft。
 风险：
 WeKnora 与 PA refs 字段不同，需要 metadata bridge。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-D6：CitationChecker fail-closed 策略
 

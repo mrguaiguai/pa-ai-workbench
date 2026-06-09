@@ -676,12 +676,27 @@ def _build_draft_from_output(
     if not tags:
         tags = _default_tags(output)
 
+    source_document_ids = _source_document_ids(citations)
+    source_citation_ids = [citation.id for citation in citations]
+    wiki_citation_payloads = [
+        _output_citation_to_wiki_payload(citation) for citation in citations
+    ]
+    source_refs = _output_weknora_source_refs(citations)
+    chunk_refs = _output_weknora_chunk_refs(wiki_citation_payloads)
+    evidence_refs = _output_weknora_evidence_refs(wiki_citation_payloads)
+
     metadata = {
         **(payload.metadata or {}),
         "source": "generated_output",
         "source_output_id": output.id,
         "source_task_id": output.task_id,
         "source_task_type": output.task_type,
+        "pa_source_output_id": output.id,
+        "pa_source_document_ids": source_document_ids,
+        "pa_source_citation_ids": source_citation_ids,
+        "weknora_source_refs": source_refs,
+        "weknora_chunk_refs": chunk_refs,
+        "weknora_evidence_refs": evidence_refs,
         "draft_generator": model_draft.get("draft_generator", "fallback"),
     }
     if model_draft.get("model_provider"):
@@ -700,11 +715,11 @@ def _build_draft_from_output(
         business_area=payload.business_area,
         page_type=payload.page_type or output.task_type,
         source_output_id=output.id,
-        source_document_ids=_source_document_ids(citations),
-        source_citation_ids=[citation.id for citation in citations],
+        source_document_ids=source_document_ids,
+        source_citation_ids=source_citation_ids,
         created_by=payload.created_by,
         metadata=metadata,
-        citations=[_output_citation_to_wiki_payload(citation) for citation in citations],
+        citations=wiki_citation_payloads,
     )
 
 
@@ -767,6 +782,56 @@ def _output_citation_to_wiki_payload(citation: Citation) -> WikiCitationPayload:
             "citation_source": citation.source,
         },
     )
+
+
+def _output_weknora_source_refs(citations: list[Citation]) -> list[str]:
+    refs: list[str] = []
+    for citation in citations:
+        source_id = citation.external_doc_id or citation.document_id
+        if not source_id:
+            continue
+        ref = f"{source_id}|{citation.title}"
+        if ref not in refs:
+            refs.append(ref)
+    return refs
+
+
+def _output_weknora_chunk_refs(citations: list[WikiCitationPayload]) -> list[str]:
+    refs: list[str] = []
+    for citation in citations:
+        if citation.source_type == "document_chunk" and citation.chunk_id:
+            if citation.chunk_id not in refs:
+                refs.append(citation.chunk_id)
+    return refs
+
+
+def _output_weknora_evidence_refs(
+    citations: list[WikiCitationPayload],
+) -> list[dict[str, str]]:
+    refs: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for citation in citations:
+        evidence_id = citation.evidence_id
+        if not evidence_id:
+            continue
+        key = (evidence_id, citation.source_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        ref = {
+            "evidence_id": evidence_id,
+            "source_type": citation.source_type,
+        }
+        if citation.chunk_id:
+            ref["chunk_id"] = citation.chunk_id
+        if citation.external_doc_id:
+            ref["external_doc_id"] = citation.external_doc_id
+        if citation.document_id:
+            ref["document_id"] = citation.document_id
+        if citation.metadata.get("wiki_page_id"):
+            ref["wiki_page_id"] = str(citation.metadata["wiki_page_id"])
+        refs.append(ref)
+    return refs
 
 
 def _generate_draft_with_model_gateway(

@@ -97,6 +97,10 @@ class WikiDraftWriterTool:
         normalized_output_id = output_id.strip()
         if not normalized_output_id:
             raise WikiDraftWriterError("output_id is required to create a Wiki draft.")
+        normalized_metadata = self._metadata_with_refs(
+            metadata=metadata or {},
+            output_id=normalized_output_id,
+        )
         request = WikiDraftRequest(
             output_id=normalized_output_id,
             slug=slug.strip() if slug else None,
@@ -106,7 +110,7 @@ class WikiDraftWriterTool:
             business_area=business_area,
             page_type=page_type,
             created_by=created_by,
-            metadata=metadata or {},
+            metadata=normalized_metadata,
         )
         return self._normalize_result(self.draft_writer(request), request)
 
@@ -134,7 +138,7 @@ class WikiDraftWriterTool:
             page_type=cls._optional_str(value.get("page_type") or request.page_type),
             summary=cls._optional_str(value.get("summary") or request.summary),
             tags=cls._list_value(value.get("tags") or request.tags),
-            metadata=cls._dict_value(value.get("metadata")),
+            metadata={**request.metadata, **cls._dict_value(value.get("metadata"))},
         )
 
     @classmethod
@@ -151,8 +155,37 @@ class WikiDraftWriterTool:
             ),
             summary=cls._optional_str(getattr(value, "summary", None) or request.summary),
             tags=cls._list_value(getattr(value, "tags", None) or request.tags),
-            metadata=cls._dict_value(getattr(value, "metadata", None)),
+            metadata={
+                **request.metadata,
+                **cls._dict_value(getattr(value, "metadata", None)),
+            },
         )
+
+    @classmethod
+    def _metadata_with_refs(
+        cls,
+        metadata: dict[str, Any],
+        output_id: str,
+    ) -> dict[str, Any]:
+        normalized = dict(metadata)
+        normalized.setdefault("pa_source_output_id", output_id)
+        normalized.setdefault("source_output_id", output_id)
+        for key in (
+            "pa_source_document_ids",
+            "pa_source_citation_ids",
+            "weknora_source_refs",
+            "weknora_chunk_refs",
+            "source_refs",
+            "chunk_refs",
+        ):
+            if key in normalized:
+                normalized[key] = cls._list_value(normalized[key])
+        evidence_refs = normalized.get("weknora_evidence_refs")
+        if isinstance(evidence_refs, list):
+            normalized["weknora_evidence_refs"] = [
+                ref for ref in evidence_refs if isinstance(ref, dict)
+            ]
+        return normalized
 
     @staticmethod
     def _optional_str(value: Any) -> str | None:
