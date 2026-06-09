@@ -1647,7 +1647,7 @@ WeKnora runtime 变成 release gate：
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M2-A0 | Real runtime preflight gate | [ ] |
+| P3-M2-A0 | Real runtime preflight gate | [x] |
 | P3-M2-A1 | WeKnora Adapter 超时、重试、错误码规范 | [ ] |
 | P3-M2-A2 | 文档处理状态轮询与失败恢复 | [ ] |
 | P3-M2-A3 | Wiki 发布/索引异步状态恢复 | [ ] |
@@ -1693,7 +1693,7 @@ DeepSeek、DashScope、Embedding 或 KB 绑定的环境中确认失败。
 WeKnora API 可能没有统一模型检查接口；若只能通过上传/检索验证，必须使用脱敏
 fixture，并把副作用写清楚。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M2-A1：WeKnora Adapter 超时、重试、错误码规范
 
