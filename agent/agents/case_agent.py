@@ -186,8 +186,13 @@ class CaseReviewWorkflow:
             "provider": response.provider,
             "model": response.model,
             "usage": response.usage,
+            "evidence_sources": sorted({citation.source for citation in citations}),
+            "source_types": sorted(
+                {citation.source_type or "unknown" for citation in citations}
+            ),
+            "evidence_mode": self._evidence_mode(citations),
         }
-        return response.content, metadata
+        return self._grounded_markdown(response.content, request, citations), metadata
 
     @classmethod
     def _build_messages(
@@ -203,6 +208,8 @@ class CaseReviewWorkflow:
                     "你是 PA 智能工作台的案例复盘助手。必须基于给定案例、文档或 "
                     "Wiki 证据输出复盘；不得编造来源。输出中文 Markdown，包含："
                     "案例摘要、相关事实、问题与风险、建议补充核查、证据缺口。"
+                    "所有案例事实和时间线判断必须使用 [1] 这样的证据编号。"
+                    "证据不足时，只能列出待补材料，不要编造案例细节。"
                 ),
             ),
             ChatMessage(
@@ -245,10 +252,10 @@ class CaseReviewWorkflow:
             [
                 "",
                 "请输出以下结构：",
-                "1. 案例摘要",
-                "2. 相关事实",
-                "3. 问题与风险",
-                "4. 建议补充核查",
+                "1. 案例摘要，所有事实判断都使用 [1] 这样的证据编号",
+                "2. 相关事实或时间线，逐条标注证据编号、evidence_id、source_type",
+                "3. 问题与风险，明确对应证据编号",
+                "4. 建议补充核查，区分已由证据支持和需要补充确认的事项",
                 "5. 证据缺口或不确定性",
             ]
         )
@@ -339,3 +346,69 @@ class CaseReviewWorkflow:
         if len(normalized) <= max_chars:
             return normalized
         return f"{normalized[:max_chars]}[truncated]"
+
+    @classmethod
+    def _grounded_markdown(
+        cls,
+        review: str,
+        request: AgentRequest,
+        citations: list[Citation],
+    ) -> str:
+        if not citations:
+            return "\n".join(
+                [
+                    "## 依据不足",
+                    "",
+                    f"未检索到与“{request.query_or_topic}”相关的案例、文档或 Wiki 证据，无法形成案例复盘。",
+                    "",
+                    "## 待补材料",
+                    "",
+                    "- 补充原始案例材料、时间线记录、关键沟通纪要或已发布 Wiki 页面后重试。",
+                    "- 确认资料已完成 WeKnora 索引，并检查检索条件是否过窄。",
+                ]
+            )
+
+        return "\n".join(
+            [
+                review.strip(),
+                "",
+                "## 事实与引用",
+                "",
+                *[
+                    cls._case_fact_line(index, citation)
+                    for index, citation in enumerate(citations, start=1)
+                ],
+                "",
+                "## 待补材料与不确定性",
+                "",
+                "- 以上复盘只覆盖已检索到的证据；时间线、责任边界和相关方反馈仍需人工复核。",
+                "- 如缺少原始记录、关键节点或后续处置材料，应补充后再形成正式复盘。",
+            ]
+        ).strip()
+
+    @classmethod
+    def _case_fact_line(cls, index: int, citation: Citation) -> str:
+        source_type = citation.source_type or citation.metadata.get(
+            "citation_source_type"
+        )
+        evidence_id = citation.evidence_id or citation.metadata.get("evidence_id")
+        identifiers = [
+            f"source_type={source_type or 'unknown'}",
+            f"evidence_id={evidence_id or 'unknown'}",
+        ]
+        if citation.chunk_id:
+            identifiers.append(f"chunk_id={citation.chunk_id}")
+        if citation.wiki_page_id:
+            identifiers.append(f"wiki_page_id={citation.wiki_page_id}")
+        return (
+            f"- [{index}] {citation.title}: {cls._excerpt(citation.text, max_chars=140)} "
+            f"({'; '.join(identifiers)})"
+        )
+
+    @staticmethod
+    def _evidence_mode(citations: list[Citation]) -> str:
+        if not citations:
+            return "no_evidence"
+        if all(citation.source == "weknora_api" for citation in citations):
+            return "weknora_api"
+        return "mixed"
