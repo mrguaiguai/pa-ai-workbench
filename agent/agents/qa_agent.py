@@ -180,8 +180,13 @@ class KnowledgeQaWorkflow:
             "provider": response.provider,
             "model": response.model,
             "usage": response.usage,
+            "evidence_sources": sorted({citation.source for citation in citations}),
+            "source_types": sorted(
+                {citation.source_type or "unknown" for citation in citations}
+            ),
+            "evidence_mode": self._evidence_mode(citations),
         }
-        return response.content, metadata
+        return self._grounded_markdown(response.content, citations), metadata
 
     @classmethod
     def _build_messages(
@@ -196,7 +201,8 @@ class KnowledgeQaWorkflow:
                 content=(
                     "你是 PA 智能工作台的知识问答助手。必须只基于给定证据回答；"
                     "如果证据不足，要明确说明不足。回答使用中文 Markdown，"
-                    "并在涉及事实判断时引用证据编号。不得编造未给出的来源。"
+                    "并在涉及事实判断时使用 [1] 这样的证据编号。不得编造未给出的来源。"
+                    "如果没有可用证据，只能说明依据不足，不要给出事实性结论。"
                 ),
             ),
             ChatMessage(
@@ -239,8 +245,8 @@ class KnowledgeQaWorkflow:
             [
                 "",
                 "请输出：",
-                "1. 直接回答",
-                "2. 依据列表，逐条标注使用的证据编号",
+                "1. 直接回答，所有事实判断都用 [1] 这样的证据编号",
+                "2. 依据列表，逐条标注使用的证据编号、evidence_id、source_type",
                 "3. 证据不足或不确定之处",
             ]
         )
@@ -279,3 +285,51 @@ class KnowledgeQaWorkflow:
         if len(normalized) <= max_chars:
             return normalized
         return f"{normalized[:max_chars]}[truncated]"
+
+    @classmethod
+    def _grounded_markdown(cls, answer: str, citations: list[Citation]) -> str:
+        if not citations:
+            return "\n".join(
+                [
+                    "## 依据不足",
+                    "",
+                    "未检索到可用证据，无法基于 WeKnora evidence 回答该问题。",
+                    "请补充资料、调整问题，或确认知识库索引状态后重试。",
+                ]
+            )
+        return "\n".join(
+            [
+                answer.strip(),
+                "",
+                "## 引用证据",
+                "",
+                *[
+                    cls._citation_markdown_line(index, citation)
+                    for index, citation in enumerate(citations, start=1)
+                ],
+            ]
+        ).strip()
+
+    @classmethod
+    def _citation_markdown_line(cls, index: int, citation: Citation) -> str:
+        source_type = citation.source_type or citation.metadata.get(
+            "citation_source_type"
+        )
+        evidence_id = citation.evidence_id or citation.metadata.get("evidence_id")
+        identifiers = [
+            f"source_type={source_type or 'unknown'}",
+            f"evidence_id={evidence_id or 'unknown'}",
+        ]
+        if citation.chunk_id:
+            identifiers.append(f"chunk_id={citation.chunk_id}")
+        if citation.wiki_page_id:
+            identifiers.append(f"wiki_page_id={citation.wiki_page_id}")
+        return f"- [{index}] {citation.title} ({'; '.join(identifiers)})"
+
+    @staticmethod
+    def _evidence_mode(citations: list[Citation]) -> str:
+        if not citations:
+            return "no_evidence"
+        if all(citation.source == "weknora_api" for citation in citations):
+            return "weknora_api"
+        return "mixed"
