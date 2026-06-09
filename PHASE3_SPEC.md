@@ -1177,7 +1177,7 @@ WeKnora 不保存 PA output id，需要 PA metadata 补充。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M1-D1 | RetrieverTool 切换 WeKnora evidence 验收 | [ ] |
+| P3-M1-D1 | RetrieverTool 切换 WeKnora evidence 验收 | [x] |
 | P3-M1-D2 | QA workflow WeKnora evidence prompt | [ ] |
 | P3-M1-D3 | Policy workflow WeKnora evidence prompt | [ ] |
 | P3-M1-D4 | Case workflow WeKnora evidence prompt | [ ] |
@@ -1207,7 +1207,7 @@ agent smoke with patched/test WeKnora backend 或真实脱敏环境。
 风险：
 现有 tests 可能依赖 mock/extracted，需要分层保留。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-D2：QA workflow WeKnora evidence prompt
 
