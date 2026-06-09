@@ -177,10 +177,12 @@ class WeKnoraApiBackend(KnowledgeEngine):
         if not normalized_query:
             return []
         filters = filters or {}
+        source_type_filter = self._normalized_source_type(filters.get("source_type"))
+        if source_type_filter == "wiki_page":
+            return self._retrieve_wiki_evidence(normalized_query, filters, top_k)
         payload = self._retrieve_payload(normalized_query, filters)
         data = self._request_json("POST", "/api/v1/knowledge-search", payload)
         items = self._unwrap_items(data)
-        source_type_filter = self._normalized_source_type(filters.get("source_type"))
         evidence_items = [self._to_evidence(item) for item in items if isinstance(item, dict)]
         if source_type_filter:
             evidence_items = [
@@ -188,6 +190,47 @@ class WeKnoraApiBackend(KnowledgeEngine):
                 for evidence in evidence_items
                 if evidence.source_type == source_type_filter
             ]
+        return evidence_items[: max(top_k, 0)]
+
+    def _retrieve_wiki_evidence(
+        self,
+        query: str,
+        filters: dict,
+        top_k: int,
+    ) -> list[Evidence]:
+        if top_k <= 0:
+            return []
+        kb_ids = _list_filter(
+            filters.get("knowledge_base_ids")
+            or filters.get("knowledge_base_id")
+            or filters.get("kb_ids")
+            or filters.get("kb_id")
+        )
+        if not kb_ids and self.default_kb_id:
+            kb_ids = [self.default_kb_id]
+        if not kb_ids:
+            raise KnowledgeBackendUnavailableError("WEKNORA_DEFAULT_KB_ID is not configured")
+
+        evidence_items: list[Evidence] = []
+        limit = max(top_k, 1)
+        for kb_id in kb_ids:
+            summaries = self.search_wiki(query, kb_id=kb_id, limit=limit)
+            for summary in summaries:
+                page = self.read_wiki_page(summary.slug, kb_id=kb_id)
+                if page is None:
+                    page = WikiPage(
+                        slug=summary.slug,
+                        title=summary.title,
+                        page_type=summary.page_type,
+                        summary=summary.summary,
+                        content=summary.summary,
+                        citations=[],
+                        source="weknora_api",
+                        metadata=summary.metadata,
+                    )
+                evidence_items.append(self._wiki_page_to_evidence(page, kb_id))
+                if len(evidence_items) >= max(top_k, 0):
+                    return evidence_items
         return evidence_items[: max(top_k, 0)]
 
     def search_wiki(
@@ -706,6 +749,36 @@ class WeKnoraApiBackend(KnowledgeEngine):
             citations=[],
             source="weknora_api",
             metadata=metadata,
+        )
+
+    @staticmethod
+    def _wiki_page_to_evidence(page: WikiPage, kb_id: str) -> Evidence:
+        metadata = dict(page.metadata or {})
+        wiki_page_id = str(
+            metadata.get("id")
+            or metadata.get("weknora_wiki_page_id")
+            or metadata.get("wiki_page_id")
+            or page.slug
+        )
+        metadata.setdefault("weknora_wiki_page_id", wiki_page_id)
+        metadata.setdefault("weknora_wiki_page_slug", page.slug)
+        metadata.setdefault("weknora_knowledge_base_id", kb_id)
+        metadata.setdefault("citation_source_type", "wiki_page")
+        evidence_id = f"wiki_page:{wiki_page_id}"
+        metadata.setdefault("evidence_id", evidence_id)
+        text = page.content or page.summary
+        return Evidence(
+            document_id=None,
+            external_doc_id=None,
+            chunk_id=None,
+            title=page.title or page.slug or "Untitled wiki page",
+            text=text,
+            score=None,
+            source="weknora_api",
+            metadata=metadata,
+            evidence_id=evidence_id,
+            source_type="wiki_page",
+            wiki_page_id=wiki_page_id,
         )
 
     @staticmethod

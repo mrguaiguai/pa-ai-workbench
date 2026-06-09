@@ -1474,7 +1474,7 @@ manual: history -> draft -> wiki page。
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | P3-M1-F1 | M1 WeKnora RAG E2E smoke | [x] |
-| P3-M1-F2 | M1 Wiki E2E smoke | [ ] |
+| P3-M1-F2 | M1 Wiki E2E smoke | [x] |
 | P3-M1-F3 | M1 Agent E2E smoke | [ ] |
 | P3-M1-F4 | M1 frontend build 与主流程浏览器检查 | [x] |
 | P3-M1-F5 | M1 release checklist 与安全检查 | [ ] |
@@ -1542,7 +1542,7 @@ wiki_page evidence。
 风险：
 Wiki 索引异步，需要等待/重试策略。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-F3：M1 Agent E2E smoke
 
