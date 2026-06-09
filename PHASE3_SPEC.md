@@ -1621,52 +1621,73 @@ mock 关闭、WeKnora 配置存在、敏感文件未提交。
 
 ### M2/M3 开发前置原则
 
-M2/M3 必须把 M1 暴露出的模型配置问题制度化处理：
+M2/M3 必须把 M1 暴露出的模型配置问题制度化处理，并把真实 LLM / Embedding /
+WeKnora runtime 变成 release gate：
 
 1. 每个阶段都必须有 release checker 或等价验收脚本。
-2. release checker 必须 fail closed；不能用 mock、keyword-only、旧 chunk 或
-   推断结果代替真实通过。
-3. WeKnora RAG / Wiki 相关验收必须显式检查 KnowledgeQA 模型、Embedding
+2. release checker 必须 fail closed；不能用 mock chat、mock RAG、keyword-only、
+   旧 chunk、fallback Wiki draft 或推断结果代替真实通过。
+3. 真实模型分工固定为：PA Agent Chat 使用 DeepSeek，经 `openai_compatible`
+   `ModelGateway` 调用；WeKnora KnowledgeQA 使用 DeepSeek；WeKnora Embedding
+   使用阿里 DashScope。
+4. PA release 配置必须显式关闭 mock：`CHAT_MODEL_PROVIDER=openai_compatible`、
+   `MOCK_MODEL_MODE=false`、`KNOWLEDGE_BACKEND=weknora_api`、`MOCK_MODE=false`。
+5. WeKnora RAG / Wiki 相关验收必须显式检查 KnowledgeQA 模型、Embedding
    模型、KB 的 `embedding_model_id`、vector dimension、DocReader、Redis 和
    vector store。
-4. mock / extracted fallback 只能在显式开发或 M3 fallback 验收中使用，不能在
-   试点或 release 环境静默接管。
-5. 所有错误、日志、调试 trace 和回归资料必须脱敏，不保存 token、完整 prompt、
+6. mock / extracted fallback 只能在显式开发或 M3 fallback 验收中使用，不能在
+   试点或 release 环境静默接管，也不能计入 M2/M3 READY。
+7. Agent smoke 的 LLM prose 在 M1 可使用 mock chat model；从 M2 起，release
+   证明必须使用真实 DeepSeek 输出，且 citations/evidence 必须来自 non-mock
+   WeKnora。
+8. 所有错误、日志、调试 trace 和回归资料必须脱敏，不保存 token、完整 prompt、
    完整文档正文或长段 chunk。
 
 ### M2-A：稳定性与错误处理
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M2-A0 | WeKnora runtime preflight 与模型配置 gate | [ ] |
+| P3-M2-A0 | Real runtime preflight gate | [ ] |
 | P3-M2-A1 | WeKnora Adapter 超时、重试、错误码规范 | [ ] |
 | P3-M2-A2 | 文档处理状态轮询与失败恢复 | [ ] |
 | P3-M2-A3 | Wiki 发布/索引异步状态恢复 | [ ] |
 | P3-M2-A4 | Agent 无证据和弱证据策略增强 | [ ] |
+| P3-M2-A5 | PA real LLM 接入与 DeepSeek smoke | [ ] |
 
-#### P3-M2-A0：WeKnora runtime preflight 与模型配置 gate
+#### P3-M2-A0：Real runtime preflight gate
 
 目标：
-在进入 M2 功能开发前，提供机器可执行 preflight，提前发现 M1 出现过的
-模型、Embedding、KB 绑定和向量维度问题。
+在进入 M2 功能开发前，提供机器可执行 preflight，提前发现 DeepSeek、
+DashScope、WeKnora KnowledgeQA / Embedding、KB 绑定和向量维度问题。
 
 范围：
 新增或扩展 checker / smoke，不改业务功能。检查 PA env、WeKnora health、
-workspace、KB、KnowledgeQA model、Embedding model、KB `embedding_model_id`、
-vector dimension、DocReader、Redis、vector store。
+workspace、KB、PA Chat model、WeKnora KnowledgeQA model、Embedding model、
+KB `embedding_model_id`、vector dimension、DocReader、Redis、vector store。
+
+必检配置：
+
+- PA `.env`：`CHAT_MODEL_PROVIDER=openai_compatible`、`MOCK_MODEL_MODE=false`、
+  `CHAT_MODEL_BASE_URL`、`CHAT_MODEL_API_KEY`、`CHAT_MODEL_NAME`。
+- PA `.env`：`KNOWLEDGE_BACKEND=weknora_api`、`MOCK_MODE=false`。
+- WeKnora `.env`：`DEEPSEEK_API_KEY`、`DASHSCOPE_API_KEY`。
+- WeKnora model records：KnowledgeQA 绑定 DeepSeek，Embedding 绑定 DashScope。
+- WeKnora KB：绑定有效 `embedding_model_id`，实际向量维度与模型维度一致。
 
 输出：
 `backend/scripts/check_m2_preflight.py` 或合并到 M2 release checker 的
 preflight gate；文档记录失败项与修复提示。
 
 验收标准：
-缺少 Embedding 模型、KB 未绑定 `embedding_model_id`、dimension mismatch、
-DocReader/Redis/vector store 不可用、`MOCK_MODE=true` 或 mock backend 时均
-返回 non-zero；通过时不打印 token、endpoint 私密细节或长文本。
+缺少 DeepSeek chat 配置、`CHAT_MODEL_PROVIDER` 非 `openai_compatible`、
+`MOCK_MODEL_MODE=true`、缺少 DashScope Embedding、KB 未绑定
+`embedding_model_id`、dimension mismatch、DocReader/Redis/vector store 不可用、
+`MOCK_MODE=true` 或 mock backend 时均返回 non-zero；通过时不打印 token、
+endpoint 私密细节或长文本。
 
 验证方式：
-`backend/.venv/bin/python backend/scripts/check_m2_preflight.py`；在一个故意缺失
-Embedding 或 KB 绑定的环境中确认失败。
+`backend/.venv/bin/python backend/scripts/check_m2_preflight.py`；在故意缺失
+DeepSeek、DashScope、Embedding 或 KB 绑定的环境中确认失败。
 
 风险：
 WeKnora API 可能没有统一模型检查接口；若只能通过上传/检索验证，必须使用脱敏
@@ -1766,6 +1787,42 @@ scoped no-evidence smoke、低分 evidence fixture、Agent citation smoke。
 
 风险：
 过严策略可能降低可用性；M2 先以透明提示优先。
+
+状态：[ ]
+
+#### P3-M2-A5：PA real LLM 接入与 DeepSeek smoke
+
+目标：
+让 QA / policy / case / Wiki draft 的 release 口径从 mock prose 升级为真实
+DeepSeek 输出，同时保持 citations/evidence 仍由 WeKnora 提供。
+
+范围：
+PA `ModelGateway` 的 `openai_compatible` provider 配置、DeepSeek chat smoke、
+Agent real LLM smoke、Wiki real LLM draft smoke、输出 metadata 和 release
+checker gate。只允许 Agent/Wiki draft 经 `ModelGateway` 调模型，不允许业务代码
+直接拼接 DeepSeek SDK 或绕过 gateway。
+
+输出：
+`backend/scripts/smoke_real_chat_model_m2.py`、
+`backend/scripts/smoke_weknora_agent_real_llm_m2.py`、
+`backend/scripts/smoke_wiki_real_llm_m2.py`，以及对应 docs/checklist 说明。
+
+验收标准：
+DeepSeek chat smoke 能返回真实模型响应；QA / policy / case 至少各有一次
+`model_provider=openai_compatible`、`model=<DeepSeek model>` 的生成记录；Agent
+citations 通过 CitationChecker，且 evidence `source=weknora_api`；Wiki draft
+metadata 记录真实 provider/model，发布后可被 retrieve 命中 `wiki_page` evidence。
+fallback draft、mock chat、mock RAG、keyword-only retrieve 均不能计入 release pass。
+
+验证方式：
+`backend/.venv/bin/python backend/scripts/smoke_real_chat_model_m2.py`、
+`backend/.venv/bin/python backend/scripts/smoke_weknora_agent_real_llm_m2.py`、
+`backend/.venv/bin/python backend/scripts/smoke_wiki_real_llm_m2.py`；所有 live smoke
+只能使用脱敏 fixture，并记录副作用。
+
+风险：
+公网模型 API 延迟、限流和费用会影响 smoke 稳定性；checker 应区分配置失败、
+网络失败、模型失败和 WeKnora evidence 失败。
 
 状态：[ ]
 
@@ -2071,15 +2128,23 @@ KB 必须绑定 `embedding_model_id`。
 M2 结束时有独立 release gate，而不是复用 M1 口径。
 
 范围：
-preflight、错误恢复、异步状态恢复、citation 定位、retrieve debug、日志脱敏、
-git safety。
+preflight、DeepSeek chat、DashScope Embedding、WeKnora RAG/Wiki live gates、
+Agent real LLM、Wiki real LLM draft、错误恢复、异步状态恢复、citation 定位、
+retrieve debug、日志脱敏、git safety。
 
 输出：
 `backend/scripts/check_m2_release.py` 和 `docs/PHASE3_M2_RELEASE_CHECKLIST.md`。
 
 验收标准：
 任一 blocking gate 失败时返回 non-zero；默认不运行有副作用 live smoke，必须显式
-参数开启；输出不打印 secrets。
+参数开启；输出不打印 secrets。M2 READY 必须至少证明：
+
+1. DeepSeek Chat smoke 通过。
+2. DashScope Embedding、KB `embedding_model_id` 和 vector dimension 通过。
+3. WeKnora RAG / Wiki live gates 通过。
+4. Agent real LLM + non-mock citation 通过。
+5. Wiki real LLM draft + publish + retrieve 通过。
+6. mock/fallback 未被计入 release pass。
 
 验证方式：
 static checker + optional live M2 smokes。
@@ -2406,6 +2471,56 @@ golden set + Agent regression。
 
 状态：[ ]
 
+### M3-D：本地产品化交付
+
+| 任务 | 名称 | 状态 |
+| --- | --- | --- |
+| P3-M3-D1 | M3 本地真实产品 runbook 与端到端验收 | [ ] |
+
+#### P3-M3-D1：M3 本地真实产品 runbook 与端到端验收
+
+目标：
+M3 完成后，PA AI Workbench 成为本地部署 + 公网真实模型 API 的可用产品，而不是
+demo/mock 演示。
+
+范围：
+WeKnora、PA backend、PA frontend 的启动顺序；DeepSeek Chat、WeKnora DeepSeek
+KnowledgeQA、DashScope Embedding 配置；空数据初始化；脱敏文档上传/index；
+QA / policy / case / Wiki draft / publish / retrieve / history / citation/source 定位
+端到端验收；release 模式下 fallback fail-closed。
+
+输出：
+`docs/PHASE3_M3_LOCAL_PRODUCT_RUNBOOK.md` 和
+`backend/scripts/check_m3_local_product.py`。
+
+验收标准：
+runbook 可从空数据跑通完整产品链路；首页/状态页清晰显示 Chat、Embedding、
+WeKnora 和 capability readiness；release 模式禁止静默 mock fallback；extracted
+fallback 仅 dev-only 或显式选择，source 不伪装；golden set 和 faithfulness 回归
+覆盖 QA / policy / case / Wiki draft；`check_m3_local_product.py` 通过。
+
+M3 本地产品 smoke：
+
+1. 启动 WeKnora、PA backend、PA frontend。
+2. 配置 DeepSeek Chat 和 DashScope Embedding。
+3. 运行 M3 preflight。
+4. 上传脱敏文档并 indexed。
+5. DeepSeek 生成 QA / policy / case。
+6. DeepSeek 生成 Wiki draft。
+7. 发布 Wiki。
+8. retrieve 命中 `wiki_page` evidence。
+9. 前端查看 history、citation、source 定位。
+
+验证方式：
+按 runbook 从空数据执行；运行 `backend/.venv/bin/python
+backend/scripts/check_m3_local_product.py`；所有 live 资料必须脱敏。
+
+风险：
+M3 是本地部署 + 公网真实模型 API 产品，不是完全离线产品；公网 API 不可用时
+应显示 blocked/degraded，不允许用 mock 静默替代 release。
+
+状态：[ ]
+
 ## 11. 任务执行协议
 
 AI 开发工具每次只执行一个任务编号。
@@ -2514,16 +2629,22 @@ M1 最小验收必须通过：
 
 M2 最小验收：
 
-1. M2 preflight 能检查 WeKnora health/auth/workspace/KB、KnowledgeQA model、
-   Embedding model、KB `embedding_model_id`、vector dimension、DocReader、
-   Redis、vector store，并在缺失 blocking 配置时 fail。
+1. M2 preflight 能检查 DeepSeek Chat、DashScope Embedding、WeKnora
+   health/auth/workspace/KB、KnowledgeQA model、KB `embedding_model_id`、
+   vector dimension、DocReader、Redis、vector store，并在缺失 blocking 配置时
+   fail closed。
 2. WeKnora 常见错误有 typed error、可读提示、retryable 标记和脱敏日志。
 3. 文档和 Wiki 异步状态可恢复，失败可重试，未同步/未检索的对象不标记 ready。
 4. Citation 可定位到 document chunk 或 Wiki page，定位缺失时 fail closed。
 5. 检索调试可用，但不返回 token、原始 WeKnora 全量响应或长段正文。
-6. 试点反馈回归清单通过。
-7. M2 release checker 覆盖 preflight、错误恢复、状态恢复、citation 定位、
-   retrieve debug、日志脱敏和 git safety。
+6. DeepSeek Chat smoke、Agent real LLM smoke、Wiki real LLM draft smoke 通过。
+7. QA / policy / case / Wiki draft 使用真实 DeepSeek 生成；citations/evidence 来自
+   non-mock WeKnora。
+8. mock chat、mock RAG、keyword-only retrieve、fallback Wiki draft 不计入 release
+   pass。
+9. 试点反馈回归清单通过。
+10. M2 release checker 覆盖 preflight、真实模型、错误恢复、状态恢复、
+    citation 定位、retrieve debug、日志脱敏和 git safety。
 
 ### 12.3 M3 最小验收
 
@@ -2537,7 +2658,13 @@ M3 最小验收：
    `weknora_api`。
 5. 可切换 backend 的 E2E smoke 通过，缓存和数据事实源不串。
 6. 有 retrieval quality golden set。
-7. hybrid/rerank/评估能力有明确扩展接口。
+7. golden set 和 faithfulness 回归覆盖 QA / policy / case / Wiki draft。
+8. 本地产品 runbook 可从空数据跑通 WeKnora、PA backend、PA frontend、
+   DeepSeek Chat、DashScope Embedding、上传/index、QA / policy / case、Wiki draft、
+   publish、retrieve、history、citation/source 定位。
+9. 首页/状态页显示 Chat / Embedding / WeKnora / capability readiness。
+10. `check_m3_local_product.py` 通过。
+11. hybrid/rerank/评估能力有明确扩展接口。
 
 ## 13. 后续阶段预留
 
