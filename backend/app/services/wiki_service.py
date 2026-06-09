@@ -204,6 +204,7 @@ def index_wiki_page_record(
     session.add(page)
     session.commit()
     session.refresh(page)
+    _sync_page_to_weknora(session=session, page=page, operation="publish")
     return page
 
 
@@ -266,6 +267,7 @@ def publish_wiki_page_record(session: Session, slug: str) -> WikiPageModel:
     session.add(page)
     session.commit()
     session.refresh(page)
+    _sync_page_to_weknora(session=session, page=page, operation="publish")
     return page
 
 
@@ -325,7 +327,7 @@ def _sync_page_to_weknora(
         return
 
     payload = _weknora_wiki_payload(session=session, page=page, metadata=metadata)
-    should_update = operation == "update" and bool(
+    should_update = operation in {"update", "publish"} and bool(
         metadata.get("weknora_id") or metadata.get("weknora_sync_status") == "synced"
     )
     try:
@@ -350,6 +352,8 @@ def _sync_page_to_weknora(
         return
 
     synced_metadata = synced.metadata or {}
+    if operation == "publish":
+        page.embedding_status = "indexing"
     _set_page_metadata(
         session=session,
         page=page,
@@ -365,6 +369,9 @@ def _sync_page_to_weknora(
             "weknora_sync_operation": operation,
             "weknora_synced_at": utc_now().isoformat(),
             "weknora_sync_error": None,
+            "weknora_index_status": (
+                "indexing" if operation == "publish" else metadata.get("weknora_index_status")
+            ),
             "weknora_source_refs": synced_metadata.get("source_refs")
             or payload.get("source_refs")
             or [],

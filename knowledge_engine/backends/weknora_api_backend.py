@@ -491,8 +491,15 @@ class WeKnoraApiBackend(KnowledgeEngine):
     def _to_evidence(item: dict) -> Evidence:
         metadata = WeKnoraApiBackend._search_result_metadata(item)
         source_type = WeKnoraApiBackend._source_type(item, metadata)
-        chunk_id = item.get("chunk_id") or item.get("id")
-        wiki_page_id = item.get("wiki_page_id") or item.get("wiki_id")
+        chunk_id = None if source_type == "wiki_page" else item.get("chunk_id") or item.get("id")
+        wiki_page_id = (
+            item.get("wiki_page_id")
+            or item.get("wiki_id")
+            or item.get("wiki_page_slug")
+            or item.get("slug")
+            or item.get("page_id")
+            or metadata.get("weknora_slug")
+        )
         evidence_id = (
             item.get("evidence_id")
             or metadata.get("evidence_id")
@@ -510,6 +517,8 @@ class WeKnoraApiBackend(KnowledgeEngine):
             chunk_id=chunk_id,
             title=(
                 item.get("title")
+                or item.get("wiki_title")
+                or item.get("page_title")
                 or item.get("knowledge_title")
                 or item.get("knowledge_filename")
                 or "Untitled evidence"
@@ -571,6 +580,13 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "knowledge_channel",
             "matched_content",
             "knowledge_description",
+            "wiki_page_id",
+            "wiki_id",
+            "wiki_page_slug",
+            "page_id",
+            "slug",
+            "wiki_title",
+            "page_title",
         ):
             if key in item and item.get(key) not in (None, ""):
                 metadata[f"weknora_{key}"] = item.get(key)
