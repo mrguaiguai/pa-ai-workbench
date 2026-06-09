@@ -131,13 +131,16 @@ class WeKnoraApiBackend(KnowledgeEngine):
         if not isinstance(data, dict):
             data = {}
         raw_status = data.get("parse_status") or data.get("status")
+        mapped_status = self._map_document_status(raw_status)
         return {
             "external_doc_id": external_doc_id,
-            "status": self._map_document_status(raw_status),
+            "status": mapped_status,
             "source": "weknora_api",
             "message": self._status_message(data),
-            "failed_step": "weknora" if self._map_document_status(raw_status) == "failed" else None,
-            "error_message": data.get("error_message") or None,
+            "failed_step": self._document_failed_step(data, raw_status)
+            if mapped_status == "failed"
+            else None,
+            "error_message": data.get("error_message") or data.get("error") or None,
             "metadata": self._document_metadata(data, {}),
         }
 
@@ -362,9 +365,45 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return "indexing"
         if normalized in {"completed", "indexed", "ready"}:
             return "indexed"
-        if normalized in {"failed", "error", "cancelled"}:
+        if normalized in {
+            "failed",
+            "error",
+            "cancelled",
+            "parse_failed",
+            "parsing_failed",
+            "chunk_failed",
+            "chunking_failed",
+            "embedding_failed",
+            "index_failed",
+            "indexing_failed",
+            "upload_failed",
+        }:
             return "failed"
         return "unknown"
+
+    @staticmethod
+    def _document_failed_step(data: dict, raw_status: object) -> str:
+        explicit_step = data.get("failed_step") or data.get("failedStep") or data.get("step")
+        normalized_step = str(explicit_step or "").strip().lower()
+        if normalized_step in {"parse", "parsing"}:
+            return "parse"
+        if normalized_step in {"chunk", "chunking", "split", "splitting"}:
+            return "chunk"
+        if normalized_step in {"embedding", "embed", "index", "indexing", "finalizing"}:
+            return "index"
+        if normalized_step in {"upload", "weknora_upload"}:
+            return "weknora_upload"
+
+        normalized_status = str(raw_status or "").strip().lower()
+        if "parse" in normalized_status:
+            return "parse"
+        if "chunk" in normalized_status or "split" in normalized_status:
+            return "chunk"
+        if "embedding" in normalized_status or "index" in normalized_status:
+            return "index"
+        if "upload" in normalized_status:
+            return "weknora_upload"
+        return "weknora"
 
     @staticmethod
     def _document_metadata(data: dict, original_metadata: dict) -> dict:

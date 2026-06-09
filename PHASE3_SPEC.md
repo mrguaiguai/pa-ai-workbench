@@ -1339,7 +1339,7 @@ targeted tests。
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | P3-M1-E1 | 首页/状态页展示 WeKnora backend 状态 | [x] |
-| P3-M1-E2 | 资料库 WeKnora 索引状态与错误展示 | [ ] |
+| P3-M1-E2 | 资料库 WeKnora 索引状态与错误展示 | [x] |
 | P3-M1-E3 | 分析台 Real WeKnora RAG evidence 展示 | [ ] |
 | P3-M1-E4 | Wiki draft/publish/index 状态展示 | [ ] |
 | P3-M1-E5 | 历史 output 到 Wiki 草稿入口核对 | [ ] |
@@ -1392,7 +1392,7 @@ frontend build + manual upload flow。
 风险：
 WeKnora 异步状态命名变化，依赖 Adapter 标准状态。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-E3：分析台 Real WeKnora RAG evidence 展示
 

@@ -166,7 +166,12 @@ export function TaskProgress({ task }: { task: Pick<Task, "status" | "progress" 
 }
 
 export function DocumentStatusBadge({ status }: { status: string }) {
-  return <span className={`document-status-badge ${status}`}>{status}</span>;
+  const normalized = status.trim().toLowerCase();
+  return (
+    <span className={`document-status-badge ${normalized}`}>
+      {documentStatusLabel(normalized)}
+    </span>
+  );
 }
 
 export function BackendStatusBadge({
@@ -250,4 +255,26 @@ function citationSourceType(citation: CitationListItem) {
     return "wiki_page";
   }
   return normalized;
+}
+
+function documentStatusLabel(status: string) {
+  if (status === "indexed") {
+    return "已索引";
+  }
+  if (status === "indexing") {
+    return "索引中";
+  }
+  if (status === "chunking") {
+    return "分块中";
+  }
+  if (status === "parsing") {
+    return "解析中";
+  }
+  if (status === "uploaded") {
+    return "已上传";
+  }
+  if (status === "failed") {
+    return "失败";
+  }
+  return status || "unknown";
 }

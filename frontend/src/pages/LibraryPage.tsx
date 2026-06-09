@@ -9,7 +9,13 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 
-import { ApiError, Document, DocumentChunk, apiClient } from "../api/client";
+import {
+  ApiError,
+  Document,
+  DocumentChunk,
+  DocumentProcessingEvent,
+  apiClient,
+} from "../api/client";
 import {
   DocumentStatusBadge,
   EmptyState,
@@ -25,6 +31,7 @@ type LibraryForm = {
 
 type LoadState = "idle" | "loading" | "error";
 type ChunkLoadState = "idle" | "loading" | "error";
+type EventLoadState = "idle" | "loading" | "error";
 
 const initialForm: LibraryForm = {
   title: "",
@@ -35,6 +42,7 @@ const initialForm: LibraryForm = {
 
 const runningStatuses = new Set(["parsing", "chunking", "indexing"]);
 const parsedStatuses = new Set(["parsed", "chunked", "indexing", "indexed"]);
+const readyStatuses = new Set(["indexed"]);
 
 function formatFileSize(size: number | null) {
   if (size === null) {
@@ -75,7 +83,7 @@ function stageClass(state: string) {
   if (state.includes("中") || state === "partial" || state === "pending") {
     return "active";
   }
-  if (state.includes("完成") || state.includes("已") || state === "indexed") {
+  if (state.includes("完成") || state.includes("已") || state === "indexed" || state === "可提问") {
     return "done";
   }
   return "idle";
@@ -136,6 +144,87 @@ function indexStatus(document: Document) {
   return "待索引";
 }
 
+function readinessStatus(document: Document) {
+  if (document.status === "failed") {
+    return "失败";
+  }
+  if (readyStatuses.has(document.status)) {
+    return "可提问";
+  }
+  if (runningStatuses.has(document.status)) {
+    return "处理中";
+  }
+  return "等待处理";
+}
+
+function readinessClass(document: Document) {
+  if (document.status === "failed") {
+    return "failed";
+  }
+  if (readyStatuses.has(document.status)) {
+    return "ready";
+  }
+  if (runningStatuses.has(document.status)) {
+    return "active";
+  }
+  return "idle";
+}
+
+function statusHint(document: Document) {
+  if (document.status === "failed") {
+    return document.failed_step
+      ? `失败位置：${stepLabel(document.failed_step)}`
+      : "处理失败";
+  }
+  if (document.status === "indexed") {
+    return document.chunk_count > 0
+      ? `${document.chunk_count} chunks ready`
+      : "索引完成，等待 chunk preview";
+  }
+  if (document.status === "indexing") {
+    return "索引完成后可提问";
+  }
+  if (document.status === "chunking") {
+    return "分块完成后进入索引";
+  }
+  if (document.status === "parsing") {
+    return "解析完成后进入分块";
+  }
+  return "等待 WeKnora/本地流程处理";
+}
+
+function backendLabel(document: Document) {
+  return document.knowledge_backend === "weknora_api" ? "WeKnora" : document.knowledge_backend;
+}
+
+function stepLabel(step: string | null) {
+  const normalized = (step || "").trim().toLowerCase();
+  if (normalized === "parse" || normalized === "parsing") {
+    return "解析";
+  }
+  if (normalized === "chunk" || normalized === "chunking") {
+    return "分块";
+  }
+  if (normalized === "index" || normalized === "indexing" || normalized === "embedding") {
+    return "索引";
+  }
+  if (normalized === "weknora_upload") {
+    return "WeKnora 上传";
+  }
+  if (normalized === "weknora_status") {
+    return "WeKnora 状态刷新";
+  }
+  if (normalized === "weknora_chunks") {
+    return "WeKnora chunks";
+  }
+  return step || "流程";
+}
+
+function eventLabel(event: DocumentProcessingEvent) {
+  const message = event.error_message || event.message || event.status;
+  return `${stepLabel(event.step)}：${message}`;
+}
+
 function chunkExcerpt(text: string, maxChars = 360) {
   const normalized = text.split(/\s+/).join(" ");
   if (normalized.length <= maxChars) {
@@ -154,6 +243,16 @@ function chunkLocation(chunk: DocumentChunk) {
   return parts.length ? parts.join(" · ") : "no offsets";
 }
 
+function chunkEmptyText(document: Document) {
+  if (document.status === "failed") {
+    return "处理失败，暂无 chunks";
+  }
+  if (document.status !== "indexed") {
+    return "索引完成后显示 chunks";
+  }
+  return "暂无 chunks";
+}
+
 export function LibraryPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -166,6 +265,9 @@ export function LibraryPage() {
   const [chunks, setChunks] = useState<DocumentChunk[]>([]);
   const [chunkLoadState, setChunkLoadState] = useState<ChunkLoadState>("idle");
   const [chunkError, setChunkError] = useState<string | null>(null);
+  const [events, setEvents] = useState<DocumentProcessingEvent[]>([]);
+  const [eventLoadState, setEventLoadState] = useState<EventLoadState>("idle");
+  const [eventError, setEventError] = useState<string | null>(null);
 
   const indexedCount = useMemo(
     () => documents.filter((document) => document.status === "indexed").length,
@@ -197,6 +299,7 @@ export function LibraryPage() {
         ) {
           setPreviewDocumentId(null);
           setChunks([]);
+          setEvents([]);
         }
         setLoadState("idle");
       })
@@ -244,10 +347,12 @@ export function LibraryPage() {
       .finally(() => setIsUploading(false));
   };
 
-  const loadChunks = (documentId: string) => {
+  const loadPreview = (documentId: string) => {
     setPreviewDocumentId(documentId);
     setChunkLoadState("loading");
     setChunkError(null);
+    setEventLoadState("loading");
+    setEventError(null);
     apiClient
       .listDocumentChunks(documentId)
       .then((response) => {
@@ -258,6 +363,17 @@ export function LibraryPage() {
         setChunks([]);
         setChunkError(errorMessage(chunkLoadError));
         setChunkLoadState("error");
+      });
+    apiClient
+      .listDocumentEvents(documentId)
+      .then((response) => {
+        setEvents(response.items.slice(-6).reverse());
+        setEventLoadState("idle");
+      })
+      .catch((eventLoadError: unknown) => {
+        setEvents([]);
+        setEventError(errorMessage(eventLoadError));
+        setEventLoadState("error");
       });
   };
 
@@ -273,7 +389,7 @@ export function LibraryPage() {
           ),
         );
         if (previewDocumentId === documentId) {
-          loadChunks(documentId);
+          loadPreview(documentId);
         }
       })
       .catch((reindexError: unknown) => setError(errorMessage(reindexError)))
@@ -381,12 +497,16 @@ export function LibraryPage() {
                     <div className="document-title">
                       <FileText size={16} aria-hidden="true" />
                       <strong>{document.title}</strong>
+                      <span className={`document-readiness ${readinessClass(document)}`}>
+                        {readinessStatus(document)}
+                      </span>
                     </div>
                     <div className="document-meta">
                       <span>{document.business_area || "-"}</span>
                       <span>{document.document_type || "-"}</span>
                       <span>{formatFileSize(document.file_size)}</span>
                       <span>{formatDate(document.created_at)}</span>
+                      <span>{backendLabel(document)}</span>
                     </div>
                     <div className="document-pipeline" aria-label="处理状态">
                       <span className={stageClass(parseStatus(document))}>
@@ -401,10 +521,13 @@ export function LibraryPage() {
                       <span className={stageClass(indexStatus(document))}>
                         索引：{indexStatus(document)}
                       </span>
+                      <span className={stageClass(readinessStatus(document))}>
+                        提问：{statusHint(document)}
+                      </span>
                     </div>
                     {document.status === "failed" ? (
                       <div className="document-error">
-                        <span>{document.failed_step || "workflow"}</span>
+                        <span>{stepLabel(document.failed_step)}</span>
                         <strong>{document.error_message || "处理失败"}</strong>
                       </div>
                     ) : null}
@@ -415,7 +538,7 @@ export function LibraryPage() {
                     <button
                       className="icon-button"
                       type="button"
-                      onClick={() => loadChunks(document.id)}
+                      onClick={() => loadPreview(document.id)}
                       title="预览 chunks"
                     >
                       <Eye size={16} aria-hidden="true" />
@@ -445,11 +568,12 @@ export function LibraryPage() {
                 <div>
                   <span>Chunks</span>
                   <strong>{previewDocument.title}</strong>
+                  <small>{`${readinessStatus(previewDocument)} · ${backendLabel(previewDocument)}`}</small>
                 </div>
                 <button
                   className="icon-button"
                   type="button"
-                  onClick={() => loadChunks(previewDocument.id)}
+                  onClick={() => loadPreview(previewDocument.id)}
                   title="刷新 chunks"
                 >
                   <RefreshCw size={16} aria-hidden="true" />
@@ -458,10 +582,20 @@ export function LibraryPage() {
 
               {chunkError ? <ErrorState message={chunkError} /> : null}
 
+              <div className="document-preview-status">
+                <span className={readinessClass(previewDocument)}>
+                  {statusHint(previewDocument)}
+                </span>
+                <span>{`chunks: ${previewDocument.chunk_count}`}</span>
+                <span>{`indexed: ${previewDocument.indexed_chunk_count}`}</span>
+                <span>{`pending: ${previewDocument.pending_chunk_count}`}</span>
+                <span>{`failed: ${previewDocument.failed_chunk_count}`}</span>
+              </div>
+
               {chunkLoadState === "loading" ? (
                 <EmptyState text="加载 chunks" loading compact />
               ) : chunks.length === 0 ? (
-                <EmptyState text="暂无 chunks" compact />
+                <EmptyState text={chunkEmptyText(previewDocument)} compact />
               ) : (
                 <div className="chunk-preview-list">
                   {chunks.map((chunk) => (
@@ -469,17 +603,41 @@ export function LibraryPage() {
                       <div className="chunk-preview-title">
                         <strong>#{chunk.chunk_index}</strong>
                         <span>{chunk.embedding_status}</span>
+                        <span>{chunk.source}</span>
                       </div>
                       <p>{chunkExcerpt(chunk.content)}</p>
                       <div className="chunk-preview-meta">
                         <span>{chunkLocation(chunk)}</span>
                         <span>{chunk.token_count} tokens</span>
                         <span>{chunk.char_count} chars</span>
+                        {chunk.external_doc_id ? <span>{chunk.external_doc_id}</span> : null}
                       </div>
                     </article>
                   ))}
                 </div>
               )}
+
+              <section className="document-event-panel" aria-label="处理事件">
+                <div className="document-event-heading">
+                  <span>Events</span>
+                  <strong>最近处理事件</strong>
+                </div>
+                {eventError ? <ErrorState message={eventError} /> : null}
+                {eventLoadState === "loading" ? (
+                  <EmptyState text="加载 events" loading compact />
+                ) : events.length === 0 ? (
+                  <EmptyState text="暂无 events" compact />
+                ) : (
+                  <div className="document-event-list">
+                    {events.map((event) => (
+                      <div className={`document-event-item ${event.status}`} key={event.id}>
+                        <span>{formatDate(event.created_at)}</span>
+                        <strong>{eventLabel(event)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
             </section>
           ) : null}
         </section>

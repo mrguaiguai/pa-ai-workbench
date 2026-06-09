@@ -135,6 +135,18 @@ export type DocumentChunkListResponse = {
   total: number;
 };
 
+export type DocumentProcessingEvent = {
+  id: string;
+  document_id: string;
+  external_doc_id: string | null;
+  step: string;
+  status: string;
+  message: string | null;
+  metadata_json: string | null;
+  error_message: string | null;
+  created_at: string;
+};
+
 export type DocumentIndexResponse = {
   document: Document;
   chunk_count: number;
@@ -403,6 +415,8 @@ export const apiClient = {
     }),
   listDocumentChunks: (documentId: string) =>
     request<DocumentChunkListResponse>(`/api/documents/${documentId}/chunks`),
+  listDocumentEvents: (documentId: string) =>
+    request<ListResponse<DocumentProcessingEvent>>(`/api/documents/${documentId}/events`),
   listConversations: () => request<ListResponse<Conversation>>("/api/conversations"),
   listConversationMessages: (conversationId: string) =>
     request<ListResponse<ConversationMessage>>(`/api/conversations/${conversationId}/messages`),
