@@ -142,14 +142,16 @@ def _validate_citation_trace(
     binding = metadata.get("citation_binding")
     binding = binding if isinstance(binding, dict) else {}
     evidence_id = binding.get("evidence_id") or metadata.get("evidence_id")
-    source_type = _normalize_source_type(
+    raw_source_type = (
         binding.get("source_type")
         or metadata.get("citation_source_type")
         or metadata.get("source_type")
-        or ("document_chunk" if chunk_id else None)
     )
+    source_type = _normalize_source_type(raw_source_type)
     if not evidence_id:
         raise ValueError("Real citation must include an evidence id.")
+    if not source_type:
+        raise ValueError("Real citation must include a source type.")
     if source_type == "document_chunk":
         if not chunk_id:
             raise ValueError("Document citation must include chunk_id.")

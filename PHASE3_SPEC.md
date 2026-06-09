@@ -1182,7 +1182,7 @@ WeKnora 不保存 PA output id，需要 PA metadata 补充。
 | P3-M1-D3 | Policy workflow WeKnora evidence prompt | [x] |
 | P3-M1-D4 | Case workflow WeKnora evidence prompt | [x] |
 | P3-M1-D5 | Wiki draft workflow WeKnora refs | [x] |
-| P3-M1-D6 | CitationChecker fail-closed 策略 | [ ] |
+| P3-M1-D6 | CitationChecker fail-closed 策略 | [x] |
 
 #### P3-M1-D1：RetrieverTool 切换 WeKnora evidence 验收
 
@@ -1332,7 +1332,7 @@ targeted tests。
 风险：
 过严可能导致部分可用 evidence 被过滤，需在 adapter map 中补齐字段。
 
-状态：[ ]
+状态：[x]
 
 ### M1-E：PA 前端试点体验
 

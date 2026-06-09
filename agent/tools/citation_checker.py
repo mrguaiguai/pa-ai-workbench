@@ -126,6 +126,9 @@ class CitationChecker:
         warnings: list[str] = []
         if not citation.evidence_id and not cls._binding_value(citation, "evidence_id"):
             warnings.append(f"Citation {index} is missing an evidence id.")
+        if source_type == "unknown":
+            warnings.append(f"Citation {index} is missing a source type.")
+            return warnings
         if source_type == "document_chunk":
             if not citation.chunk_id:
                 warnings.append(f"Citation {index} is missing a chunk id.")
