@@ -20,6 +20,8 @@ export type CitationListItem = {
   text: string;
   score?: number | null;
   source: string;
+  metadata_json?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type EmptyStateProps = {
@@ -102,7 +104,10 @@ export function CitationList({
   return (
     <div className="citation-list">
       {citations.map((citation, index) => (
-        <article className="citation-item" key={citationKey(citation, index)}>
+        <article
+          className={`citation-item ${citation.source === "weknora_api" ? "weknora" : ""}`}
+          key={citationKey(citation, index)}
+        >
           <div className="citation-title-row">
             <strong>{citation.title}</strong>
             {citation.score === null || citation.score === undefined ? null : (
@@ -115,9 +120,10 @@ export function CitationList({
               {citationSourceLabel(citation)}
             </span>
             <span>{citation.source}</span>
-            {citation.evidence_id ? <span>{citation.evidence_id}</span> : null}
+            {citationEvidenceId(citation) ? <span>{citationEvidenceId(citation)}</span> : null}
             {citation.chunk_id ? <span>{citation.chunk_id}</span> : null}
-            {citation.wiki_page_id ? <span>{citation.wiki_page_id}</span> : null}
+            {citationWikiPageId(citation) ? <span>{citationWikiPageId(citation)}</span> : null}
+            {citation.external_doc_id ? <span>{citation.external_doc_id}</span> : null}
           </div>
         </article>
       ))}
@@ -219,6 +225,12 @@ function citationKey(citation: CitationListItem, index: number) {
 
 function citationSourceLabel(citation: CitationListItem) {
   const normalized = citationSourceType(citation);
+  if (normalized === "wiki_page" && citation.source === "weknora_api") {
+    return "WeKnora Wiki";
+  }
+  if (normalized === "document_chunk" && citation.source === "weknora_api") {
+    return "WeKnora Document";
+  }
   if (normalized === "wiki_page") {
     return "Wiki";
   }
@@ -233,6 +245,9 @@ function citationSourceLabel(citation: CitationListItem) {
 
 function citationSourceClass(citation: CitationListItem) {
   const normalized = citationSourceType(citation);
+  if (citation.source === "weknora_api") {
+    return normalized === "wiki_page" ? "weknora-wiki" : "weknora-document";
+  }
   if (normalized === "wiki_page") {
     return "wiki";
   }
@@ -246,7 +261,12 @@ function citationSourceClass(citation: CitationListItem) {
 }
 
 function citationSourceType(citation: CitationListItem) {
-  const raw = citation.source_type || (citation.wiki_page_id ? "wiki_page" : undefined);
+  const metadata = citationMetadata(citation);
+  const raw =
+    citation.source_type ||
+    metadata.citation_source_type ||
+    metadata.source_type ||
+    (citationWikiPageId(citation) ? "wiki_page" : undefined);
   const normalized = String(raw || "").trim().toLowerCase();
   if (["document", "document_chunk", "chunk"].includes(normalized)) {
     return "document_chunk";
@@ -255,6 +275,39 @@ function citationSourceType(citation: CitationListItem) {
     return "wiki_page";
   }
   return normalized;
+}
+
+function citationEvidenceId(citation: CitationListItem) {
+  return optionalCitationString(citation.evidence_id || citationMetadata(citation).evidence_id);
+}
+
+function citationWikiPageId(citation: CitationListItem) {
+  return optionalCitationString(citation.wiki_page_id || citationMetadata(citation).wiki_page_id);
+}
+
+function citationMetadata(citation: CitationListItem) {
+  if (citation.metadata && typeof citation.metadata === "object") {
+    return citation.metadata;
+  }
+  if (!citation.metadata_json) {
+    return {} as Record<string, unknown>;
+  }
+  try {
+    const parsed = JSON.parse(citation.metadata_json);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function optionalCitationString(value: unknown) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const normalized = String(value).trim();
+  return normalized || null;
 }
 
 function documentStatusLabel(status: string) {

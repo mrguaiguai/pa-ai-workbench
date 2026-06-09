@@ -109,8 +109,12 @@ function roleLabel(role: ConversationMessage["role"]) {
 }
 
 function citationSourceType(citation: Citation) {
+  const metadata = citationMetadata(citation);
   const normalized = String(
-    citation.source_type || (citation.wiki_page_id ? "wiki_page" : ""),
+    citation.source_type ||
+      metadata.citation_source_type ||
+      metadata.source_type ||
+      (citation.wiki_page_id || metadata.wiki_page_id ? "wiki_page" : ""),
   )
     .trim()
     .toLowerCase();
@@ -126,9 +130,31 @@ function citationSourceType(citation: Citation) {
   return normalized || "unknown";
 }
 
+function citationMetadata(citation: Citation) {
+  if (!citation.metadata_json) {
+    return {} as Record<string, unknown>;
+  }
+  try {
+    const parsed = JSON.parse(citation.metadata_json);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function isWeKnoraCitation(citation: Citation) {
+  const metadata = citationMetadata(citation);
+  return citation.source === "weknora_api" || metadata.source === "weknora_api";
+}
+
 function ragMode(citations: Citation[]) {
   if (citations.length === 0) {
     return "No evidence";
+  }
+  if (citations.some(isWeKnoraCitation)) {
+    return "Real WeKnora RAG";
   }
   if (citations.some((citation) => citation.source !== "mock")) {
     return "Real RAG";
@@ -178,10 +204,12 @@ export function AnalysisPage() {
     const wikiCount = latestCitations.filter(
       (citation) => citationSourceType(citation) === "wiki_page",
     ).length;
+    const weknoraCount = latestCitations.filter(isWeKnoraCitation).length;
     return {
       mode: ragMode(latestCitations),
       documentCount,
       wikiCount,
+      weknoraCount,
       totalCount: latestCitations.length,
       insufficient: hasInsufficientEvidenceWarning(warnings),
     };
@@ -506,14 +534,23 @@ export function AnalysisPage() {
           </div>
 
           <div className="rag-summary">
-            <div className={`rag-mode ${evidenceSummary.mode === "Real RAG" ? "real" : ""}`}>
+            <div
+              className={`rag-mode ${
+                evidenceSummary.mode.includes("Real") ? "real" : ""
+              } ${evidenceSummary.mode.includes("WeKnora") ? "weknora" : ""}`}
+            >
               <span>RAG</span>
               <strong>{evidenceSummary.mode}</strong>
             </div>
             <div className="rag-source-counts">
               <span>Document {evidenceSummary.documentCount}</span>
               <span>Wiki {evidenceSummary.wikiCount}</span>
+              <span>WeKnora {evidenceSummary.weknoraCount}</span>
+            </div>
+            <div className="rag-source-counts compact">
               <span>Total {evidenceSummary.totalCount}</span>
+              <span>{latestTask?.task_type ?? taskType}</span>
+              <span>{latestTask?.status ?? "ready"}</span>
             </div>
             {evidenceSummary.insufficient ? (
               <div className="evidence-warning">依据不足或引用需要复核</div>

@@ -1548,6 +1548,11 @@ p {
   background: #eef7f1;
 }
 
+.rag-mode.weknora {
+  border-color: #9cc5d4;
+  background: #edf6fa;
+}
+
 .rag-mode span {
   color: #6b7a86;
   font-size: 0.74rem;
@@ -1568,6 +1573,10 @@ p {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
+}
+
+.rag-source-counts.compact {
+  margin-top: -2px;
 }
 
 .rag-source-counts span {
@@ -1661,6 +1670,11 @@ p {
   border-radius: 8px;
   background: #ffffff;
   padding: 12px;
+}
+
+.citation-item.weknora {
+  border-color: #c4d9e3;
+  background: #f7fbfc;
 }
 
 .citation-item strong {
@@ -2633,6 +2647,16 @@ p {
 
 .citation-meta-row .citation-source-type.wiki {
   background: #eef7f1;
+  color: #256340;
+}
+
+.citation-meta-row .citation-source-type.weknora-document {
+  background: #edf6fa;
+  color: #176b87;
+}
+
+.citation-meta-row .citation-source-type.weknora-wiki {
+  background: #e5f4ea;
   color: #256340;
 }
 
