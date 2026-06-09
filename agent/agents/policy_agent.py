@@ -186,8 +186,13 @@ class PolicyAnalysisWorkflow:
             "provider": response.provider,
             "model": response.model,
             "usage": response.usage,
+            "evidence_sources": sorted({citation.source for citation in citations}),
+            "source_types": sorted(
+                {citation.source_type or "unknown" for citation in citations}
+            ),
+            "evidence_mode": self._evidence_mode(citations),
         }
-        return response.content, metadata
+        return self._grounded_markdown(response.content, request, citations), metadata
 
     @classmethod
     def _build_messages(
@@ -203,6 +208,8 @@ class PolicyAnalysisWorkflow:
                     "你是 PA 智能工作台的政策分析助手。必须基于给定政策、案例或 "
                     "Wiki 证据输出分析；不得编造来源。输出中文 Markdown，包含："
                     "摘要、关键要求或变化、影响与风险、建议动作、不确定性。"
+                    "关键判断必须使用 [1] 这样的证据编号。证据不足时，只能列出"
+                    "待补证据，不要给出事实性政策结论。"
                 ),
             ),
             ChatMessage(
@@ -245,10 +252,10 @@ class PolicyAnalysisWorkflow:
             [
                 "",
                 "请输出以下结构：",
-                "1. 摘要",
-                "2. 关键要求或变化",
-                "3. 影响与风险",
-                "4. 建议动作",
+                "1. 摘要，所有关键判断都使用 [1] 这样的证据编号",
+                "2. 关键要求或变化，逐条标注证据编号、evidence_id、source_type",
+                "3. 影响与风险，明确对应证据编号",
+                "4. 建议动作，区分已由证据支持和需要业务确认的动作",
                 "5. 不确定性与待补证据",
             ]
         )
@@ -339,3 +346,69 @@ class PolicyAnalysisWorkflow:
         if len(normalized) <= max_chars:
             return normalized
         return f"{normalized[:max_chars]}[truncated]"
+
+    @classmethod
+    def _grounded_markdown(
+        cls,
+        analysis: str,
+        request: AgentRequest,
+        citations: list[Citation],
+    ) -> str:
+        if not citations:
+            return "\n".join(
+                [
+                    "## 依据不足",
+                    "",
+                    f"未检索到与“{request.query_or_topic}”相关的政策、案例或 Wiki 证据，无法形成政策判断。",
+                    "",
+                    "## 待补证据",
+                    "",
+                    "- 补充适用政策原文、案例材料或已发布 Wiki 页面后重试。",
+                    "- 确认资料已完成 WeKnora 索引，并检查检索条件是否过窄。",
+                ]
+            )
+
+        return "\n".join(
+            [
+                analysis.strip(),
+                "",
+                "## 关键判断与引用",
+                "",
+                *[
+                    cls._policy_judgment_line(index, citation)
+                    for index, citation in enumerate(citations, start=1)
+                ],
+                "",
+                "## 不确定性与待补证据",
+                "",
+                "- 以上判断只覆盖已检索到的证据；正式口径仍需业务负责人复核。",
+                "- 如存在适用范围、发布日期、案例背景或执行口径缺口，应补充对应材料后再定稿。",
+            ]
+        ).strip()
+
+    @classmethod
+    def _policy_judgment_line(cls, index: int, citation: Citation) -> str:
+        source_type = citation.source_type or citation.metadata.get(
+            "citation_source_type"
+        )
+        evidence_id = citation.evidence_id or citation.metadata.get("evidence_id")
+        identifiers = [
+            f"source_type={source_type or 'unknown'}",
+            f"evidence_id={evidence_id or 'unknown'}",
+        ]
+        if citation.chunk_id:
+            identifiers.append(f"chunk_id={citation.chunk_id}")
+        if citation.wiki_page_id:
+            identifiers.append(f"wiki_page_id={citation.wiki_page_id}")
+        return (
+            f"- [{index}] {citation.title}: {cls._excerpt(citation.text, max_chars=140)} "
+            f"({'; '.join(identifiers)})"
+        )
+
+    @staticmethod
+    def _evidence_mode(citations: list[Citation]) -> str:
+        if not citations:
+            return "no_evidence"
+        if all(citation.source == "weknora_api" for citation in citations):
+            return "weknora_api"
+        return "mixed"

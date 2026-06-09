@@ -1179,7 +1179,7 @@ WeKnora 不保存 PA output id，需要 PA metadata 补充。
 | --- | --- | --- |
 | P3-M1-D1 | RetrieverTool 切换 WeKnora evidence 验收 | [x] |
 | P3-M1-D2 | QA workflow WeKnora evidence prompt | [x] |
-| P3-M1-D3 | Policy workflow WeKnora evidence prompt | [ ] |
+| P3-M1-D3 | Policy workflow WeKnora evidence prompt | [x] |
 | P3-M1-D4 | Case workflow WeKnora evidence prompt | [ ] |
 | P3-M1-D5 | Wiki draft workflow WeKnora refs | [ ] |
 | P3-M1-D6 | CitationChecker fail-closed 策略 | [ ] |
@@ -1257,7 +1257,7 @@ smoke run_analysis policy_analysis。
 风险：
 模型输出可能过长或不稳定，M1 先固定模板。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-D4：Case workflow WeKnora evidence prompt
 
