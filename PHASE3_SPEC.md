@@ -1042,7 +1042,7 @@ curl chunks API + 前端页面检查。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M1-C1 | WeKnora Wiki API 审计与响应映射 | [ ] |
+| P3-M1-C1 | WeKnora Wiki API 审计与响应映射 | [x] |
 | P3-M1-C2 | Wiki search/read 适配 | [ ] |
 | P3-M1-C3 | Wiki draft/create/update 适配 | [ ] |
 | P3-M1-C4 | Wiki publish/index 状态适配 | [ ] |
@@ -1071,7 +1071,7 @@ Wiki API map，记录 draft/publish/index/source refs 能力。
 风险：
 Wiki ingest 能力可能与 PA “output -> draft” 不完全匹配。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M1-C2：Wiki search/read 适配
 

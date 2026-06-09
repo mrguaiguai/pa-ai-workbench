@@ -1,8 +1,8 @@
 # PHASE3 WeKnora API Map
 
-> Task: P3-M1-B1
+> Task: P3-M1-B1, P3-M1-C1
 >
-> Scope: audit WeKnora RAG API and response mapping for PA `KnowledgeBackend Adapter`.
+> Scope: audit WeKnora RAG/Wiki API and response mapping for PA `KnowledgeBackend Adapter`.
 >
 > Guardrail: no PA product runtime code or upstream WeKnora source code is changed by this task.
 
@@ -13,6 +13,7 @@
 - WeKnora routes: `../internal/router/router.go`
 - WeKnora handlers: `../internal/handler/knowledge.go`, `../internal/handler/chunk.go`, `../internal/handler/knowledgebase.go`, `../internal/handler/session/qa.go`
 - WeKnora services/types: `../internal/application/service/knowledge_create.go`, `../internal/application/service/knowledgebase_search.go`, `../internal/application/service/session_knowledge_qa.go`, `../internal/types/knowledge.go`, `../internal/types/search.go`, `../internal/types/chat.go`, `../internal/types/message.go`, `../internal/errors/errors.go`, `../internal/middleware/error_handler.go`
+- WeKnora Wiki routes/handlers/services: `../internal/router/router.go`, `../internal/handler/wiki_page.go`, `../internal/application/service/wiki_page.go`, `../internal/application/service/wiki_ingest.go`, `../internal/application/service/wiki_ingest_batch.go`, `../internal/application/service/wiki_ingest_cite.go`, `../internal/types/wiki_page.go`, `../internal/types/interfaces/wiki_page.go`
 - PA target schemas: `knowledge_engine/base.py`, `knowledge_engine/schemas.py`, `knowledge_engine/backends/weknora_api_backend.py`
 
 ## Authentication And Envelope
@@ -322,6 +323,156 @@ Suggested `retrieve()` request mapping:
 | Wiki evidence discrimination is not fully resolved in RAG search results | `SearchResult.match_type` has wiki-like categories, but B1 did not run live data. | Adapter may default to `document_chunk` until Wiki tasks confirm shape. | P3-M1-C1/C2 should audit Wiki APIs and live wiki retrieval response. |
 | Service account token type is deployment-dependent | Client supports both `X-API-Key` and Bearer. Current PA backend sends Bearer only. | M1 auth may fail if the issued credential is API-key-only. | B2 should support `X-API-Key` for `WEKNORA_SERVICE_TOKEN`, or add `WEKNORA_AUTH_HEADER` selection. |
 
+## C1 Wiki API Surface For PA M1
+
+WeKnora Wiki routes are registered under `/api/v1/knowledgebase/{kb_id}/wiki`.
+Every handler first validates that the knowledge base exists and has Wiki
+enabled, so PA must pass a Wiki-capable `WEKNORA_DEFAULT_KB_ID` or an explicit
+Wiki KB id.
+
+| PA need | WeKnora endpoint | Method | Request | Response data | PA adapter method | M1 decision |
+| --- | --- | --- | --- | --- | --- | --- |
+| search Wiki pages | `/api/v1/knowledgebase/{kb_id}/wiki/search` | GET | `q`, optional `limit` | `{ "pages": [WikiPage] }` | `search_wiki()` | Direct call for C2. Map to `WikiPageSummary`. |
+| list Wiki pages | `/api/v1/knowledgebase/{kb_id}/wiki/pages` | GET | `page_type`, `status`, `query`, `page`, `page_size`, `sort_by`, `sort_order` | `WikiPageListResponse` | optional C2 list/search support | Use when PA needs page directory or status-filtered reads. |
+| read by slug | `/api/v1/knowledgebase/{kb_id}/wiki/pages/{slug}` | GET | path slug, wildcard supports nested slugs | `WikiPage` | `read_wiki_page()` | Direct call for C2. Preserve slug addressing in PA. |
+| create page or draft | `/api/v1/knowledgebase/{kb_id}/wiki/pages` | POST | `WikiPage` JSON | `WikiPage` | `create_wiki_page()` / draft sync candidate | Direct WeKnora write is possible. PA still needs local draft bridge for output-derived drafts before sync. |
+| update page | `/api/v1/knowledgebase/{kb_id}/wiki/pages/{slug}` | PUT | `WikiPage` JSON | `WikiPage` | `update_wiki_page()` | Direct call for C3. WeKnora bumps version only for user-visible content/status changes. |
+| archive/delete page | `/api/v1/knowledgebase/{kb_id}/wiki/pages/{slug}` | DELETE | path slug | 204 | later optional | Not required for M1 PA output-to-draft happy path. |
+| structured index | `/api/v1/knowledgebase/{kb_id}/wiki/index` | GET | optional `types`, `limit`, `cursor` | `WikiIndexResponse` | `index_wiki_page()` status/display candidate | This is a read-side index/directory view, not a publish/index job trigger. |
+| operation log | `/api/v1/knowledgebase/{kb_id}/wiki/log` | GET | `cursor`, `limit` | `WikiLogEntryListResponse` | status display candidate | Useful for C4 status, but PA should not depend on log text for correctness. |
+| stats | `/api/v1/knowledgebase/{kb_id}/wiki/stats` | GET | none | `WikiStats` | backend status display candidate | Contains `pending_tasks`, `pending_issues`, `is_active`. |
+| graph | `/api/v1/knowledgebase/{kb_id}/wiki/graph` | GET | `mode`, `center`, `depth`, `types`, `limit` | `WikiGraphData` | out of M1 adapter path | Product graph UI is not required for PA M1. |
+| lint/issues | `/api/v1/knowledgebase/{kb_id}/wiki/lint`, `/issues` | GET/PUT | issue filters/status | lint/issues shapes | later quality workflow | Useful in M2/M3, not required for C2/C3. |
+| rebuild links / auto-fix | `/api/v1/knowledgebase/{kb_id}/wiki/rebuild-links`, `/auto-fix` | POST | none | message / report | admin maintenance only | Do not call from PA Agent workflows in M1. |
+
+## C1 Raw WikiPage Shape
+
+Relevant WeKnora `WikiPage` fields:
+
+```text
+id
+tenant_id
+knowledge_base_id
+slug
+title
+page_type
+status
+content
+summary
+aliases
+source_refs
+chunk_refs
+in_links
+out_links
+page_metadata
+version
+created_at
+updated_at
+deleted_at
+```
+
+Page types audited in `internal/types/wiki_page.go`:
+
+```text
+summary
+entity
+concept
+index
+log
+synthesis
+comparison
+```
+
+Statuses audited in `internal/types/wiki_page.go`:
+
+```text
+draft
+published
+archived
+```
+
+## C1 PA WikiPage Mapping
+
+Adapter output must normalize WeKnora fields into PA schemas instead of exposing
+the raw WeKnora response.
+
+### PA `WikiPageSummary`
+
+| WeKnora field | PA field | Mapping rule |
+| --- | --- | --- |
+| `slug` | `slug` | Required stable address. Preserve nested slugs exactly after URL-decoding. |
+| `title` | `title` | Required display title. |
+| `page_type` | `page_type` | Preserve WeKnora type. Unknown values stay in metadata and map through as strings. |
+| `summary` | `summary` | Use empty string only if WeKnora omits it. Do not derive from full content in adapter. |
+| constant | `source` | Always `weknora_api`. |
+| `id`, `knowledge_base_id`, `status`, `aliases`, `source_refs`, `chunk_refs`, `version`, `updated_at`, `page_metadata` | `metadata` | Keep small provenance and display fields. Do not duplicate full `content`. |
+
+### PA `WikiPage`
+
+| WeKnora field | PA field | Mapping rule |
+| --- | --- | --- |
+| `slug` | `slug` | Required. |
+| `title` | `title` | Required. |
+| `page_type` | `page_type` | Preserve. |
+| `summary` | `summary` | Preserve. |
+| `content` | `content` | Markdown body. Do not log full body in adapter errors. |
+| `source_refs`, `chunk_refs` | `citations` | Convert refs into PA `Evidence` only when there is enough information to build traceable evidence. Otherwise preserve refs in metadata and leave citations empty. |
+| constant | `source` | Always `weknora_api`. |
+| `id`, `knowledge_base_id`, `status`, `aliases`, `source_refs`, `chunk_refs`, `in_links`, `out_links`, `page_metadata`, `version`, timestamps | `metadata` | Keep external IDs and source refs for citation drilldown and future status UI. |
+
+Minimum `WikiPage` metadata for PA M1:
+
+```text
+id
+knowledge_base_id
+status
+source_refs
+chunk_refs
+version
+source=weknora_api
+```
+
+## C1 Draft / Publish / Index Decisions
+
+| Capability | WeKnora support | PA M1 decision | Follow-up task |
+| --- | --- | --- | --- |
+| output to draft | No dedicated `output -> draft` endpoint. `POST /wiki/pages` accepts `status=draft`, but PA output ids do not exist in WeKnora. | Keep PA local draft creation from `GeneratedOutput`; sync to WeKnora on create/update only after PA has normalized slug/title/content/source refs. Store WeKnora `id`, `slug`, `knowledge_base_id`, and `status` in PA metadata. | C3 |
+| manual create draft/page | `POST /wiki/pages` with `WikiPage.status`; service defaults empty status to `published`. | When PA wants a draft, explicitly send `status=draft`. Never rely on WeKnora default. | C3 |
+| publish | No separate publish route. Publishing is a status transition through `PUT /wiki/pages/{slug}` with `status=published`. | PA publish action should call update with `status=published`, then refresh read/status. | C4 |
+| index visibility | Wiki pages are synchronized into WeKnora retrieval through WeKnora Wiki internals; `GET /wiki/index` is a directory view, not a reindex endpoint. | PA should treat WeKnora `status=published` plus successful read/search as M1 visible/indexed evidence. Use `/wiki/stats` and `/wiki/log` only for status hints. | C4 |
+| source refs | `source_refs` store document-level refs in `"<knowledge_id>|<doc_title>"`; `chunk_refs` store concrete chunk ids for cited chunks. | PA citations can be built only when `chunk_refs` or source metadata can be resolved to PA `Evidence`. Document-level `source_refs` alone are provenance, not citation evidence. | C5 |
+| Wiki search/read | Dedicated search/read routes exist. | C2 should call WeKnora directly through adapter and map to PA `WikiPageSummary` / `WikiPage`. | C2 |
+
+## C1 Source Reference And Citation Mapping
+
+WeKnora Wiki source refs are provenance-rich but not always citation-complete.
+The ingest pipeline records:
+
+| WeKnora field | Meaning | PA use |
+| --- | --- | --- |
+| `source_refs` | Document-level refs using `knowledge_id|doc_title`. | Store in `WikiPage.metadata.source_refs`; optionally map to PA source document ids if PA has upload mappings. |
+| `chunk_refs` | Concrete WeKnora chunk ids cited by a generated page. Empty for summary pages by design. | Candidate source for `Evidence.source_type=wiki_page` or document-chunk citations after chunk lookup. |
+| `page_metadata` | Arbitrary page metadata. | Preserve small fields; never assume PA output ids exist here unless PA wrote them. |
+| `in_links` / `out_links` | Wiki graph links by slug. | Display/navigation metadata, not citation evidence. |
+
+C5 must fail closed:
+
+1. If a Wiki citation has `chunk_refs`, resolve chunk ids through `/api/v1/chunks/by-id/{chunk_id}` or retrieve metadata before creating PA citations.
+2. If only `source_refs` exist, show provenance but do not create a non-mock PA citation unless the parent document id and excerpt can be resolved.
+3. If a RAG result is confirmed as Wiki evidence, set `source_type=wiki_page`, `wiki_page_id=<WeKnora page id or slug>`, `source=weknora_api`, and preserve `slug`, `knowledge_base_id`, and `chunk_refs` in metadata.
+
+## C1 Unknowns And Gaps
+
+| Gap | Evidence | Impact | Follow-up |
+| --- | --- | --- | --- |
+| No dedicated publish endpoint | Wiki handler exposes create/update/delete, not `/publish`. | PA must model publish as `status=published` update. | C4 smoke should verify status transition. |
+| `GET /wiki/index` is a directory view | Handler calls `GetIndexView`; it does not trigger retrieval indexing. | PA cannot use it as a reindex command. | C4 should define indexed/visible acceptance via search/read. |
+| No direct PA output identity in WeKnora | WeKnora `WikiPage` has `page_metadata`, but no PA output schema. | PA must write output linkage into metadata when syncing drafts. | C3. |
+| `source_refs` are document-level strings | Types document the `knowledge_id|doc_title` convention. | Not enough for exact citation excerpt by itself. | C5 must resolve chunk refs or retrieve evidence. |
+| Summary pages intentionally lack chunk refs | WeKnora type comments say summary pages are document-level synopses and do not carry chunk-level citations. | PA should present provenance without pretending exact citation spans. | C5. |
+| Wiki-enabled KB requirement | Handler rejects KBs where Wiki is not enabled. | Misconfigured `WEKNORA_DEFAULT_KB_ID` will make all Wiki calls fail. | A2/C2 smoke should verify Wiki-enabled KB id. |
+| Swagger path omits runtime `/api/v1` prefix | Router mounts Wiki routes under the v1 group; swagger path starts at `/knowledgebase/...`. | Adapter should call `/api/v1/knowledgebase/{kb_id}/wiki/...` consistently with existing backend base URL convention. | C2. |
+
 ## Acceptance Checklist For B1
 
 - upload API identified and mapped to PA `KnowledgeDocument`.
@@ -331,3 +482,11 @@ Suggested `retrieve()` request mapping:
 - citation source mapping documented without requiring a nonexistent dedicated citation endpoint.
 - error mapping documented for PA adapter implementation.
 - unknowns/gaps recorded for B2/B3/B4.
+
+## Acceptance Checklist For C1
+
+- Wiki search/read/create/update/index/log/stats API routes identified.
+- `WikiPage` and `WikiPageSummary` field mapping documented.
+- draft, publish, index, and source ref decisions documented.
+- direct WeKnora calls vs PA local compensation are explicit.
+- citation/source refs risks recorded for C5.
