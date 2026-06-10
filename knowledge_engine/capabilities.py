@@ -107,6 +107,53 @@ def should_fail_closed_for_unavailable_backend(
     return is_strict_fallback_mode(app_env=app_env, mock_mode=mock_mode)
 
 
+def capability_status_counts(capabilities: dict[str, str]) -> dict[str, int]:
+    return {
+        status: sum(1 for value in capabilities.values() if value == status)
+        for status in sorted(CAPABILITY_STATUSES)
+    }
+
+
+def backend_parity_summary(
+    *,
+    backend_name: str,
+    capabilities: dict[str, str],
+    release_eligible: bool,
+    fail_closed: bool,
+) -> dict[str, Any]:
+    unsupported = [
+        capability
+        for capability in CAPABILITY_ORDER
+        if capabilities.get(capability) == "unsupported"
+    ]
+    partial = [
+        capability
+        for capability in CAPABILITY_ORDER
+        if capabilities.get(capability) == "partial"
+    ]
+    dev_only = [
+        capability
+        for capability in CAPABILITY_ORDER
+        if capabilities.get(capability) == "dev-only"
+    ]
+    return {
+        "backend": backend_name,
+        "release_evidence": release_eligible,
+        "quality_limit": _quality_limit(backend_name),
+        "data_fact_source": _data_fact_source(backend_name),
+        "citation_trace": capabilities.get("citation_trace", "unsupported"),
+        "wiki": capabilities.get("wiki_create_update_publish", "unsupported"),
+        "debug": capabilities.get("rag_debug", "unsupported"),
+        "status_recovery": capabilities.get("status_recovery", "unsupported"),
+        "unsupported_capabilities": unsupported,
+        "partial_capabilities": partial,
+        "dev_only_capabilities": dev_only,
+        "status_counts": capability_status_counts(capabilities),
+        "unsupported_must_fail": True,
+        "fail_closed": fail_closed,
+    }
+
+
 def backend_capability_snapshot(
     *,
     backend_name: str | None,
@@ -124,6 +171,7 @@ def backend_capability_snapshot(
     fallback_to_mock_would_be_silent = unknown_backend or selected_weknora_missing
     fail_closed = strict_mode and fallback_to_mock_would_be_silent
     release_eligible = selected == "weknora_api" and weknora_ready is not False
+    capabilities = deepcopy(BACKEND_CAPABILITY_MATRIX[active_backend])
 
     return {
         "active_backend": active_backend,
@@ -132,7 +180,7 @@ def backend_capability_snapshot(
         "strict_fallback_mode": strict_mode,
         "known_backend": known_backend,
         "release_eligible": release_eligible,
-        "capabilities": deepcopy(BACKEND_CAPABILITY_MATRIX[active_backend]),
+        "capabilities": capabilities,
         "matrix": deepcopy(BACKEND_CAPABILITY_MATRIX),
         "fallback_policy": {
             "mock_release_pass_allowed": False,
@@ -143,6 +191,12 @@ def backend_capability_snapshot(
             "citation_trace_required_for_real_citation": True,
             "fail_closed": fail_closed,
         },
+        "parity_summary": backend_parity_summary(
+            backend_name=active_backend,
+            capabilities=capabilities,
+            release_eligible=release_eligible,
+            fail_closed=fail_closed,
+        ),
         "notes": [
             "Mock and extracted results must not be counted as WeKnora release evidence.",
             "Extracted is selectable only as an explicit backend, never as automatic fallback.",
@@ -151,13 +205,31 @@ def backend_capability_snapshot(
     }
 
 
+def _data_fact_source(backend_name: str) -> str:
+    if backend_name == "weknora_api":
+        return "WeKnora KB/Wiki"
+    if backend_name == "extracted":
+        return "local extracted fixtures"
+    return "synthetic mock data"
+
+
+def _quality_limit(backend_name: str) -> str:
+    if backend_name == "weknora_api":
+        return "release candidate after live gates"
+    if backend_name == "extracted":
+        return "local fallback only; no WeKnora parity guarantee"
+    return "demo only; no release evidence"
+
+
 __all__ = [
     "BACKEND_CAPABILITY_MATRIX",
     "CAPABILITY_ORDER",
     "CAPABILITY_STATUSES",
     "RELEASE_ENVIRONMENTS",
     "SUPPORTED_BACKENDS",
+    "backend_parity_summary",
     "backend_capability_snapshot",
+    "capability_status_counts",
     "env_bool",
     "is_strict_fallback_mode",
     "normalize_backend_name",

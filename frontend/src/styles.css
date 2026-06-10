@@ -393,7 +393,7 @@ p {
 
 .runtime-status-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -407,18 +407,21 @@ p {
 
 .runtime-status-card.configured,
 .runtime-status-card.real-ready,
-.runtime-status-card.weknora-connected {
+.runtime-status-card.weknora-connected,
+.runtime-status-card.eligible {
   border-color: #bfd9cb;
   background: #f4faf6;
 }
 
-.runtime-status-card.mock-fallback {
+.runtime-status-card.mock-fallback,
+.runtime-status-card.dev-only {
   border-color: #edd8a8;
   background: #fffaf0;
 }
 
 .runtime-status-card.missing-config,
 .runtime-status-card.weknora-unavailable,
+.runtime-status-card.fail-closed,
 .runtime-status-card.error {
   border-color: #edc7c2;
   background: #fff6f4;
@@ -462,18 +465,21 @@ p {
 
 .runtime-status-card.configured .runtime-status-title strong,
 .runtime-status-card.real-ready .runtime-status-title strong,
-.runtime-status-card.weknora-connected .runtime-status-title strong {
+.runtime-status-card.weknora-connected .runtime-status-title strong,
+.runtime-status-card.eligible .runtime-status-title strong {
   background: #dff0e5;
   color: #256340;
 }
 
-.runtime-status-card.mock-fallback .runtime-status-title strong {
+.runtime-status-card.mock-fallback .runtime-status-title strong,
+.runtime-status-card.dev-only .runtime-status-title strong {
   background: #fff1cb;
   color: #7a5312;
 }
 
 .runtime-status-card.missing-config .runtime-status-title strong,
 .runtime-status-card.weknora-unavailable .runtime-status-title strong,
+.runtime-status-card.fail-closed .runtime-status-title strong,
 .runtime-status-card.error .runtime-status-title strong {
   background: #ffe1dc;
   color: #9b382d;

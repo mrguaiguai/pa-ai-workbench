@@ -47,6 +47,22 @@ export type StatusResponse = {
       Record<string, "supported" | "partial" | "unsupported" | "dev-only" | string>
     >;
     fallback_policy: Record<string, boolean | string>;
+    parity_summary: {
+      backend: string;
+      release_evidence: boolean;
+      quality_limit: string;
+      data_fact_source: string;
+      citation_trace: string;
+      wiki: string;
+      debug: string;
+      status_recovery: string;
+      unsupported_capabilities: string[];
+      partial_capabilities: string[];
+      dev_only_capabilities: string[];
+      status_counts: Record<string, number>;
+      unsupported_must_fail: boolean;
+      fail_closed: boolean;
+    };
     notes: string[];
   };
   memory_recent_limit: number;

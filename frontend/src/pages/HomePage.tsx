@@ -7,6 +7,7 @@ import {
   FileClock,
   Layers3,
   MessageSquareText,
+  ShieldCheck,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -138,6 +139,9 @@ export function HomePage({ navigateTo }: HomePageProps) {
     const model = modelReady ? modelStatus.data : null;
     const backend = backendReady ? status.data : null;
     const weknora = backend?.weknora;
+    const capabilities = backend?.backend_capabilities;
+    const parity = capabilities?.parity_summary;
+    const statusCounts = parity?.status_counts ?? {};
     const ragStatus =
       backendReady && weknora?.mode === "weknora_api"
         ? weknora.connected && !backend?.mock_mode
@@ -169,7 +173,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
             configuredLabel("workspace", weknora.workspace_configured),
             configuredLabel("kb", weknora.kb_configured),
             `health: ${weknora.health_status ?? weknora.status}`,
-          ]
+            ]
         : backend
           ? [
               `backend mock: ${backend.mock_mode ? "yes" : "no"}`,
@@ -177,6 +181,28 @@ export function HomePage({ navigateTo }: HomePageProps) {
               `database: ${backend.database}`,
             ]
           : [status.state === "loading" ? "loading" : status.error ?? "error"];
+    const capabilityStatus = backendReady
+      ? parity?.fail_closed
+        ? "fail closed"
+        : parity?.release_evidence
+          ? "eligible"
+          : "dev only"
+      : status.state === "loading"
+        ? "loading"
+        : "error";
+    const capabilitySecondary = parity
+      ? `${statusCounts.supported ?? 0} supported · ${statusCounts.partial ?? 0} partial · ${
+          statusCounts.unsupported ?? 0
+        } unsupported`
+      : "capability summary unavailable";
+    const capabilityDetails = parity
+      ? [
+          `facts: ${parity.data_fact_source}`,
+          `citation: ${parity.citation_trace}`,
+          `wiki publish: ${parity.wiki}`,
+          `debug: ${parity.debug}`,
+        ]
+      : [status.state === "loading" ? "loading" : status.error ?? "error"];
     return [
       {
         id: "chat",
@@ -236,6 +262,16 @@ export function HomePage({ navigateTo }: HomePageProps) {
         secondary: ragSecondary,
         details: ragDetails,
       },
+      {
+        id: "capability",
+        label: "Capability",
+        icon: ShieldCheck,
+        state: status.state,
+        status: capabilityStatus,
+        primary: capabilities?.active_backend ?? "unknown",
+        secondary: capabilitySecondary,
+        details: capabilityDetails,
+      },
     ];
   }, [counts, modelStatus, status]);
 
@@ -258,7 +294,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
         ))}
       </section>
 
-      <section className="runtime-status-grid" aria-label="模型与 RAG 状态">
+      <section className="runtime-status-grid" aria-label="模型、RAG 与能力状态">
         {statusCards.map((card) => {
           const Icon = card.icon;
           return (
