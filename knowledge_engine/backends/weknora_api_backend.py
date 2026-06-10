@@ -29,6 +29,7 @@ from knowledge_engine.schemas import Evidence
 from knowledge_engine.schemas import KnowledgeDocument
 from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
+from knowledge_engine.log_context import current_weknora_log_context
 
 
 WEKNORA_LOGGER = logging.getLogger("pa_ai_workbench.weknora")
@@ -1045,6 +1046,7 @@ def _log_weknora_call(
         "event": "weknora_adapter_call",
         "source": "weknora_api",
         "request_id": _redact_sensitive_text(request_id),
+        "adapter_operation_id": _redact_sensitive_text(request_id),
         "operation": _sanitize_operation(operation),
         "status": status,
         "status_code": status_code,
@@ -1052,6 +1054,10 @@ def _log_weknora_call(
         "retry_count": retry_count,
         "error_code": _redact_sensitive_text(error_code or "") or None,
         "excerpt": _log_excerpt(excerpt),
+        **{
+            key: _redact_sensitive_text(value)
+            for key, value in current_weknora_log_context().items()
+        },
     }
     payload = {key: value for key, value in payload.items() if value is not None}
     message = json.dumps(payload, ensure_ascii=False, sort_keys=True)

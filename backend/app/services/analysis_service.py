@@ -1,5 +1,6 @@
 import json
 from typing import Any
+from uuid import uuid4
 
 from sqlmodel import Session
 
@@ -20,6 +21,7 @@ from agent.orchestrator import AgentOrchestrator
 from agent.schemas import AgentRequest
 from agent.schemas import AgentResult
 from agent.schemas import AgentStatus
+from knowledge_engine.log_context import weknora_log_context
 
 
 class AnalysisRunError(Exception):
@@ -85,10 +87,15 @@ def run_analysis(
         document_ids=document_ids or [],
         extra_requirements=extra_requirements,
     )
-    result = AgentOrchestrator().run(
-        request=request,
-        recent_messages=recent_messages,
-    )
+    with weknora_log_context(
+        correlation_id=uuid4().hex,
+        task_id=task.id,
+        conversation_id=conversation.id,
+    ):
+        result = AgentOrchestrator().run(
+            request=request,
+            recent_messages=recent_messages,
+        )
     _write_result_messages(session, conversation, result)
     output, citations = _persist_result(session, task, result)
     final_status = "completed" if result.status == AgentStatus.SUCCEEDED else "failed"

@@ -2,6 +2,7 @@ import json
 import os
 import re
 from typing import Any
+from uuid import uuid4
 
 from sqlmodel import Session
 from sqlmodel import select
@@ -27,6 +28,7 @@ from knowledge_engine.embeddings.factory import get_embedding_provider
 from knowledge_engine.embeddings.schemas import EmbeddingVector
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.factory import create_knowledge_engine
+from knowledge_engine.log_context import weknora_log_context
 from knowledge_engine.schemas import Evidence
 from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
@@ -500,17 +502,18 @@ def _sync_page_to_weknora(
         metadata.get("weknora_id") or metadata.get("weknora_sync_status") == "synced"
     )
     try:
-        if should_update:
-            synced = _weknora_backend(settings).update_wiki_page(
-                slug=page.slug,
-                page=payload,
-                kb_id=kb_id,
-            )
-        else:
-            synced = _weknora_backend(settings).create_wiki_page(
-                page=payload,
-                kb_id=kb_id,
-            )
+        with _wiki_weknora_log_context(page=page, metadata=metadata):
+            if should_update:
+                synced = _weknora_backend(settings).update_wiki_page(
+                    slug=page.slug,
+                    page=payload,
+                    kb_id=kb_id,
+                )
+            else:
+                synced = _weknora_backend(settings).create_wiki_page(
+                    page=payload,
+                    kb_id=kb_id,
+                )
     except KnowledgeBackendUnavailableError as exc:
         _mark_weknora_sync_failed(
             session=session,
@@ -689,11 +692,12 @@ def _page_is_retrievable(
 ) -> bool:
     query = page.title or page.slug
     try:
-        evidence_items = backend.retrieve(
-            query=query,
-            filters={"knowledge_base_ids": [kb_id], "source_type": "wiki_page"},
-            top_k=8,
-        )
+        with _wiki_weknora_log_context(page=page, metadata=page_metadata(page)):
+            evidence_items = backend.retrieve(
+                query=query,
+                filters={"knowledge_base_ids": [kb_id], "source_type": "wiki_page"},
+                top_k=8,
+            )
     except KnowledgeBackendUnavailableError:
         return False
     for evidence in evidence_items:
@@ -738,6 +742,15 @@ def _wiki_index_timeout_seconds() -> int:
 def _wiki_sync_error(metadata: dict[str, Any]) -> str | None:
     value = metadata.get("weknora_sync_error")
     return _excerpt(str(value), 240) if value else None
+
+
+def _wiki_weknora_log_context(page: WikiPageModel, metadata: dict[str, Any]):
+    return weknora_log_context(
+        correlation_id=uuid4().hex,
+        task_id=metadata.get("source_task_id"),
+        wiki_page_id=page.id,
+        output_id=page.source_output_id or metadata.get("source_output_id"),
+    )
 
 
 def _wiki_index_error(metadata: dict[str, Any]) -> str | None:

@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Any
+from uuid import uuid4
 
 from fastapi import UploadFile
 from sqlmodel import Session
@@ -21,6 +22,7 @@ from knowledge_engine.embeddings.factory import get_embedding_provider
 from knowledge_engine.embeddings.schemas import EmbeddingVector
 from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
+from knowledge_engine.log_context import weknora_log_context
 from knowledge_engine.parsers import DocumentParser
 from knowledge_engine.parsers import FileDocumentParser
 from knowledge_engine.parsers import ParsedDocument
@@ -181,7 +183,8 @@ def sync_document_status(session: Session, document: Document) -> Document:
     if document.knowledge_backend != "weknora_api" or not document.external_doc_id:
         return document
     try:
-        status = _weknora_backend().get_document_status(document.external_doc_id)
+        with _document_weknora_log_context(document):
+            status = _weknora_backend().get_document_status(document.external_doc_id)
     except KnowledgeBackendUnavailableError as exc:
         _record_event(
             session=session,
@@ -502,7 +505,8 @@ def _list_local_document_chunks(session: Session, document_id: str) -> list[Docu
 
 
 def _list_weknora_document_chunks(document: Document) -> list[DocumentChunk]:
-    raw_chunks = _weknora_backend().list_document_chunks(document.external_doc_id or "")
+    with _document_weknora_log_context(document):
+        raw_chunks = _weknora_backend().list_document_chunks(document.external_doc_id or "")
     now = utc_now()
     chunks: list[DocumentChunk] = []
     for index, raw in enumerate(raw_chunks):
@@ -589,19 +593,20 @@ def _upload_document_to_weknora(
     )
     session.commit()
     try:
-        uploaded = _weknora_backend().upload_document(
-            document.file_path or "",
-            metadata={
-                "document_id": document.id,
-                "title": document.title,
-                "business_area": document.business_area,
-                "document_type": document.document_type,
-                "source": document.source,
-                "keywords_json": document.keywords_json,
-                "file_name": document.file_name,
-                "mime_type": document.mime_type,
-            },
-        )
+        with _document_weknora_log_context(document):
+            uploaded = _weknora_backend().upload_document(
+                document.file_path or "",
+                metadata={
+                    "document_id": document.id,
+                    "title": document.title,
+                    "business_area": document.business_area,
+                    "document_type": document.document_type,
+                    "source": document.source,
+                    "keywords_json": document.keywords_json,
+                    "file_name": document.file_name,
+                    "mime_type": document.mime_type,
+                },
+            )
     except KnowledgeBackendUnavailableError as exc:
         _fail_document_step(
             session=session,
@@ -649,6 +654,13 @@ def _weknora_backend() -> WeKnoraApiBackend:
         timeout=settings.weknora_timeout_seconds,
         workspace_id=settings.weknora_workspace_id,
         default_kb_id=settings.weknora_default_kb_id,
+    )
+
+
+def _document_weknora_log_context(document: Document):
+    return weknora_log_context(
+        correlation_id=uuid4().hex,
+        document_id=document.id,
     )
 
 

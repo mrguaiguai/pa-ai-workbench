@@ -14,6 +14,7 @@ from app.schemas import RagRetrieveResponse
 from app.services.rag_service import retrieve_evidence
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.errors import WeKnoraUnavailableError
+from knowledge_engine.log_context import weknora_log_context
 from knowledge_engine.schemas import Evidence
 
 router = APIRouter(prefix="/api/rag", tags=["rag"])
@@ -56,11 +57,12 @@ DEBUG_METADATA_ALLOWLIST = {
 
 @router.post("/retrieve", response_model=RagRetrieveResponse)
 def retrieve_rag_evidence(request: RagRetrieveRequest) -> RagRetrieveResponse:
-    evidence_items = retrieve_evidence(
-        query=request.query,
-        filters=request.filters,
-        top_k=request.top_k,
-    )
+    with weknora_log_context(correlation_id=uuid4().hex):
+        evidence_items = retrieve_evidence(
+            query=request.query,
+            filters=request.filters,
+            top_k=request.top_k,
+        )
     return RagRetrieveResponse(
         items=[_to_read_model(evidence) for evidence in evidence_items],
         total=len(evidence_items),
@@ -81,11 +83,12 @@ def retrieve_rag_debug(request: RagDebugRequest) -> RagDebugResponse:
         or request.filters.get("sourceType")
     )
     try:
-        evidence_items = retrieve_evidence(
-            query=request.query,
-            filters=request.filters,
-            top_k=request.top_k,
-        )
+        with weknora_log_context(correlation_id=trace_id):
+            evidence_items = retrieve_evidence(
+                query=request.query,
+                filters=request.filters,
+                top_k=request.top_k,
+            )
     except WeKnoraUnavailableError as exc:
         return RagDebugResponse(
             trace_id=trace_id,
