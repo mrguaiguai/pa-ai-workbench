@@ -10,9 +10,16 @@ from knowledge_engine.chunking import Chunker
 from knowledge_engine.chunking import DocumentChunkCandidate
 from knowledge_engine.chunking import ParagraphChunker
 from knowledge_engine.citations import CitationBuilder
-from knowledge_engine.embeddings.schemas import EmbeddingVector
+from knowledge_engine.backends.extracted_schema import EXTRACTED_SOURCE
+from knowledge_engine.backends.extracted_schema import normalize_extracted_chunk_preview
+from knowledge_engine.backends.extracted_schema import normalize_extracted_document
+from knowledge_engine.backends.extracted_schema import normalize_extracted_evidence
+from knowledge_engine.backends.extracted_schema import normalize_extracted_status
+from knowledge_engine.backends.extracted_schema import normalize_extracted_wiki_page
+from knowledge_engine.backends.extracted_schema import normalize_extracted_wiki_summary
 from knowledge_engine.embeddings.base import EmbeddingProvider
 from knowledge_engine.embeddings.factory import get_embedding_provider
+from knowledge_engine.embeddings.schemas import EmbeddingVector
 from knowledge_engine.errors import KnowledgeDocumentNotFoundError
 from knowledge_engine.parsers import DocumentParser
 from knowledge_engine.parsers import DocumentParseError
@@ -77,7 +84,9 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         return {
             "status": "ok",
             "backend": self.config.backend_name,
-            "source": self.config.source,
+            "source": EXTRACTED_SOURCE,
+            "fallback_backend": EXTRACTED_SOURCE,
+            "fallback_explicit": True,
             "storage": "in_memory_scaffold",
             "documents": len(self._documents),
             "pipeline": self._pipeline_status(),
@@ -103,23 +112,32 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
                 "storage": "in_memory_scaffold",
             },
         )
+        document = normalize_extracted_document(document)
         self._documents[external_doc_id] = document
         return document
 
     def get_document_status(self, external_doc_id: str) -> dict:
         document = self._documents.get(external_doc_id)
         if document is None:
-            return {
+            return normalize_extracted_status(
+                {
+                    "external_doc_id": external_doc_id,
+                    "status": "not_found",
+                    "source": self.config.source,
+                    "message": "Extracted document status: not_found",
+                }
+            )
+        return normalize_extracted_status(
+            {
                 "external_doc_id": external_doc_id,
-                "status": "not_found",
+                "status": document.status,
                 "source": self.config.source,
+                "message": f"Extracted document status: {document.status}",
+                "failed_step": document.metadata.get("failed_step"),
+                "error_message": document.metadata.get("error_message"),
+                "metadata": document.metadata,
             }
-        return {
-            "external_doc_id": external_doc_id,
-            "status": document.status,
-            "source": self.config.source,
-            "metadata": document.metadata,
-        }
+        )
 
     def retrieve(
         self,
@@ -127,13 +145,14 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         filters: dict | None = None,
         top_k: int = 8,
     ) -> list[Evidence]:
-        return self.retriever.retrieve(
+        evidence_items = self.retriever.retrieve(
             RetrieveRequest(
                 query=query,
                 filters=filters or {},
                 top_k=top_k,
             )
         )
+        return [normalize_extracted_evidence(evidence) for evidence in evidence_items]
 
     def search_wiki(
         self,
@@ -143,7 +162,10 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
     ) -> list[WikiPageSummary]:
         if self.wiki_store is None:
             return []
-        return self.wiki_store.search(query=query, kb_id=kb_id, limit=limit)
+        return [
+            normalize_extracted_wiki_summary(summary)
+            for summary in self.wiki_store.search(query=query, kb_id=kb_id, limit=limit)
+        ]
 
     def read_wiki_page(
         self,
@@ -152,7 +174,10 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
     ) -> WikiPage | None:
         if self.wiki_store is None:
             return None
-        return self.wiki_store.read(slug=slug, kb_id=kb_id)
+        page = self.wiki_store.read(slug=slug, kb_id=kb_id)
+        if page is None:
+            return None
+        return normalize_extracted_wiki_page(page)
 
     def parse_document(self, external_doc_id: str) -> dict:
         return self._parse_registered_document(external_doc_id).to_dict()
@@ -163,9 +188,20 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         return {
             "external_doc_id": external_doc_id,
             "status": "chunked",
-            "source": self.config.source,
+            "source": EXTRACTED_SOURCE,
             "chunk_count": len(chunks),
-            "chunks": [chunk.to_dict() for chunk in chunks],
+            "metadata": normalize_extracted_status({"status": "chunked"}).get("metadata"),
+            "chunks": [
+                normalize_extracted_chunk_preview(
+                    {
+                        **chunk.to_dict(),
+                        "id": f"{external_doc_id}:chunk:{chunk.chunk_index}",
+                        "external_doc_id": external_doc_id,
+                        "source": EXTRACTED_SOURCE,
+                    }
+                )
+                for chunk in chunks
+            ],
         }
 
     def _parse_registered_document(self, external_doc_id: str) -> ParsedDocument:
@@ -210,22 +246,26 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
             "vector_count": len(records),
             "vector_ids": [record.id for record in records],
         }
-        self._documents[external_doc_id] = KnowledgeDocument(
-            document_id=document.document_id,
-            external_doc_id=document.external_doc_id,
-            title=document.title,
-            status="indexed",
-            source=document.source,
-            metadata=updated_metadata,
+        self._documents[external_doc_id] = normalize_extracted_document(
+            KnowledgeDocument(
+                document_id=document.document_id,
+                external_doc_id=document.external_doc_id,
+                title=document.title,
+                status="indexed",
+                source=document.source,
+                metadata=updated_metadata,
+            )
         )
-        return {
-            "external_doc_id": external_doc_id,
-            "status": "indexed",
-            "source": self.config.source,
-            "chunk_count": len(chunks),
-            "vector_count": len(records),
-            "vector_ids": [record.id for record in records],
-        }
+        return normalize_extracted_status(
+            {
+                "external_doc_id": external_doc_id,
+                "status": "indexed",
+                "source": EXTRACTED_SOURCE,
+                "chunk_count": len(chunks),
+                "vector_count": len(records),
+                "vector_ids": [record.id for record in records],
+            }
+        )
 
     def reindex_document(self, external_doc_id: str) -> dict:
         return self.index_document(external_doc_id)
@@ -234,17 +274,19 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         parsed = self._parse_registered_document(external_doc_id)
         chunks = self.chunker.chunk(parsed)
         return [
-            {
-                **chunk.to_dict(),
-                "id": f"{external_doc_id}:chunk:{chunk.chunk_index}",
-                "external_doc_id": external_doc_id,
-                "source": self.config.source,
-                "metadata": {
-                    **chunk.metadata,
-                    "source": self.config.source,
+            normalize_extracted_chunk_preview(
+                {
+                    **chunk.to_dict(),
+                    "id": f"{external_doc_id}:chunk:{chunk.chunk_index}",
                     "external_doc_id": external_doc_id,
-                },
-            }
+                    "source": EXTRACTED_SOURCE,
+                    "metadata": {
+                        **chunk.metadata,
+                        "source": EXTRACTED_SOURCE,
+                        "external_doc_id": external_doc_id,
+                    },
+                }
+            )
             for chunk in chunks
         ]
 
