@@ -2475,7 +2475,7 @@ golden set + Agent regression。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M3-D1 | M3 本地真实产品 runbook 与端到端验收 | [ ] |
+| P3-M3-D1 | M3 本地真实产品 runbook 与端到端验收 | [x] |
 
 #### P3-M3-D1：M3 本地真实产品 runbook 与端到端验收
 
@@ -2519,7 +2519,7 @@ backend/scripts/check_m3_local_product.py`；所有 live 资料必须脱敏。
 M3 是本地部署 + 公网真实模型 API 产品，不是完全离线产品；公网 API 不可用时
 应显示 blocked/degraded，不允许用 mock 静默替代 release。
 
-状态：[ ]
+状态：[x]
 
 ## 11. 任务执行协议
 
