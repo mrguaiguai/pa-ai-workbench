@@ -396,6 +396,47 @@ class RagRetrieveResponse(BaseModel):
     top_k: int
 
 
+class RagDebugRequest(BaseModel):
+    query: str
+    filters: dict = Field(default_factory=dict)
+    top_k: int = 8
+
+
+class RagDebugEvidenceRead(BaseModel):
+    rank: int
+    source_type: str | None = None
+    source: str
+    score: float | None = None
+    evidence_id: str | None = None
+    document_id: str | None = None
+    external_doc_id: str | None = None
+    chunk_id: str | None = None
+    wiki_page_id: str | None = None
+    title: str
+    summary: str
+    metadata: dict = Field(default_factory=dict)
+
+
+class RagDebugError(BaseModel):
+    error_code: str
+    message: str
+    operation: str | None = None
+    retryable: bool = False
+
+
+class RagDebugResponse(BaseModel):
+    trace_id: str
+    status: str
+    query: str
+    filters: dict
+    top_k: int
+    requested_source_type: str | None = None
+    items: list[RagDebugEvidenceRead]
+    total: int
+    warnings: list[str] = Field(default_factory=list)
+    error: RagDebugError | None = None
+
+
 class WikiPageSummaryRead(BaseModel):
     id: str | None = None
     slug: str
