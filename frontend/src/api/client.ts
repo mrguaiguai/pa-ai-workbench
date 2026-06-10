@@ -198,6 +198,33 @@ export type Citation = {
   created_at: string;
 };
 
+export type CitationLocateRequest = {
+  id?: string | null;
+  document_id?: string | null;
+  external_doc_id?: string | null;
+  chunk_id?: string | null;
+  evidence_id?: string | null;
+  source_type?: string | null;
+  wiki_page_id?: string | null;
+  source?: string | null;
+  metadata_json?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+export type CitationLocateResponse = {
+  located: boolean;
+  target_type: "document_chunk" | "wiki_page" | string | null;
+  route: string | null;
+  ui_hash: string | null;
+  message: string;
+  document_id: string | null;
+  external_doc_id: string | null;
+  chunk_id: string | null;
+  chunk_index: number | null;
+  wiki_page_id: string | null;
+  wiki_slug: string | null;
+};
+
 export type Evidence = {
   evidence_id?: string | null;
   source_type?: "document_chunk" | "wiki_page" | string | null;
@@ -448,6 +475,11 @@ export const apiClient = {
   listHistory: () => request<ListResponse<GeneratedOutput>>("/api/history"),
   getHistoryOutput: (outputId: string) =>
     request<{ output: GeneratedOutput; citations: Citation[] }>(`/api/history/${outputId}`),
+  locateCitation: (payload: CitationLocateRequest) =>
+    request<CitationLocateResponse>("/api/citations/locate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   searchWiki: (query: string, kbId?: string, limit = 10) => {
     const params = new URLSearchParams({
       query,

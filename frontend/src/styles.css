@@ -1127,6 +1127,12 @@ p {
   padding: 12px;
 }
 
+.chunk-preview-item.located {
+  border-color: #176b87;
+  background: #edf6fa;
+  outline: 2px solid #dcecf1;
+}
+
 .chunk-preview-title,
 .chunk-preview-meta {
   display: flex;
@@ -2764,11 +2770,48 @@ p {
   gap: 10px;
 }
 
+.citation-title-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
 .citation-title-row span {
   flex: 0 0 auto;
   color: #176b87;
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.citation-locate-button {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.citation-locate-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 9px;
+  border: 1px solid #edd8a8;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #7a5312;
+  padding: 7px 8px;
+}
+
+.citation-locate-message svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.citation-locate-message span {
+  margin-top: 0;
+  color: inherit;
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .citation-meta-row {

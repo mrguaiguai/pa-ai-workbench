@@ -254,6 +254,11 @@ function sourceRefCount(page: WikiPageDetail | null) {
   );
 }
 
+function wikiSlugFromHash() {
+  const query = window.location.hash.split("?")[1] || "";
+  return new URLSearchParams(query).get("slug");
+}
+
 export function WikiPage() {
   const [form, setForm] = useState<SearchForm>(initialForm);
   const [results, setResults] = useState<WikiPageSummary[]>([]);
@@ -336,14 +341,40 @@ export function WikiPage() {
   };
 
   useEffect(() => {
+    const onLocate = () => {
+      const nextSlug = wikiSlugFromHash();
+      if (nextSlug) {
+        setSelectedSlug(nextSlug);
+        loadPage(nextSlug);
+      }
+    };
+    window.addEventListener("pa:citation-locate", onLocate);
+    window.addEventListener("hashchange", onLocate);
+
+    const hashSlug = wikiSlugFromHash();
+    if (hashSlug) {
+      setSelectedSlug(hashSlug);
+      loadPage(hashSlug);
+      return () => {
+        window.removeEventListener("pa:citation-locate", onLocate);
+        window.removeEventListener("hashchange", onLocate);
+      };
+    }
     const pendingSlug = window.sessionStorage.getItem(SELECTED_WIKI_STORAGE_KEY);
     if (pendingSlug) {
       window.sessionStorage.removeItem(SELECTED_WIKI_STORAGE_KEY);
       setSelectedSlug(pendingSlug);
       loadPage(pendingSlug);
-      return;
+      return () => {
+        window.removeEventListener("pa:citation-locate", onLocate);
+        window.removeEventListener("hashchange", onLocate);
+      };
     }
     runSearch(initialForm);
+    return () => {
+      window.removeEventListener("pa:citation-locate", onLocate);
+      window.removeEventListener("hashchange", onLocate);
+    };
   }, []);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {

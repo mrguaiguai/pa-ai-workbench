@@ -43,7 +43,7 @@ const pageMeta: Record<RouteId, { title: string; eyebrow: string; icon: typeof H
 };
 
 function getHashRoute(): RouteId {
-  const hash = window.location.hash.replace(/^#/, "");
+  const hash = window.location.hash.replace(/^#/, "").split("?")[0];
   if (hash === "/library" || hash === "/analysis" || hash === "/wiki" || hash === "/history") {
     return hash;
   }

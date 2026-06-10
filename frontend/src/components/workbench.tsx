@@ -1,12 +1,15 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  ExternalLink,
   FileText,
   Loader2,
   WifiOff,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { ApiError, apiClient } from "../api/client";
 import type { Task } from "../api/client";
+import { useState } from "react";
 
 export type CitationListItem = {
   id?: string | null;
@@ -97,36 +100,98 @@ export function CitationList({
   citations: CitationListItem[];
   emptyText?: string;
 }) {
+  const [locatingKey, setLocatingKey] = useState<string | null>(null);
+  const [locationMessage, setLocationMessage] = useState<Record<string, string>>({});
+
   if (citations.length === 0) {
     return <EmptyState text={emptyText} compact />;
   }
 
+  const locateCitation = (citation: CitationListItem, index: number) => {
+    const key = citationKey(citation, index);
+    setLocatingKey(key);
+    setLocationMessage((current) => ({ ...current, [key]: "" }));
+    apiClient
+      .locateCitation({
+        id: citation.id,
+        document_id: citation.document_id,
+        external_doc_id: citation.external_doc_id,
+        chunk_id: citation.chunk_id,
+        evidence_id: citationEvidenceId(citation),
+        source_type: citationSourceType(citation),
+        wiki_page_id: citationWikiPageId(citation),
+        source: citation.source,
+        metadata_json: citation.metadata_json,
+        metadata: citation.metadata,
+      })
+      .then((target) => {
+        if (!target.located || !target.ui_hash) {
+          setLocationMessage((current) => ({ ...current, [key]: target.message }));
+          return;
+        }
+        window.location.hash = target.ui_hash.replace(/^#/, "");
+        window.dispatchEvent(new CustomEvent("pa:citation-locate", { detail: target }));
+      })
+      .catch((error: unknown) => {
+        setLocationMessage((current) => ({
+          ...current,
+          [key]: error instanceof ApiError ? `HTTP ${error.status}` : "无法定位该引用",
+        }));
+      })
+      .finally(() => setLocatingKey(null));
+  };
+
   return (
     <div className="citation-list">
-      {citations.map((citation, index) => (
-        <article
-          className={`citation-item ${citation.source === "weknora_api" ? "weknora" : ""}`}
-          key={citationKey(citation, index)}
-        >
-          <div className="citation-title-row">
-            <strong>{citation.title}</strong>
-            {citation.score === null || citation.score === undefined ? null : (
-              <span>{citation.score.toFixed(2)}</span>
-            )}
-          </div>
-          <p>{citation.text}</p>
-          <div className="citation-meta-row">
-            <span className={`citation-source-type ${citationSourceClass(citation)}`}>
-              {citationSourceLabel(citation)}
-            </span>
-            <span>{citation.source}</span>
-            {citationEvidenceId(citation) ? <span>{citationEvidenceId(citation)}</span> : null}
-            {citation.chunk_id ? <span>{citation.chunk_id}</span> : null}
-            {citationWikiPageId(citation) ? <span>{citationWikiPageId(citation)}</span> : null}
-            {citation.external_doc_id ? <span>{citation.external_doc_id}</span> : null}
-          </div>
-        </article>
-      ))}
+      {citations.map((citation, index) => {
+        const key = citationKey(citation, index);
+        return (
+          <article
+            className={`citation-item ${citation.source === "weknora_api" ? "weknora" : ""}`}
+            key={key}
+          >
+            <div className="citation-title-row">
+              <strong>{citation.title}</strong>
+              <div className="citation-title-actions">
+                {citation.score === null || citation.score === undefined ? null : (
+                  <span>{citation.score.toFixed(2)}</span>
+                )}
+                <button
+                  className="icon-button citation-locate-button"
+                  type="button"
+                  onClick={() => locateCitation(citation, index)}
+                  title="打开定位"
+                  aria-label="打开定位"
+                  disabled={locatingKey === key}
+                >
+                  {locatingKey === key ? (
+                    <Loader2 size={15} aria-hidden="true" />
+                  ) : (
+                    <ExternalLink size={15} aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+            </div>
+            <p>{citation.text}</p>
+            <div className="citation-meta-row">
+              <span className={`citation-source-type ${citationSourceClass(citation)}`}>
+                {citationSourceLabel(citation)}
+              </span>
+              <span>{citation.source}</span>
+              {citationEvidenceId(citation) ? <span>{citationEvidenceId(citation)}</span> : null}
+              {citation.chunk_id ? <span>{citation.chunk_id}</span> : null}
+              {citationWikiPageId(citation) ? <span>{citationWikiPageId(citation)}</span> : null}
+              {citation.external_doc_id ? <span>{citation.external_doc_id}</span> : null}
+            </div>
+            {locationMessage[key] ? (
+              <div className="citation-locate-message">
+                <AlertTriangle size={14} aria-hidden="true" />
+                <span>{locationMessage[key]}</span>
+              </div>
+            ) : null}
+          </article>
+        );
+      })}
     </div>
   );
 }

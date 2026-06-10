@@ -274,6 +274,26 @@ function chunkEmptyText(document: Document) {
   return "暂无 chunks";
 }
 
+function libraryHashTarget() {
+  const query = window.location.hash.split("?")[1] || "";
+  const params = new URLSearchParams(query);
+  return {
+    documentId: params.get("document"),
+    chunkId: params.get("chunk"),
+  };
+}
+
+function chunkMatchesTarget(chunk: DocumentChunk, targetChunkId: string | null) {
+  if (!targetChunkId) {
+    return false;
+  }
+  return chunk.id === targetChunkId || chunk.vector_id === targetChunkId;
+}
+
+function chunkDomId(chunk: DocumentChunk) {
+  return `chunk-${chunk.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
 export function LibraryPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -289,6 +309,7 @@ export function LibraryPage() {
   const [events, setEvents] = useState<DocumentProcessingEvent[]>([]);
   const [eventLoadState, setEventLoadState] = useState<EventLoadState>("idle");
   const [eventError, setEventError] = useState<string | null>(null);
+  const [targetChunkId, setTargetChunkId] = useState<string | null>(null);
 
   const indexedCount = useMemo(
     () => documents.filter((document) => document.status === "indexed").length,
@@ -307,6 +328,16 @@ export function LibraryPage() {
     [documents, previewDocumentId],
   );
 
+  const applyHashTarget = (nextDocuments: Document[]) => {
+    const target = libraryHashTarget();
+    if (!target.documentId) {
+      return;
+    }
+    if (nextDocuments.some((document) => document.id === target.documentId)) {
+      loadPreview(target.documentId, target.chunkId);
+    }
+  };
+
   const loadDocuments = () => {
     setLoadState("loading");
     setError(null);
@@ -322,6 +353,7 @@ export function LibraryPage() {
           setChunks([]);
           setEvents([]);
         }
+        applyHashTarget(response.items);
         setLoadState("idle");
       })
       .catch((loadError: unknown) => {
@@ -332,7 +364,35 @@ export function LibraryPage() {
 
   useEffect(() => {
     loadDocuments();
+    const onLocate = () => {
+      const target = libraryHashTarget();
+      if (target.documentId) {
+        loadPreview(target.documentId, target.chunkId);
+      }
+    };
+    window.addEventListener("pa:citation-locate", onLocate);
+    window.addEventListener("hashchange", onLocate);
+    return () => {
+      window.removeEventListener("pa:citation-locate", onLocate);
+      window.removeEventListener("hashchange", onLocate);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!targetChunkId || chunkLoadState === "loading") {
+      return;
+    }
+    const chunk = chunks.find((item) => chunkMatchesTarget(item, targetChunkId));
+    if (!chunk) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      document.getElementById(chunkDomId(chunk))?.scrollIntoView({
+        block: "center",
+        behavior: "smooth",
+      });
+    });
+  }, [chunks, targetChunkId, chunkLoadState]);
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -368,8 +428,9 @@ export function LibraryPage() {
       .finally(() => setIsUploading(false));
   };
 
-  const loadPreview = (documentId: string) => {
+  const loadPreview = (documentId: string, chunkId: string | null = null) => {
     setPreviewDocumentId(documentId);
+    setTargetChunkId(chunkId);
     setChunkLoadState("loading");
     setChunkError(null);
     setEventLoadState("loading");
@@ -596,7 +657,7 @@ export function LibraryPage() {
                 <button
                   className="icon-button"
                   type="button"
-                  onClick={() => loadPreview(previewDocument.id)}
+                  onClick={() => loadPreview(previewDocument.id, targetChunkId)}
                   title="刷新 chunks"
                 >
                   <RefreshCw size={16} aria-hidden="true" />
@@ -622,7 +683,15 @@ export function LibraryPage() {
               ) : (
                 <div className="chunk-preview-list">
                   {chunks.map((chunk) => (
-                    <article className="chunk-preview-item" key={chunk.id}>
+                    <article
+                      className={
+                        chunkMatchesTarget(chunk, targetChunkId)
+                          ? "chunk-preview-item located"
+                          : "chunk-preview-item"
+                      }
+                      id={chunkDomId(chunk)}
+                      key={chunk.id}
+                    >
                       <div className="chunk-preview-title">
                         <strong>#{chunk.chunk_index}</strong>
                         <span>{chunk.embedding_status}</span>

@@ -239,6 +239,33 @@ class CitationRead(BaseModel):
         return self
 
 
+class CitationLocateRequest(BaseModel):
+    id: str | None = None
+    document_id: str | None = None
+    external_doc_id: str | None = None
+    chunk_id: str | None = None
+    evidence_id: str | None = None
+    source_type: str | None = None
+    wiki_page_id: str | None = None
+    source: str | None = None
+    metadata_json: str | None = None
+    metadata: dict = Field(default_factory=dict)
+
+
+class CitationLocateResponse(BaseModel):
+    located: bool
+    target_type: str | None = None
+    route: str | None = None
+    ui_hash: str | None = None
+    message: str
+    document_id: str | None = None
+    external_doc_id: str | None = None
+    chunk_id: str | None = None
+    chunk_index: int | None = None
+    wiki_page_id: str | None = None
+    wiki_slug: str | None = None
+
+
 def _metadata_from_json(metadata_json: str | None) -> dict[str, Any]:
     if not metadata_json:
         return {}
