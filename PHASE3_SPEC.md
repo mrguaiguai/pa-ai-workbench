@@ -1651,7 +1651,7 @@ WeKnora runtime 变成 release gate：
 | P3-M2-A1 | WeKnora Adapter 超时、重试、错误码规范 | [x] |
 | P3-M2-A2 | 文档处理状态轮询与失败恢复 | [x] |
 | P3-M2-A3 | Wiki 发布/索引异步状态恢复 | [x] |
-| P3-M2-A4 | Agent 无证据和弱证据策略增强 | [ ] |
+| P3-M2-A4 | Agent 无证据和弱证据策略增强 | [x] |
 | P3-M2-A5 | PA real LLM 接入与 DeepSeek smoke | [ ] |
 
 #### P3-M2-A0：Real runtime preflight gate
@@ -1788,7 +1788,7 @@ scoped no-evidence smoke、低分 evidence fixture、Agent citation smoke。
 风险：
 过严策略可能降低可用性；M2 先以透明提示优先。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M2-A5：PA real LLM 接入与 DeepSeek smoke
 

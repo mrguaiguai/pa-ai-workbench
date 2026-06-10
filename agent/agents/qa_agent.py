@@ -14,6 +14,8 @@ from agent.schemas import AgentStatus
 from agent.schemas import Citation
 from agent.tools import CitationChecker
 from agent.tools import RetrieverTool
+from agent.tools.evidence_policy import EvidencePolicy
+from agent.tools.evidence_policy import EvidencePolicyResult
 
 
 class KnowledgeQaWorkflow:
@@ -22,11 +24,13 @@ class KnowledgeQaWorkflow:
         retriever: RetrieverTool | None = None,
         citation_checker: CitationChecker | None = None,
         model_gateway: ModelGateway | None = None,
+        evidence_policy: EvidencePolicy | None = None,
         top_k: int = 5,
     ) -> None:
         self.retriever = retriever or RetrieverTool()
         self.citation_checker = citation_checker or CitationChecker()
         self.model_gateway = model_gateway or get_model_gateway()
+        self.evidence_policy = evidence_policy or EvidencePolicy(self.citation_checker)
         self.top_k = top_k
 
     def __call__(self, request: AgentRequest, context: AgentContext) -> AgentResult:
@@ -41,16 +45,26 @@ class KnowledgeQaWorkflow:
             )
         ]
 
-        citations = self._retrieve_citations(request)
+        retrieved_citations = self._retrieve_citations(request)
+        policy_result = self.evidence_policy.evaluate(
+            retrieved_citations,
+            workflow="knowledge question",
+            expected_source_type=self._expected_source_type(request),
+        )
+        citations = policy_result.citations
         events.append(
             AgentEvent(
                 task_id=request.task_id,
                 conversation_id=request.conversation_id,
                 event_type=AgentEventType.STEP_COMPLETED,
                 step="retrieve",
-                message=f"Retrieved {len(citations)} evidence item(s).",
+                message=f"Retrieved {len(citations)} usable evidence item(s).",
                 progress=60,
-                payload={"citation_count": len(citations)},
+                payload={
+                    "citation_count": len(citations),
+                    "retrieved_count": len(retrieved_citations),
+                    "warning_codes": policy_result.warning_codes,
+                },
             )
         )
 
@@ -65,7 +79,12 @@ class KnowledgeQaWorkflow:
                 payload={"citation_count": len(citations)},
             )
         )
-        answer, model_metadata = self._generate_answer(request, context, citations)
+        answer, model_metadata = self._generate_answer(
+            request,
+            context,
+            citations,
+            policy_result,
+        )
         events.append(
             AgentEvent(
                 task_id=request.task_id,
@@ -78,13 +97,7 @@ class KnowledgeQaWorkflow:
             )
         )
 
-        check_result = self.citation_checker.validate(
-            citations,
-            evidence_items=citations,
-        )
-        warnings = list(check_result.warnings)
-        if not citations:
-            warnings.append("No evidence was found for the question.")
+        warnings = list(policy_result.warnings)
 
         if warnings:
             events.append(
@@ -108,9 +121,12 @@ class KnowledgeQaWorkflow:
             content={
                 "answer": answer,
                 "citation_count": len(citations),
+                "retrieved_citation_count": len(retrieved_citations),
                 "recent_message_count": len(context.recent_messages),
                 "filters": self._build_filters(request),
                 "model": model_metadata,
+                "warning_codes": policy_result.warning_codes,
+                "evidence_quality": self._evidence_quality(policy_result),
             },
             markdown=answer,
             citations=citations,
@@ -154,11 +170,18 @@ class KnowledgeQaWorkflow:
             filters["document_type"] = request.document_type
         return filters
 
+    @staticmethod
+    def _expected_source_type(request: AgentRequest) -> str | None:
+        return request.metadata.get("expected_source_type") or request.metadata.get(
+            "required_source_type"
+        )
+
     def _generate_answer(
         self,
         request: AgentRequest,
         context: AgentContext,
         citations: list[Citation],
+        policy_result: EvidencePolicyResult,
     ) -> tuple[str, dict[str, Any]]:
         response = self.model_gateway.generate(
             ChatRequest(
@@ -185,8 +208,22 @@ class KnowledgeQaWorkflow:
                 {citation.source_type or "unknown" for citation in citations}
             ),
             "evidence_mode": self._evidence_mode(citations),
+            "warning_codes": policy_result.warning_codes,
+            "weak_evidence_count": policy_result.weak_evidence_count,
+            "dropped_citation_count": policy_result.dropped_citation_count,
+            "source_type_mismatch_count": policy_result.source_type_mismatch_count,
         }
-        return self._grounded_markdown(response.content, citations), metadata
+        return self._grounded_markdown(response.content, citations, policy_result), metadata
+
+    @staticmethod
+    def _evidence_quality(policy_result: EvidencePolicyResult) -> dict[str, Any]:
+        return {
+            "mode": policy_result.evidence_mode,
+            "weak_evidence_count": policy_result.weak_evidence_count,
+            "dropped_citation_count": policy_result.dropped_citation_count,
+            "source_type_mismatch_count": policy_result.source_type_mismatch_count,
+            "warning_codes": policy_result.warning_codes,
+        }
 
     @classmethod
     def _build_messages(
@@ -287,7 +324,12 @@ class KnowledgeQaWorkflow:
         return f"{normalized[:max_chars]}[truncated]"
 
     @classmethod
-    def _grounded_markdown(cls, answer: str, citations: list[Citation]) -> str:
+    def _grounded_markdown(
+        cls,
+        answer: str,
+        citations: list[Citation],
+        policy_result: EvidencePolicyResult,
+    ) -> str:
         if not citations:
             return "\n".join(
                 [
@@ -297,18 +339,36 @@ class KnowledgeQaWorkflow:
                     "请补充资料、调整问题，或确认知识库索引状态后重试。",
                 ]
             )
-        return "\n".join(
-            [
-                answer.strip(),
-                "",
-                "## 引用证据",
-                "",
-                *[
-                    cls._citation_markdown_line(index, citation)
-                    for index, citation in enumerate(citations, start=1)
-                ],
-            ]
-        ).strip()
+        lines = [
+            answer.strip(),
+            "",
+            "## 引用证据",
+            "",
+            *[
+                cls._citation_markdown_line(index, citation)
+                for index, citation in enumerate(citations, start=1)
+            ],
+        ]
+        lines.extend(cls._quality_warning_lines(policy_result))
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _quality_warning_lines(policy_result: EvidencePolicyResult) -> list[str]:
+        lines: list[str] = []
+        if "WEAK_EVIDENCE" in policy_result.warning_codes:
+            lines.extend(
+                [
+                    "",
+                    "## 证据质量提示",
+                    "",
+                    "- 检索到低置信 evidence，相关结论应标记为不确定，并在补充资料后复核。",
+                ]
+            )
+        if "SOURCE_TYPE_MISMATCH" in policy_result.warning_codes:
+            if not lines:
+                lines.extend(["", "## 证据质量提示", ""])
+            lines.append("- 部分 evidence 的 source_type 不符合请求范围，已从引用中排除。")
+        return lines
 
     @classmethod
     def _citation_markdown_line(cls, index: int, citation: Citation) -> str:

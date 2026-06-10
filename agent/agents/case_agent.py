@@ -14,6 +14,8 @@ from agent.schemas import AgentStatus
 from agent.schemas import Citation
 from agent.tools import CitationChecker
 from agent.tools import RetrieverTool
+from agent.tools.evidence_policy import EvidencePolicy
+from agent.tools.evidence_policy import EvidencePolicyResult
 
 
 class CaseReviewWorkflow:
@@ -22,11 +24,13 @@ class CaseReviewWorkflow:
         retriever: RetrieverTool | None = None,
         citation_checker: CitationChecker | None = None,
         model_gateway: ModelGateway | None = None,
+        evidence_policy: EvidencePolicy | None = None,
         top_k: int = 6,
     ) -> None:
         self.retriever = retriever or RetrieverTool()
         self.citation_checker = citation_checker or CitationChecker()
         self.model_gateway = model_gateway or get_model_gateway()
+        self.evidence_policy = evidence_policy or EvidencePolicy(self.citation_checker)
         self.top_k = top_k
 
     def __call__(self, request: AgentRequest, context: AgentContext) -> AgentResult:
@@ -41,16 +45,26 @@ class CaseReviewWorkflow:
             )
         ]
 
-        citations = self._retrieve_citations(request)
+        retrieved_citations = self._retrieve_citations(request)
+        policy_result = self.evidence_policy.evaluate(
+            retrieved_citations,
+            workflow="case review",
+            expected_source_type=self._expected_source_type(request),
+        )
+        citations = policy_result.citations
         events.append(
             AgentEvent(
                 task_id=request.task_id,
                 conversation_id=request.conversation_id,
                 event_type=AgentEventType.STEP_COMPLETED,
                 step="retrieve_case_evidence",
-                message=f"Retrieved {len(citations)} case evidence item(s).",
+                message=f"Retrieved {len(citations)} usable case evidence item(s).",
                 progress=55,
-                payload={"citation_count": len(citations)},
+                payload={
+                    "citation_count": len(citations),
+                    "retrieved_count": len(retrieved_citations),
+                    "warning_codes": policy_result.warning_codes,
+                },
             )
         )
 
@@ -65,7 +79,12 @@ class CaseReviewWorkflow:
                 payload={"citation_count": len(citations)},
             )
         )
-        markdown, model_metadata = self._generate_review(request, context, citations)
+        markdown, model_metadata = self._generate_review(
+            request,
+            context,
+            citations,
+            policy_result,
+        )
         events.append(
             AgentEvent(
                 task_id=request.task_id,
@@ -78,7 +97,7 @@ class CaseReviewWorkflow:
             )
         )
 
-        warnings = self._build_warnings(citations)
+        warnings = list(policy_result.warnings)
         if warnings:
             events.append(
                 AgentEvent(
@@ -99,6 +118,8 @@ class CaseReviewWorkflow:
             warnings=warnings,
             markdown=markdown,
             model_metadata=model_metadata,
+            policy_result=policy_result,
+            retrieved_citation_count=len(retrieved_citations),
         )
         return AgentResult(
             task_id=request.task_id,
@@ -141,16 +162,6 @@ class CaseReviewWorkflow:
             or citation.external_doc_id in scoped_document_ids
         ]
 
-    def _build_warnings(self, citations: list[Citation]) -> list[str]:
-        check_result = self.citation_checker.validate(
-            citations,
-            evidence_items=citations,
-        )
-        warnings = list(check_result.warnings)
-        if not citations:
-            warnings.append("No case evidence was found for the review.")
-        return warnings
-
     @staticmethod
     def _build_filters(request: AgentRequest) -> dict[str, Any]:
         filters: dict[str, Any] = {}
@@ -160,11 +171,18 @@ class CaseReviewWorkflow:
             filters["document_type"] = request.document_type
         return filters
 
+    @staticmethod
+    def _expected_source_type(request: AgentRequest) -> str | None:
+        return request.metadata.get("expected_source_type") or request.metadata.get(
+            "required_source_type"
+        )
+
     def _generate_review(
         self,
         request: AgentRequest,
         context: AgentContext,
         citations: list[Citation],
+        policy_result: EvidencePolicyResult,
     ) -> tuple[str, dict[str, Any]]:
         response = self.model_gateway.generate(
             ChatRequest(
@@ -191,8 +209,17 @@ class CaseReviewWorkflow:
                 {citation.source_type or "unknown" for citation in citations}
             ),
             "evidence_mode": self._evidence_mode(citations),
+            "warning_codes": policy_result.warning_codes,
+            "weak_evidence_count": policy_result.weak_evidence_count,
+            "dropped_citation_count": policy_result.dropped_citation_count,
+            "source_type_mismatch_count": policy_result.source_type_mismatch_count,
         }
-        return self._grounded_markdown(response.content, request, citations), metadata
+        return self._grounded_markdown(
+            response.content,
+            request,
+            citations,
+            policy_result,
+        ), metadata
 
     @classmethod
     def _build_messages(
@@ -296,6 +323,8 @@ class CaseReviewWorkflow:
         warnings: list[str],
         markdown: str,
         model_metadata: dict[str, Any],
+        policy_result: EvidencePolicyResult,
+        retrieved_citation_count: int,
     ) -> dict[str, Any]:
         evidence_summaries = [
             {
@@ -333,11 +362,24 @@ class CaseReviewWorkflow:
                 "补充原始案例材料、时间线记录、关键沟通纪要和相关方反馈。",
             ],
             "citation_count": len(citations),
+            "retrieved_citation_count": retrieved_citation_count,
             "evidence": evidence_summaries,
             "recent_message_count": len(context.recent_messages),
             "filters": cls._build_filters(request),
             "model": model_metadata,
             "warnings": warnings,
+            "warning_codes": policy_result.warning_codes,
+            "evidence_quality": cls._evidence_quality(policy_result),
+        }
+
+    @staticmethod
+    def _evidence_quality(policy_result: EvidencePolicyResult) -> dict[str, Any]:
+        return {
+            "mode": policy_result.evidence_mode,
+            "weak_evidence_count": policy_result.weak_evidence_count,
+            "dropped_citation_count": policy_result.dropped_citation_count,
+            "source_type_mismatch_count": policy_result.source_type_mismatch_count,
+            "warning_codes": policy_result.warning_codes,
         }
 
     @staticmethod
@@ -353,6 +395,7 @@ class CaseReviewWorkflow:
         review: str,
         request: AgentRequest,
         citations: list[Citation],
+        policy_result: EvidencePolicyResult,
     ) -> str:
         if not citations:
             return "\n".join(
@@ -368,23 +411,41 @@ class CaseReviewWorkflow:
                 ]
             )
 
-        return "\n".join(
-            [
-                review.strip(),
-                "",
-                "## 事实与引用",
-                "",
-                *[
-                    cls._case_fact_line(index, citation)
-                    for index, citation in enumerate(citations, start=1)
-                ],
-                "",
-                "## 待补材料与不确定性",
-                "",
-                "- 以上复盘只覆盖已检索到的证据；时间线、责任边界和相关方反馈仍需人工复核。",
-                "- 如缺少原始记录、关键节点或后续处置材料，应补充后再形成正式复盘。",
-            ]
-        ).strip()
+        lines = [
+            review.strip(),
+            "",
+            "## 事实与引用",
+            "",
+            *[
+                cls._case_fact_line(index, citation)
+                for index, citation in enumerate(citations, start=1)
+            ],
+            "",
+            "## 待补材料与不确定性",
+            "",
+            "- 以上复盘只覆盖已检索到的证据；时间线、责任边界和相关方反馈仍需人工复核。",
+            "- 如缺少原始记录、关键节点或后续处置材料，应补充后再形成正式复盘。",
+        ]
+        lines.extend(cls._quality_warning_lines(policy_result))
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _quality_warning_lines(policy_result: EvidencePolicyResult) -> list[str]:
+        lines: list[str] = []
+        if "WEAK_EVIDENCE" in policy_result.warning_codes:
+            lines.extend(
+                [
+                    "",
+                    "## 证据质量提示",
+                    "",
+                    "- 检索到低置信 evidence，案例事实和风险判断应标记为不确定。",
+                ]
+            )
+        if "SOURCE_TYPE_MISMATCH" in policy_result.warning_codes:
+            if not lines:
+                lines.extend(["", "## 证据质量提示", ""])
+            lines.append("- 部分 evidence 的 source_type 不符合请求范围，已从引用中排除。")
+        return lines
 
     @classmethod
     def _case_fact_line(cls, index: int, citation: Citation) -> str:

@@ -190,8 +190,15 @@ def _run_workflow(
     for citation in reads:
         _assert_real_weknora_citation(task_type=task_type, citation=citation)
     warnings = _json_list(output.warnings_json)
-    if warnings:
-        raise SmokeError(f"{task_type} returned warnings despite citations: {warnings}")
+    blocking_warnings = [
+        warning
+        for warning in warnings
+        if not str(warning).startswith("WEAK_EVIDENCE:")
+    ]
+    if blocking_warnings:
+        raise SmokeError(
+            f"{task_type} returned blocking warnings despite citations: {blocking_warnings}"
+        )
     return {
         "task_type": task_type,
         "citation_count": len(reads),

@@ -1,5 +1,7 @@
 from agent.tools.citation_checker import CitationCheckResult
 from agent.tools.citation_checker import CitationChecker
+from agent.tools.evidence_policy import EvidencePolicy
+from agent.tools.evidence_policy import EvidencePolicyResult
 from agent.tools.registry import ToolDefinition
 from agent.tools.registry import ToolRegistry
 from agent.tools.registry import create_builtin_tool_registry
@@ -16,6 +18,8 @@ from agent.tools.wiki_reader import WikiReadTool
 __all__ = [
     "CitationCheckResult",
     "CitationChecker",
+    "EvidencePolicy",
+    "EvidencePolicyResult",
     "InMemoryWikiDraftWriter",
     "RealRetrieverTool",
     "RetrieverTool",
