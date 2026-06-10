@@ -25,6 +25,7 @@ from knowledge_engine.errors import WeKnoraResponseMappingError
 from knowledge_engine.errors import WeKnoraServerError
 from knowledge_engine.errors import WeKnoraTimeoutError
 from knowledge_engine.errors import WeKnoraUnavailableError
+from knowledge_engine.kb_mapping import KbMappingResolver
 from knowledge_engine.schemas import Evidence
 from knowledge_engine.schemas import KnowledgeDocument
 from knowledge_engine.schemas import WikiPage
@@ -76,6 +77,8 @@ class WeKnoraApiBackend(KnowledgeEngine):
         timeout: float | None = None,
         workspace_id: str | None = None,
         default_kb_id: str | None = None,
+        kb_mapping_config: str | None = None,
+        kb_allow_default: bool | None = None,
         retry_attempts: int | None = None,
         retry_backoff_seconds: float | None = None,
     ) -> None:
@@ -94,6 +97,12 @@ class WeKnoraApiBackend(KnowledgeEngine):
         )
         self.default_kb_id = (
             default_kb_id if default_kb_id is not None else os.getenv("WEKNORA_DEFAULT_KB_ID", "")
+        )
+        self.kb_resolver = KbMappingResolver(
+            default_workspace_id=self.workspace_id,
+            default_kb_id=self.default_kb_id,
+            mapping_config=kb_mapping_config,
+            allow_default=kb_allow_default,
         )
         self.retry_attempts = (
             max(retry_attempts, 0)
@@ -139,21 +148,21 @@ class WeKnoraApiBackend(KnowledgeEngine):
 
     def upload_document(self, file_path: str, metadata: dict) -> KnowledgeDocument:
         self._require_configured()
-        if not self.default_kb_id:
-            raise KnowledgeBackendUnavailableError("WEKNORA_DEFAULT_KB_ID is not configured")
+        target = self.kb_resolver.resolve_one(metadata, operation="upload_document")
+        enriched_metadata = {**metadata, **target.metadata()}
         path = Path(file_path)
         fields = {
-            "metadata": json.dumps(_string_metadata(metadata), ensure_ascii=False),
-            "fileName": str(metadata.get("file_name") or path.name),
-            "channel": str(metadata.get("weknora_channel") or "api"),
+            "metadata": json.dumps(_string_metadata(enriched_metadata), ensure_ascii=False),
+            "fileName": str(enriched_metadata.get("file_name") or path.name),
+            "channel": str(enriched_metadata.get("weknora_channel") or "api"),
         }
-        if metadata.get("tag_id"):
-            fields["tag_id"] = str(metadata["tag_id"])
-        if metadata.get("enable_multimodel") is not None:
-            fields["enable_multimodel"] = _bool_string(metadata["enable_multimodel"])
+        if enriched_metadata.get("tag_id"):
+            fields["tag_id"] = str(enriched_metadata["tag_id"])
+        if enriched_metadata.get("enable_multimodel") is not None:
+            fields["enable_multimodel"] = _bool_string(enriched_metadata["enable_multimodel"])
         data = self._request_multipart_json(
             "/api/v1/knowledge-bases/{kb_id}/knowledge/file".format(
-                kb_id=self.default_kb_id
+                kb_id=target.kb_id
             ),
             file_path=path,
             fields=fields,
@@ -171,7 +180,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
             title=data.get("title") or data.get("file_name") or metadata.get("title") or path.name,
             status=mapped_status,
             source="weknora_api",
-            metadata=self._document_metadata(data, metadata),
+            metadata=self._document_metadata(data, enriched_metadata),
         )
 
     def get_document_status(self, external_doc_id: str) -> dict:
@@ -250,20 +259,12 @@ class WeKnoraApiBackend(KnowledgeEngine):
     ) -> list[Evidence]:
         if top_k <= 0:
             return []
-        kb_ids = _list_filter(
-            filters.get("knowledge_base_ids")
-            or filters.get("knowledge_base_id")
-            or filters.get("kb_ids")
-            or filters.get("kb_id")
-        )
-        if not kb_ids and self.default_kb_id:
-            kb_ids = [self.default_kb_id]
-        if not kb_ids:
-            raise KnowledgeBackendUnavailableError("WEKNORA_DEFAULT_KB_ID is not configured")
+        targets = self.kb_resolver.resolve_many(filters, operation="wiki_retrieve")
 
         evidence_items: list[Evidence] = []
         limit = max(top_k, 1)
-        for kb_id in kb_ids:
+        for target in targets:
+            kb_id = target.kb_id
             summaries = self.search_wiki(query, kb_id=kb_id, limit=limit)
             for summary in summaries:
                 page = self.read_wiki_page(summary.slug, kb_id=kb_id)
@@ -625,16 +626,8 @@ class WeKnoraApiBackend(KnowledgeEngine):
 
     def _retrieve_payload(self, query: str, filters: dict) -> dict:
         payload: dict[str, object] = {"query": query}
-        knowledge_base_ids = _list_filter(
-            filters.get("knowledge_base_ids")
-            or filters.get("knowledge_base_id")
-            or filters.get("kb_ids")
-            or filters.get("kb_id")
-        )
-        if not knowledge_base_ids and self.default_kb_id:
-            knowledge_base_ids = [self.default_kb_id]
-        if knowledge_base_ids:
-            payload["knowledge_base_ids"] = knowledge_base_ids
+        targets = self.kb_resolver.resolve_many(filters, operation="retrieve")
+        payload["knowledge_base_ids"] = [target.kb_id for target in targets]
 
         knowledge_ids = _list_filter(
             filters.get("knowledge_ids")
@@ -647,10 +640,10 @@ class WeKnoraApiBackend(KnowledgeEngine):
         return payload
 
     def _wiki_kb_id(self, kb_id: str | None = None) -> str:
-        resolved = (kb_id or self.default_kb_id or "").strip()
-        if not resolved:
-            raise KnowledgeBackendUnavailableError("WEKNORA_DEFAULT_KB_ID is not configured")
-        return resolved
+        return self.kb_resolver.resolve_one(
+            {"kb_id": kb_id} if kb_id else {},
+            operation="wiki",
+        ).kb_id
 
     @staticmethod
     def _wiki_base_path(kb_id: str) -> str:

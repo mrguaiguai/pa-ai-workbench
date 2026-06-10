@@ -100,6 +100,13 @@ class Settings:
     weknora_default_kb_id: str = field(
         default_factory=lambda: os.getenv("WEKNORA_DEFAULT_KB_ID", "")
     )
+    weknora_kb_mappings: str = field(
+        default_factory=lambda: os.getenv("WEKNORA_KB_MAPPINGS", ""),
+        repr=False,
+    )
+    weknora_kb_allow_default: bool = field(
+        default_factory=lambda: _get_bool("WEKNORA_KB_ALLOW_DEFAULT", True)
+    )
     weknora_timeout_seconds: int = field(
         default_factory=lambda: _get_int("WEKNORA_TIMEOUT_SECONDS", 60)
     )

@@ -53,6 +53,8 @@ def get_weknora_status(settings: Settings) -> WeKnoraStatus:
         timeout=min(settings.weknora_timeout_seconds, 3),
         workspace_id=settings.weknora_workspace_id,
         default_kb_id=settings.weknora_default_kb_id,
+        kb_mapping_config=settings.weknora_kb_mappings,
+        kb_allow_default=settings.weknora_kb_allow_default,
     )
     health = backend.health()
     health_status = str(health.get("status") or "unknown").strip().lower()

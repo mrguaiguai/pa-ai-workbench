@@ -97,6 +97,16 @@ export type StatusResponse = {
         }
       >;
     };
+    kb_mapping?: {
+      schema_version: string;
+      configured: boolean;
+      mapping_count: number;
+      selector_keys: string[];
+      default_workspace_configured: boolean;
+      default_kb_configured: boolean;
+      default_fallback_allowed: boolean;
+      ids_redacted: boolean;
+    };
     notes: string[];
   };
   memory_recent_limit: number;

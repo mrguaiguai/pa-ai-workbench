@@ -141,6 +141,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
     const weknora = backend?.weknora;
     const capabilities = backend?.backend_capabilities;
     const parity = capabilities?.parity_summary;
+    const kbMapping = capabilities?.kb_mapping;
     const statusCounts = parity?.status_counts ?? {};
     const ragStatus =
       backendReady && weknora?.mode === "weknora_api"
@@ -198,6 +199,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
     const capabilityDetails = parity
       ? [
           `facts: ${parity.data_fact_source}`,
+          `kb maps: ${kbMapping?.mapping_count ?? 0}`,
           `citation: ${parity.citation_trace}`,
           `wiki publish: ${parity.wiki}`,
           `debug: ${parity.debug}`,

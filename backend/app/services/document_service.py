@@ -654,6 +654,8 @@ def _weknora_backend() -> WeKnoraApiBackend:
         timeout=settings.weknora_timeout_seconds,
         workspace_id=settings.weknora_workspace_id,
         default_kb_id=settings.weknora_default_kb_id,
+        kb_mapping_config=settings.weknora_kb_mappings,
+        kb_allow_default=settings.weknora_kb_allow_default,
     )
 
 
