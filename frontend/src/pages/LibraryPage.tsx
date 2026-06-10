@@ -40,8 +40,8 @@ const initialForm: LibraryForm = {
   source: "manual",
 };
 
-const runningStatuses = new Set(["parsing", "chunking", "indexing"]);
-const parsedStatuses = new Set(["parsed", "chunked", "indexing", "indexed"]);
+const runningStatuses = new Set(["uploaded", "parsing", "chunking", "embedding", "indexing"]);
+const parsedStatuses = new Set(["parsed", "chunked", "embedding", "indexing", "indexed"]);
 const readyStatuses = new Set(["indexed"]);
 
 function formatFileSize(size: number | null) {
@@ -141,12 +141,21 @@ function indexStatus(document: Document) {
   if (document.status === "failed" && document.failed_step === "index") {
     return "索引失败";
   }
+  if (document.status === "failed" && document.failed_step === "embedding") {
+    return "embedding 失败";
+  }
+  if (document.status === "embedding") {
+    return "embedding 中";
+  }
   return "待索引";
 }
 
 function readinessStatus(document: Document) {
   if (document.status === "failed") {
     return "失败";
+  }
+  if (document.processing_timed_out || document.processing_state === "stalled") {
+    return "超时";
   }
   if (readyStatuses.has(document.status)) {
     return "可提问";
@@ -161,6 +170,9 @@ function readinessClass(document: Document) {
   if (document.status === "failed") {
     return "failed";
   }
+  if (document.processing_timed_out || document.processing_state === "stalled") {
+    return "failed";
+  }
   if (readyStatuses.has(document.status)) {
     return "ready";
   }
@@ -171,6 +183,9 @@ function readinessClass(document: Document) {
 }
 
 function statusHint(document: Document) {
+  if (document.processing_message) {
+    return document.processing_message;
+  }
   if (document.status === "failed") {
     return document.failed_step
       ? `失败位置：${stepLabel(document.failed_step)}`
@@ -183,6 +198,9 @@ function statusHint(document: Document) {
   }
   if (document.status === "indexing") {
     return "索引完成后可提问";
+  }
+  if (document.status === "embedding") {
+    return "embedding 完成后进入索引";
   }
   if (document.status === "chunking") {
     return "分块完成后进入索引";
@@ -206,6 +224,9 @@ function stepLabel(step: string | null) {
     return "分块";
   }
   if (normalized === "index" || normalized === "indexing" || normalized === "embedding") {
+    if (normalized === "embedding") {
+      return "Embedding";
+    }
     return "索引";
   }
   if (normalized === "weknora_upload") {
@@ -377,11 +398,11 @@ export function LibraryPage() {
       });
   };
 
-  const onReindexDocument = (documentId: string) => {
+  const onRecoverDocument = (documentId: string) => {
     setReindexingId(documentId);
     setError(null);
     apiClient
-      .reindexDocument(documentId)
+      .retryDocumentProcessing(documentId)
       .then((response) => {
         setDocuments((current) =>
           current.map((document) =>
@@ -525,10 +546,12 @@ export function LibraryPage() {
                         提问：{statusHint(document)}
                       </span>
                     </div>
-                    {document.status === "failed" ? (
+                    {document.status === "failed" || document.processing_timed_out ? (
                       <div className="document-error">
-                        <span>{stepLabel(document.failed_step)}</span>
-                        <strong>{document.error_message || "处理失败"}</strong>
+                        <span>{document.processing_timed_out ? "处理超时" : stepLabel(document.failed_step)}</span>
+                        <strong>
+                          {document.error_message || document.processing_message || "处理失败"}
+                        </strong>
                       </div>
                     ) : null}
                   </div>
@@ -546,9 +569,9 @@ export function LibraryPage() {
                     <button
                       className="icon-button"
                       type="button"
-                      onClick={() => onReindexDocument(document.id)}
+                      onClick={() => onRecoverDocument(document.id)}
                       disabled={reindexingId === document.id}
-                      title="重新索引"
+                      title={document.retryable ? "恢复处理" : "刷新/恢复处理"}
                     >
                       {reindexingId === document.id ? (
                         <Loader2 size={16} aria-hidden="true" />

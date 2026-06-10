@@ -82,6 +82,12 @@ export type Document = {
   pending_chunk_count: number;
   failed_chunk_count: number;
   embedding_status: string | null;
+  processing_state: string;
+  processing_message: string | null;
+  next_action: string | null;
+  retryable: boolean;
+  processing_seconds: number;
+  processing_timed_out: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -407,6 +413,10 @@ export const apiClient = {
   },
   retryDocumentIndex: (documentId: string) =>
     request<DocumentRetryIndexResponse>(`/api/documents/${documentId}/retry-index`, {
+      method: "POST",
+    }),
+  retryDocumentProcessing: (documentId: string) =>
+    request<DocumentRetryIndexResponse>(`/api/documents/${documentId}/retry-processing`, {
       method: "POST",
     }),
   reindexDocument: (documentId: string) =>

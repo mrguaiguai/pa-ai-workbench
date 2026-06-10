@@ -317,6 +317,9 @@ function documentStatusLabel(status: string) {
   if (status === "indexing") {
     return "索引中";
   }
+  if (status === "embedding") {
+    return "Embedding";
+  }
   if (status === "chunking") {
     return "分块中";
   }

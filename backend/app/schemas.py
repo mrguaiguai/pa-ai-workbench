@@ -32,6 +32,12 @@ class DocumentRead(BaseModel):
     pending_chunk_count: int = 0
     failed_chunk_count: int = 0
     embedding_status: str | None = None
+    processing_state: str = "waiting"
+    processing_message: str | None = None
+    next_action: str | None = None
+    retryable: bool = False
+    processing_seconds: int = 0
+    processing_timed_out: bool = False
     created_at: datetime
     updated_at: datetime
 

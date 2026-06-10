@@ -27,8 +27,10 @@ from app.services.document_service import list_document_chunks
 from app.services.document_service import list_document_events
 from app.services.document_service import list_documents
 from app.services.document_service import parse_document_file
+from app.services.document_service import recover_document_processing
 from app.services.document_service import reindex_document_chunks
 from app.services.document_service import retry_index_document
+from app.services.document_service import document_processing_summary
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -169,6 +171,22 @@ def retry_document_index(
     )
 
 
+@router.post("/{document_id}/retry-processing", response_model=DocumentRetryIndexResponse)
+def retry_document_processing(
+    document_id: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> DocumentRetryIndexResponse:
+    document = _require_document(session, document_id)
+    try:
+        updated, message = recover_document_processing(session, document)
+    except DocumentWorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return DocumentRetryIndexResponse(
+        document=_document_read(session, updated),
+        message=message,
+    )
+
+
 def _require_document(session: Session, document_id: str):
     document = get_document(session, document_id)
     if document is None:
@@ -181,6 +199,7 @@ def _document_read(session: Session, document) -> DocumentRead:
     indexed_count = sum(1 for chunk in chunks if chunk.embedding_status == "indexed")
     failed_count = sum(1 for chunk in chunks if chunk.embedding_status == "failed")
     pending_count = len(chunks) - indexed_count - failed_count
+    processing_summary = document_processing_summary(document)
     return DocumentRead.model_validate(document).model_copy(
         update={
             "chunk_count": len(chunks),
@@ -192,6 +211,7 @@ def _document_read(session: Session, document) -> DocumentRead:
                 indexed_count=indexed_count,
                 failed_count=failed_count,
             ),
+            **processing_summary,
         }
     )
 

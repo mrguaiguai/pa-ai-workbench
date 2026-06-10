@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Any
 
 from fastapi import UploadFile
@@ -28,6 +29,8 @@ from knowledge_engine.vectorstores import VectorStore
 from knowledge_engine.vectorstores import get_vector_store
 
 MAX_ERROR_MESSAGE_CHARS = 500
+DOCUMENT_PROCESSING_TIMEOUT_SECONDS = 30 * 60
+PROCESSING_STATUSES = {"uploaded", "parsing", "chunking", "embedding", "indexing"}
 
 
 class DocumentWorkflowError(Exception):
@@ -275,6 +278,110 @@ def retry_index_document(session: Session, document: Document) -> Document:
     return updated
 
 
+def recover_document_processing(session: Session, document: Document) -> tuple[Document, str]:
+    if document.knowledge_backend != "weknora_api":
+        updated, _ = reindex_document_chunks(session, document)
+        return updated, "Document chunks rebuilt, embedded, and indexed."
+
+    document = sync_document_status(session, document)
+    summary = document_processing_summary(document)
+    if document.status == "indexed":
+        return document, "Document is already indexed."
+    if summary["processing_state"] == "processing" and not summary["processing_timed_out"]:
+        _record_event(
+            session=session,
+            document=document,
+            step="weknora_retry",
+            status="skipped",
+            message="WeKnora retry skipped because processing is still active.",
+            metadata={
+                "status": document.status,
+                "processing_seconds": summary["processing_seconds"],
+            },
+        )
+        session.commit()
+        return document, "Document is still processing; no duplicate retry submitted."
+    if not document.file_path:
+        raise DocumentWorkflowError("Document has no stored file path for retry.")
+
+    prior_external_doc_id = document.external_doc_id
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_retry",
+        status="started",
+        message="WeKnora document processing retry started.",
+        metadata={
+            "prior_external_doc_id": prior_external_doc_id,
+            "prior_status": document.status,
+            "prior_failed_step": document.failed_step,
+            "processing_timed_out": summary["processing_timed_out"],
+        },
+    )
+    session.commit()
+    _upload_document_to_weknora(
+        session=session,
+        document=document,
+        operation="retry",
+        prior_external_doc_id=prior_external_doc_id,
+    )
+    if document.status == "failed" and document.failed_step == "weknora_retry":
+        raise DocumentWorkflowError(document.error_message or "WeKnora retry upload failed.")
+    return document, "Document retry submitted to WeKnora using the existing PA record."
+
+
+def document_processing_summary(document: Document) -> dict[str, Any]:
+    processing_seconds = _processing_seconds(document)
+    timed_out = (
+        document.status in PROCESSING_STATUSES
+        and processing_seconds >= _processing_timeout_seconds()
+    )
+    if document.status == "indexed":
+        return {
+            "processing_state": "ready",
+            "processing_message": "Document is indexed and ready for grounded answers.",
+            "next_action": "ask",
+            "retryable": False,
+            "processing_seconds": processing_seconds,
+            "processing_timed_out": False,
+        }
+    if document.status == "failed":
+        return {
+            "processing_state": "failed",
+            "processing_message": _failed_processing_message(document),
+            "next_action": "retry",
+            "retryable": True,
+            "processing_seconds": processing_seconds,
+            "processing_timed_out": False,
+        }
+    if timed_out:
+        return {
+            "processing_state": "stalled",
+            "processing_message": _stalled_processing_message(document),
+            "next_action": "retry",
+            "retryable": True,
+            "processing_seconds": processing_seconds,
+            "processing_timed_out": True,
+        }
+    if document.status in PROCESSING_STATUSES:
+        return {
+            "processing_state": "processing",
+            "processing_message": _active_processing_message(document),
+            "next_action": "wait",
+            "retryable": False,
+            "processing_seconds": processing_seconds,
+            "processing_timed_out": False,
+        }
+    return {
+        "processing_state": "waiting",
+        "processing_message": "Document is waiting for processing.",
+        "next_action": "refresh",
+        "retryable": False,
+        "processing_seconds": processing_seconds,
+        "processing_timed_out": False,
+    }
+
+
 def list_document_chunks(session: Session, document_id: str) -> list[DocumentChunk]:
     document = session.get(Document, document_id)
     if document and document.knowledge_backend == "weknora_api" and document.external_doc_id:
@@ -367,13 +474,26 @@ def _parse_document(
     )
 
 
-def _upload_document_to_weknora(session: Session, document: Document) -> None:
+def _upload_document_to_weknora(
+    session: Session,
+    document: Document,
+    operation: str = "upload",
+    prior_external_doc_id: str | None = None,
+) -> None:
+    step = "weknora_upload" if operation == "upload" else "weknora_retry"
     _record_event(
         session=session,
         document=document,
-        step="weknora_upload",
+        step=step,
         status="started",
-        message="WeKnora document upload started.",
+        message=(
+            "WeKnora document upload started."
+            if operation == "upload"
+            else "WeKnora document retry upload started."
+        ),
+        metadata={"prior_external_doc_id": prior_external_doc_id}
+        if prior_external_doc_id
+        else None,
     )
     session.commit()
     try:
@@ -394,7 +514,7 @@ def _upload_document_to_weknora(session: Session, document: Document) -> None:
         _fail_document_step(
             session=session,
             document=document,
-            failed_step="weknora_upload",
+            failed_step=step,
             exc=DocumentWorkflowError(str(exc)),
         )
         return
@@ -409,11 +529,16 @@ def _upload_document_to_weknora(session: Session, document: Document) -> None:
     _record_event(
         session=session,
         document=document,
-        step="weknora_upload",
+        step=step,
         status="completed",
-        message="WeKnora document upload completed.",
+        message=(
+            "WeKnora document upload completed."
+            if operation == "upload"
+            else "WeKnora document retry upload completed."
+        ),
         metadata={
             "external_doc_id": uploaded.external_doc_id,
+            "prior_external_doc_id": prior_external_doc_id,
             "status": uploaded.status,
             "title": uploaded.title,
             "source": uploaded.source,
@@ -432,6 +557,55 @@ def _weknora_backend() -> WeKnoraApiBackend:
         timeout=settings.weknora_timeout_seconds,
         workspace_id=settings.weknora_workspace_id,
         default_kb_id=settings.weknora_default_kb_id,
+    )
+
+
+def _processing_seconds(document: Document) -> int:
+    delta = utc_now() - document.updated_at
+    return max(int(delta.total_seconds()), 0)
+
+
+def _processing_timeout_seconds() -> int:
+    value = os.getenv("DOCUMENT_PROCESSING_TIMEOUT_SECONDS")
+    if value is None:
+        return DOCUMENT_PROCESSING_TIMEOUT_SECONDS
+    try:
+        return max(int(value), 1)
+    except ValueError:
+        return DOCUMENT_PROCESSING_TIMEOUT_SECONDS
+
+
+def _active_processing_message(document: Document) -> str:
+    if document.status == "uploaded":
+        return "Document is uploaded and waiting for WeKnora processing."
+    if document.status == "parsing":
+        return "WeKnora is parsing the document."
+    if document.status == "chunking":
+        return "WeKnora is splitting the document into chunks."
+    if document.status in {"embedding", "indexing"}:
+        return "WeKnora is embedding and indexing the document."
+    return "Document processing is active."
+
+
+def _failed_processing_message(document: Document) -> str:
+    step = document.failed_step or "processing"
+    if step in {"parse", "parsing"}:
+        return "Document parsing failed; retry after checking the file format."
+    if step in {"chunk", "chunking"}:
+        return "Document chunking failed; retry will resubmit the existing document record."
+    if step in {"embedding", "embed"}:
+        return "Document embedding failed; retry will resubmit to WeKnora."
+    if step in {"index", "indexing"}:
+        return "Document vector indexing failed; retry will resubmit to WeKnora."
+    if step in {"weknora_upload", "weknora_retry"}:
+        return "WeKnora upload failed; retry will use the stored PA document file."
+    return "Document processing failed; retry is available."
+
+
+def _stalled_processing_message(document: Document) -> str:
+    return (
+        f"Document has stayed in {document.status} longer than "
+        f"{_processing_timeout_seconds()} seconds; retry is available."
     )
 
 

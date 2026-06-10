@@ -2628,6 +2628,7 @@ p {
 }
 
 .document-status-badge.indexing,
+.document-status-badge.embedding,
 .document-status-badge.chunking,
 .document-status-badge.parsing {
   border-color: #c4d9e3;

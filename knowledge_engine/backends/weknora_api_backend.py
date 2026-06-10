@@ -183,7 +183,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "failed_step": self._document_failed_step(data, raw_status)
             if mapped_status == "failed"
             else None,
-            "error_message": data.get("error_message") or data.get("error") or None,
+            "error_message": self._document_error_message(data),
             "metadata": self._document_metadata(data, {}),
         }
 
@@ -509,7 +509,9 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return "parse"
         if normalized_step in {"chunk", "chunking", "split", "splitting"}:
             return "chunk"
-        if normalized_step in {"embedding", "embed", "index", "indexing", "finalizing"}:
+        if normalized_step in {"embedding", "embed"}:
+            return "embedding"
+        if normalized_step in {"index", "indexing", "finalizing"}:
             return "index"
         if normalized_step in {"upload", "weknora_upload"}:
             return "weknora_upload"
@@ -519,7 +521,9 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return "parse"
         if "chunk" in normalized_status or "split" in normalized_status:
             return "chunk"
-        if "embedding" in normalized_status or "index" in normalized_status:
+        if "embedding" in normalized_status or "embed" in normalized_status:
+            return "embedding"
+        if "index" in normalized_status:
             return "index"
         if "upload" in normalized_status:
             return "weknora_upload"
@@ -566,6 +570,20 @@ class WeKnoraApiBackend(KnowledgeEngine):
         if pending not in (None, "", 0):
             message = f"{message}; pending subtasks: {pending}"
         return message
+
+    @staticmethod
+    def _document_error_message(data: dict) -> str | None:
+        for key in ("error_message", "error", "message", "reason", "failed_reason"):
+            value = data.get(key)
+            if value in (None, ""):
+                continue
+            if isinstance(value, dict):
+                message = value.get("message") or value.get("detail") or value.get("code")
+                if message:
+                    return _shorten(_redact_sensitive_text(str(message)), 300)
+                return _shorten(_redact_sensitive_text(json.dumps(value, default=str)), 300)
+            return _shorten(_redact_sensitive_text(str(value)), 300)
+        return None
 
     def _retrieve_payload(self, query: str, filters: dict) -> dict:
         payload: dict[str, object] = {"query": query}
