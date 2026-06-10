@@ -20,6 +20,7 @@ CAPABILITY_ORDER = (
     "status_recovery",
     "real_data_source",
 )
+FEATURE_FLAG_SCHEMA_VERSION = "p3-m3-a3"
 RELEASE_ENVIRONMENTS = {
     "prod",
     "production",
@@ -154,6 +155,89 @@ def backend_parity_summary(
     }
 
 
+def backend_feature_flags(
+    *,
+    backend_name: str,
+    capabilities: dict[str, str],
+    release_eligible: bool,
+    fail_closed: bool,
+) -> dict[str, Any]:
+    probes = capability_probes(
+        backend_name=backend_name,
+        capabilities=capabilities,
+        release_eligible=release_eligible,
+    )
+    return {
+        "schema_version": FEATURE_FLAG_SCHEMA_VERSION,
+        "backend": backend_name,
+        "ui": {
+            "can_upload_documents": _available(capabilities, "document_upload"),
+            "can_view_document_chunks": _available(capabilities, "document_chunks"),
+            "can_retrieve": _available(capabilities, "rag_retrieve"),
+            "can_debug_retrieve": _available(capabilities, "rag_debug"),
+            "can_search_wiki": _available(capabilities, "wiki_search"),
+            "can_read_wiki": _available(capabilities, "wiki_read"),
+            "can_create_update_publish_wiki": _supported(
+                capabilities,
+                "wiki_create_update_publish",
+            ),
+            "can_recover_status": _available(capabilities, "status_recovery"),
+            "can_use_real_citations": _real_citations_supported(
+                capabilities=capabilities,
+                release_eligible=release_eligible,
+            ),
+            "can_count_release_evidence": _release_evidence_supported(
+                capabilities=capabilities,
+                release_eligible=release_eligible,
+            ),
+        },
+        "agent": {
+            "can_retrieve": _available(capabilities, "rag_retrieve"),
+            "can_read_wiki": _available(capabilities, "wiki_read"),
+            "can_publish_wiki": _supported(capabilities, "wiki_create_update_publish"),
+            "can_use_real_citations": _real_citations_supported(
+                capabilities=capabilities,
+                release_eligible=release_eligible,
+            ),
+            "must_not_call": [
+                capability
+                for capability in CAPABILITY_ORDER
+                if capabilities.get(capability) == "unsupported"
+            ],
+            "requires_citation_trace_for_real_citation": True,
+        },
+        "rules": {
+            "unsupported_behavior": "hide_disable_or_fail",
+            "dev_only_release_evidence_allowed": False,
+            "partial_release_evidence_allowed": False,
+            "fail_closed": fail_closed,
+        },
+        "probes": probes,
+    }
+
+
+def capability_probes(
+    *,
+    backend_name: str,
+    capabilities: dict[str, str],
+    release_eligible: bool,
+) -> dict[str, dict[str, Any]]:
+    return {
+        capability: {
+            "status": capabilities.get(capability, "unsupported"),
+            "available": capabilities.get(capability) != "unsupported",
+            "release_evidence": (
+                release_eligible
+                and backend_name == "weknora_api"
+                and capabilities.get(capability) == "supported"
+            ),
+            "ui_policy": _ui_policy(capability, capabilities.get(capability, "unsupported")),
+            "agent_policy": _agent_policy(capability, capabilities.get(capability, "unsupported")),
+        }
+        for capability in CAPABILITY_ORDER
+    }
+
+
 def backend_capability_snapshot(
     *,
     backend_name: str | None,
@@ -197,6 +281,12 @@ def backend_capability_snapshot(
             release_eligible=release_eligible,
             fail_closed=fail_closed,
         ),
+        "feature_flags": backend_feature_flags(
+            backend_name=active_backend,
+            capabilities=capabilities,
+            release_eligible=release_eligible,
+            fail_closed=fail_closed,
+        ),
         "notes": [
             "Mock and extracted results must not be counted as WeKnora release evidence.",
             "Extracted is selectable only as an explicit backend, never as automatic fallback.",
@@ -221,14 +311,65 @@ def _quality_limit(backend_name: str) -> str:
     return "demo only; no release evidence"
 
 
+def _available(capabilities: dict[str, str], capability: str) -> bool:
+    return capabilities.get(capability) != "unsupported"
+
+
+def _supported(capabilities: dict[str, str], capability: str) -> bool:
+    return capabilities.get(capability) == "supported"
+
+
+def _real_citations_supported(
+    *,
+    capabilities: dict[str, str],
+    release_eligible: bool,
+) -> bool:
+    return (
+        release_eligible
+        and capabilities.get("citation_trace") == "supported"
+        and capabilities.get("real_data_source") == "supported"
+    )
+
+
+def _release_evidence_supported(
+    *,
+    capabilities: dict[str, str],
+    release_eligible: bool,
+) -> bool:
+    return release_eligible and capabilities.get("real_data_source") == "supported"
+
+
+def _ui_policy(capability: str, status: str) -> str:
+    if status == "unsupported":
+        return "hide_or_disable"
+    if capability == "wiki_create_update_publish" and status != "supported":
+        return "disable_write_action"
+    if status in {"partial", "dev-only"}:
+        return "show_with_badge"
+    return "show"
+
+
+def _agent_policy(capability: str, status: str) -> str:
+    if status == "unsupported":
+        return "block"
+    if capability in {"citation_trace", "real_data_source"} and status != "supported":
+        return "fallback_only"
+    if status in {"partial", "dev-only"}:
+        return "allow_non_release"
+    return "allow"
+
+
 __all__ = [
     "BACKEND_CAPABILITY_MATRIX",
     "CAPABILITY_ORDER",
     "CAPABILITY_STATUSES",
     "RELEASE_ENVIRONMENTS",
     "SUPPORTED_BACKENDS",
+    "FEATURE_FLAG_SCHEMA_VERSION",
     "backend_parity_summary",
+    "backend_feature_flags",
     "backend_capability_snapshot",
+    "capability_probes",
     "capability_status_counts",
     "env_bool",
     "is_strict_fallback_mode",

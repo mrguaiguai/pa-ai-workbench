@@ -1,5 +1,7 @@
 from agent.tools.citation_checker import CitationCheckResult
 from agent.tools.citation_checker import CitationChecker
+from agent.tools.capability_guard import AgentCapabilityError
+from agent.tools.capability_guard import AgentCapabilityGuard
 from agent.tools.evidence_policy import EvidencePolicy
 from agent.tools.evidence_policy import EvidencePolicyResult
 from agent.tools.registry import ToolDefinition
@@ -18,6 +20,8 @@ from agent.tools.wiki_reader import WikiReadTool
 __all__ = [
     "CitationCheckResult",
     "CitationChecker",
+    "AgentCapabilityError",
+    "AgentCapabilityGuard",
     "EvidencePolicy",
     "EvidencePolicyResult",
     "InMemoryWikiDraftWriter",

@@ -40,3 +40,9 @@ def api_status(session: Annotated[Session, Depends(get_session)]) -> StatusRespo
         database="ok",
         counts=get_status_counts(session),
     )
+
+
+@router.get("/api/capabilities")
+def api_capabilities() -> dict:
+    settings = get_settings()
+    return get_backend_capabilities(settings)

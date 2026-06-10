@@ -2161,7 +2161,7 @@ checker 过慢会被绕过；拆分 static 与 live gates。
 | P3-M3-A0 | backend capability matrix 与 fallback fail-closed 规则 | [x] |
 | P3-M3-A1 | KnowledgeBackend contract tests 完整化 | [x] |
 | P3-M3-A2 | mock / weknora_api / extracted parity matrix | [x] |
-| P3-M3-A3 | backend feature flags 与能力探测 | [ ] |
+| P3-M3-A3 | backend feature flags 与能力探测 | [x] |
 | P3-M3-A4 | 多 KB / workspace 映射抽象 | [ ] |
 
 #### P3-M3-A0：backend capability matrix 与 fallback fail-closed 规则
@@ -2252,7 +2252,7 @@ fixture backend capabilities + frontend build。
 风险：
 capability 不能泄漏内部 endpoint 或 secrets。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M3-A4：多 KB / workspace 映射抽象
 

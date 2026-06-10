@@ -3,6 +3,8 @@ const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || DEFAULT_API_BASE_URL;
 
+type CapabilityStatus = "supported" | "partial" | "unsupported" | "dev-only" | string;
+
 export class ApiError extends Error {
   status: number;
   body: unknown;
@@ -41,11 +43,8 @@ export type StatusResponse = {
     strict_fallback_mode: boolean;
     known_backend: boolean;
     release_eligible: boolean;
-    capabilities: Record<string, "supported" | "partial" | "unsupported" | "dev-only" | string>;
-    matrix: Record<
-      string,
-      Record<string, "supported" | "partial" | "unsupported" | "dev-only" | string>
-    >;
+    capabilities: Record<string, CapabilityStatus>;
+    matrix: Record<string, Record<string, CapabilityStatus>>;
     fallback_policy: Record<string, boolean | string>;
     parity_summary: {
       backend: string;
@@ -63,12 +62,49 @@ export type StatusResponse = {
       unsupported_must_fail: boolean;
       fail_closed: boolean;
     };
+    feature_flags: {
+      schema_version: string;
+      backend: string;
+      ui: {
+        can_upload_documents: boolean;
+        can_view_document_chunks: boolean;
+        can_retrieve: boolean;
+        can_debug_retrieve: boolean;
+        can_search_wiki: boolean;
+        can_read_wiki: boolean;
+        can_create_update_publish_wiki: boolean;
+        can_recover_status: boolean;
+        can_use_real_citations: boolean;
+        can_count_release_evidence: boolean;
+      };
+      agent: {
+        can_retrieve: boolean;
+        can_read_wiki: boolean;
+        can_publish_wiki: boolean;
+        can_use_real_citations: boolean;
+        must_not_call: string[];
+        requires_citation_trace_for_real_citation: boolean;
+      };
+      rules: Record<string, boolean | string>;
+      probes: Record<
+        string,
+        {
+          status: CapabilityStatus;
+          available: boolean;
+          release_evidence: boolean;
+          ui_policy: string;
+          agent_policy: string;
+        }
+      >;
+    };
     notes: string[];
   };
   memory_recent_limit: number;
   database: string;
   counts: Record<string, number>;
 };
+
+export type BackendCapabilitiesResponse = StatusResponse["backend_capabilities"];
 
 export type ModelProviderStatus = {
   provider: string;
@@ -566,6 +602,7 @@ function historyFilterParams(filters: HistoryListFilters) {
 export const apiClient = {
   baseUrl: API_BASE_URL,
   getStatus: () => request<StatusResponse>("/api/status"),
+  getCapabilities: () => request<BackendCapabilitiesResponse>("/api/capabilities"),
   getModelStatus: () => request<ModelStatusResponse>("/api/model/status"),
   listDocuments: (filters: DocumentListFilters = {}) => {
     const params = documentFilterParams(filters);

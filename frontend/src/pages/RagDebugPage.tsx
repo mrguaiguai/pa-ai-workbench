@@ -6,11 +6,12 @@ import {
   RotateCcw,
   Search,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 
 import {
   ApiError,
+  BackendCapabilitiesResponse,
   RagDebugEvidence,
   RagDebugResponse,
   apiClient,
@@ -41,14 +42,39 @@ export function RagDebugPage() {
   const [form, setForm] = useState<DebugForm>(initialForm);
   const [result, setResult] = useState<RagDebugResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [capabilities, setCapabilities] = useState<BackendCapabilitiesResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
   const filters = useMemo(() => buildFilters(form), [form]);
   const parsedTopK = Number.parseInt(form.topK, 10);
-  const canSubmit = form.query.trim().length > 0 && parsedTopK >= 1 && parsedTopK <= 50;
+  const canDebug = capabilities?.feature_flags.ui.can_debug_retrieve ?? true;
+  const canSubmit = canDebug && form.query.trim().length > 0 && parsedTopK >= 1 && parsedTopK <= 50;
+
+  useEffect(() => {
+    let isMounted = true;
+    apiClient
+      .getCapabilities()
+      .then((response) => {
+        if (isMounted) {
+          setCapabilities(response);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setCapabilities(null);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const runDebug = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canDebug) {
+      setError("RAG debug is unavailable for the active backend.");
+      return;
+    }
     setLoading(true);
     setError(null);
     setResult(null);
@@ -166,7 +192,9 @@ export function RagDebugPage() {
       </form>
 
       <section className="rag-debug-output" aria-label="RAG debug result">
-        {loading ? (
+        {!canDebug ? (
+          <EmptyState icon={FileSearch} text="Debug unavailable" />
+        ) : loading ? (
           <EmptyState icon={Loader2} text="Running" loading />
         ) : error ? (
           <ErrorState message={error} />

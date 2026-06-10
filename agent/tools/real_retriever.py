@@ -1,6 +1,7 @@
 from typing import Any
 
 from agent.schemas import Citation
+from agent.tools.capability_guard import AgentCapabilityGuard
 from knowledge_engine.base import KnowledgeEngine
 from knowledge_engine.evidence import normalize_evidence_results
 from knowledge_engine.factory import create_knowledge_engine
@@ -14,6 +15,7 @@ class RealRetrieverTool:
         default_top_k: int = 8,
     ) -> None:
         self.knowledge_engine = knowledge_engine or create_knowledge_engine()
+        self.capabilities = AgentCapabilityGuard(self.knowledge_engine)
         self.default_top_k = default_top_k
 
     def retrieve(
@@ -25,6 +27,7 @@ class RealRetrieverTool:
     ) -> list[Citation]:
         if not query.strip():
             return []
+        self.capabilities.require("rag_retrieve")
         resolved_filters = self._build_filters(filters=filters, source_type=source_type)
         resolved_top_k = max(self.default_top_k if top_k is None else top_k, 0)
         evidence_items = normalize_evidence_results(

@@ -16,6 +16,7 @@ import type { FormEvent } from "react";
 
 import {
   ApiError,
+  BackendCapabilitiesResponse,
   WikiPage as WikiPageDetail,
   WikiCitation,
   WikiPageSummary,
@@ -368,6 +369,7 @@ export function WikiPage() {
   const [editorError, setEditorError] = useState<string | null>(null);
   const [editorNotice, setEditorNotice] = useState<string | null>(null);
   const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
+  const [capabilities, setCapabilities] = useState<BackendCapabilitiesResponse | null>(null);
 
   const selectedSummary = useMemo(
     () => results.find((result) => result.slug === selectedSlug) ?? null,
@@ -376,6 +378,9 @@ export function WikiPage() {
   const isEditing = editorMode === "create" || editorMode === "edit";
   const pageStatus = statusLabel(page?.status);
   const availability = ragAvailability(page);
+  const featureFlags = capabilities?.feature_flags.ui;
+  const wikiWriteAvailable = featureFlags?.can_create_update_publish_wiki !== false;
+  const statusRecoveryAvailable = featureFlags?.can_recover_status !== false;
 
   const upsertResult = (nextPage: WikiPageDetail) => {
     const nextSummary = summaryFromPage(nextPage);
@@ -438,6 +443,25 @@ export function WikiPage() {
   };
 
   useEffect(() => {
+    let isMounted = true;
+    apiClient
+      .getCapabilities()
+      .then((response) => {
+        if (isMounted) {
+          setCapabilities(response);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setCapabilities(null);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const onLocate = () => {
       const nextSlug = wikiSlugFromHash();
       if (nextSlug) {
@@ -485,6 +509,10 @@ export function WikiPage() {
   };
 
   const startCreate = () => {
+    if (!wikiWriteAvailable) {
+      setError("Wiki write actions are unavailable for the active backend.");
+      return;
+    }
     setPage(null);
     setSelectedSlug(null);
     setEditorForm(emptyEditorForm);
@@ -497,7 +525,7 @@ export function WikiPage() {
   };
 
   const startEdit = () => {
-    if (!page) {
+    if (!page || !wikiWriteAvailable) {
       return;
     }
     setEditorForm(formFromPage(page));
@@ -515,6 +543,10 @@ export function WikiPage() {
 
   const savePage = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!wikiWriteAvailable) {
+      setEditorError("Wiki write actions are unavailable for the active backend.");
+      return;
+    }
     const title = editorForm.title.trim();
     const content = editorForm.content.trim();
     const slug = normalizeSlug(editorForm.slug || title);
@@ -567,14 +599,14 @@ export function WikiPage() {
   };
 
   const requestPublish = () => {
-    if (!page || publishState === "loading" || pageStatus === "published") {
+    if (!page || !wikiWriteAvailable || publishState === "loading" || pageStatus === "published") {
       return;
     }
     setPublishConfirmOpen(true);
   };
 
   const publishPage = () => {
-    if (!page || publishState === "loading") {
+    if (!page || !wikiWriteAvailable || publishState === "loading") {
       return;
     }
 
@@ -597,7 +629,7 @@ export function WikiPage() {
   };
 
   const reindexPage = () => {
-    if (!page || indexState === "loading") {
+    if (!page || !statusRecoveryAvailable || indexState === "loading") {
       return;
     }
 
@@ -626,7 +658,13 @@ export function WikiPage() {
           <div className="wiki-panel-heading">
             <span>Search</span>
             <div className="heading-actions">
-              <button className="icon-button" type="button" title="新建 Wiki" onClick={startCreate}>
+              <button
+                className="icon-button"
+                type="button"
+                title={wikiWriteAvailable ? "新建 Wiki" : "Wiki 写入不可用"}
+                disabled={!wikiWriteAvailable}
+                onClick={startCreate}
+              >
                 <FilePlus2 size={16} aria-hidden="true" />
               </button>
               <button
@@ -711,14 +749,26 @@ export function WikiPage() {
           <div className="heading-actions">
             {page && !isEditing ? (
               <>
-                <button className="icon-button" type="button" title="编辑" onClick={startEdit}>
+                <button
+                  className="icon-button"
+                  type="button"
+                  title={wikiWriteAvailable ? "编辑" : "Wiki 写入不可用"}
+                  disabled={!wikiWriteAvailable}
+                  onClick={startEdit}
+                >
                   <Pencil size={16} aria-hidden="true" />
                 </button>
                 <button
                   className={publishState === "loading" ? "icon-button loading" : "icon-button"}
                   type="button"
-                  title={pageStatus === "published" ? "已发布" : "发布"}
-                  disabled={publishState === "loading" || pageStatus === "published"}
+                  title={
+                    !wikiWriteAvailable
+                      ? "Wiki 写入不可用"
+                      : pageStatus === "published"
+                        ? "已发布"
+                        : "发布"
+                  }
+                  disabled={!wikiWriteAvailable || publishState === "loading" || pageStatus === "published"}
                   onClick={requestPublish}
                 >
                   {publishState === "loading" ? (
@@ -735,8 +785,8 @@ export function WikiPage() {
               <button
                 className={pageState === "loading" ? "icon-button loading" : "icon-button"}
                 type="button"
-                title="刷新状态"
-                disabled={!selectedSlug || pageState === "loading"}
+                title={statusRecoveryAvailable ? "刷新状态" : "状态恢复不可用"}
+                disabled={!selectedSlug || !statusRecoveryAvailable || pageState === "loading"}
                 onClick={() => {
                   if (!selectedSlug) {
                     return;
@@ -846,7 +896,11 @@ export function WikiPage() {
                 <X size={16} aria-hidden="true" />
                 <span>取消</span>
               </button>
-              <button className="primary-action compact" type="submit" disabled={saveState === "loading"}>
+              <button
+                className="primary-action compact"
+                type="submit"
+                disabled={!wikiWriteAvailable || saveState === "loading"}
+              >
                 {saveState === "loading" ? (
                   <Loader2 size={16} aria-hidden="true" />
                 ) : (
@@ -905,8 +959,14 @@ export function WikiPage() {
               <button
                 className={indexState === "loading" ? "icon-button loading" : "icon-button"}
                 type="button"
-                title={page?.wiki_retryable ? "恢复 Wiki 状态" : "刷新 Wiki 状态"}
-                disabled={!page || pageStatus !== "published" || indexState === "loading"}
+                title={
+                  statusRecoveryAvailable
+                    ? page?.wiki_retryable
+                      ? "恢复 Wiki 状态"
+                      : "刷新 Wiki 状态"
+                    : "状态恢复不可用"
+                }
+                disabled={!page || !statusRecoveryAvailable || pageStatus !== "published" || indexState === "loading"}
                 onClick={reindexPage}
               >
                 {indexState === "loading" ? (

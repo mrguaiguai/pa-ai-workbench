@@ -3,6 +3,7 @@ from dataclasses import field
 from typing import Any
 
 from agent.schemas import Citation
+from agent.tools.capability_guard import AgentCapabilityGuard
 from knowledge_engine.base import KnowledgeEngine
 from knowledge_engine.factory import create_knowledge_engine
 from knowledge_engine.schemas import Evidence
@@ -24,6 +25,7 @@ class WikiReadResult:
 class WikiReadTool:
     def __init__(self, knowledge_engine: KnowledgeEngine | None = None) -> None:
         self.knowledge_engine = knowledge_engine or create_knowledge_engine()
+        self.capabilities = AgentCapabilityGuard(self.knowledge_engine)
 
     def read(
         self,
@@ -33,6 +35,7 @@ class WikiReadTool:
         normalized_slug = slug.strip()
         if not normalized_slug:
             return None
+        self.capabilities.require("wiki_read")
         page = self.knowledge_engine.read_wiki_page(
             slug=normalized_slug,
             kb_id=kb_id,
