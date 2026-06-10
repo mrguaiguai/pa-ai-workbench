@@ -2030,7 +2030,7 @@ frontend build + fixture 历史数据检查。
 | P3-M2-D1 | WeKnora 调用日志元数据与脱敏 | [x] |
 | P3-M2-D2 | PA task / adapter request id 串联 | [x] |
 | P3-M2-D3 | 试点反馈问题模板与回归清单 | [x] |
-| P3-M2-D4 | 内网部署 README 和故障排查文档 | [ ] |
+| P3-M2-D4 | 内网部署 README 和故障排查文档 | [x] |
 | P3-M2-D5 | M2 release checker 与回归 gate | [ ] |
 
 #### P3-M2-D1：WeKnora 调用日志元数据与脱敏
@@ -2120,7 +2120,7 @@ KB 必须绑定 `embedding_model_id`。
 风险：
 不要记录真实 token、KB id、endpoint。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M2-D5：M2 release checker 与回归 gate
 
