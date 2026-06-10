@@ -2283,7 +2283,7 @@ fixture multi-KB tests + live smoke 可选。
 | P3-M3-B1 | extracted fallback 与 WeKnora API schema 对齐 | [x] |
 | P3-M3-B2 | Python chunk / retrieval 与 WeKnora 结果对照测试 | [x] |
 | P3-M3-B3 | Wiki fallback 的最小同步策略 | [x] |
-| P3-M3-B4 | 可切换 backend 的 E2E smoke | [ ] |
+| P3-M3-B4 | 可切换 backend 的 E2E smoke | [x] |
 
 #### P3-M3-B1：extracted fallback 与 WeKnora API schema 对齐
 
@@ -2372,7 +2372,7 @@ backend switch smoke scripts。
 风险：
 本地数据残留会污染结果；smoke 使用临时 DB/fixture。
 
-状态：[ ]
+状态：[x]
 
 ### M3-C：混合检索、重排、评估预留
 
