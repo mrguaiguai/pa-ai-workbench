@@ -1648,7 +1648,7 @@ WeKnora runtime 变成 release gate：
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | P3-M2-A0 | Real runtime preflight gate | [x] |
-| P3-M2-A1 | WeKnora Adapter 超时、重试、错误码规范 | [ ] |
+| P3-M2-A1 | WeKnora Adapter 超时、重试、错误码规范 | [x] |
 | P3-M2-A2 | 文档处理状态轮询与失败恢复 | [ ] |
 | P3-M2-A3 | Wiki 发布/索引异步状态恢复 | [ ] |
 | P3-M2-A4 | Agent 无证据和弱证据策略增强 | [ ] |
@@ -1718,7 +1718,7 @@ fixture HTTP server / monkeypatch tests + `python -m compileall knowledge_engine
 风险：
 过度重试会放大 WeKnora 压力；默认重试次数必须保守。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M2-A2：文档处理状态轮询与失败恢复
 

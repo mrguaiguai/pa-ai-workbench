@@ -1,6 +1,9 @@
 import json
 import mimetypes
 import os
+import re
+import socket
+import time
 from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
@@ -13,6 +16,14 @@ from urllib.request import urlopen
 
 from knowledge_engine.base import KnowledgeEngine
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
+from knowledge_engine.errors import WeKnoraAuthError
+from knowledge_engine.errors import WeKnoraNetworkError
+from knowledge_engine.errors import WeKnoraNotFoundError
+from knowledge_engine.errors import WeKnoraRateLimitError
+from knowledge_engine.errors import WeKnoraResponseMappingError
+from knowledge_engine.errors import WeKnoraServerError
+from knowledge_engine.errors import WeKnoraTimeoutError
+from knowledge_engine.errors import WeKnoraUnavailableError
 from knowledge_engine.schemas import Evidence
 from knowledge_engine.schemas import KnowledgeDocument
 from knowledge_engine.schemas import WikiPage
@@ -29,6 +40,26 @@ def _get_timeout_seconds(default: float) -> float:
         return default
 
 
+def _get_retry_attempts(default: int) -> int:
+    value = os.getenv("WEKNORA_RETRY_ATTEMPTS")
+    if value is None:
+        return default
+    try:
+        return max(int(value), 0)
+    except ValueError:
+        return default
+
+
+def _get_retry_backoff_seconds(default: float) -> float:
+    value = os.getenv("WEKNORA_RETRY_BACKOFF_SECONDS")
+    if value is None:
+        return default
+    try:
+        return max(float(value), 0.0)
+    except ValueError:
+        return default
+
+
 class WeKnoraApiBackend(KnowledgeEngine):
     def __init__(
         self,
@@ -38,6 +69,8 @@ class WeKnoraApiBackend(KnowledgeEngine):
         timeout: float | None = None,
         workspace_id: str | None = None,
         default_kb_id: str | None = None,
+        retry_attempts: int | None = None,
+        retry_backoff_seconds: float | None = None,
     ) -> None:
         self.base_url = (base_url or os.getenv("WEKNORA_BASE_URL", "")).rstrip("/")
         # WEKNORA_API_KEY is kept as a legacy fallback for older local .env files.
@@ -54,6 +87,16 @@ class WeKnoraApiBackend(KnowledgeEngine):
         )
         self.default_kb_id = (
             default_kb_id if default_kb_id is not None else os.getenv("WEKNORA_DEFAULT_KB_ID", "")
+        )
+        self.retry_attempts = (
+            max(retry_attempts, 0)
+            if retry_attempts is not None
+            else _get_retry_attempts(1)
+        )
+        self.retry_backoff_seconds = (
+            max(retry_backoff_seconds, 0.0)
+            if retry_backoff_seconds is not None
+            else _get_retry_backoff_seconds(0.25)
         )
 
     @property
@@ -322,23 +365,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
             headers=headers,
             method=method,
         )
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                raw = response.read().decode("utf-8")
-        except HTTPError as exc:
-            body_text = exc.read().decode("utf-8", errors="replace")
-            raise KnowledgeBackendUnavailableError(
-                f"WeKnora API request failed with HTTP {exc.code}: {_shorten(body_text)}"
-            ) from exc
-        except (URLError, TimeoutError) as exc:
-            raise KnowledgeBackendUnavailableError("WeKnora API request failed") from exc
-
-        if not raw:
-            return {}
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise KnowledgeBackendUnavailableError("WeKnora API returned invalid JSON") from exc
+        return self._perform_json_request(request, operation=f"{method} {path}")
 
     def _request_multipart_json(
         self,
@@ -359,23 +386,73 @@ class WeKnoraApiBackend(KnowledgeEngine):
             headers=headers,
             method="POST",
         )
+        return self._perform_json_request(request, operation=f"POST {path}")
+
+    def _perform_json_request(self, request: Request, operation: str) -> dict | list:
+        attempts = self.retry_attempts + 1
+        last_error: WeKnoraUnavailableError | None = None
+        for attempt in range(attempts):
+            try:
+                raw = self._read_response(request, operation)
+                if not raw:
+                    return {}
+                try:
+                    return json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise WeKnoraResponseMappingError(
+                        "WeKnora returned invalid JSON",
+                        error_code="weknora_invalid_json",
+                        operation=_sanitize_operation(operation),
+                        retryable=False,
+                    ) from exc
+            except WeKnoraUnavailableError as exc:
+                last_error = exc
+                if not exc.retryable or attempt >= attempts - 1:
+                    raise
+                self._sleep_before_retry(attempt)
+        if last_error is not None:
+            raise last_error
+        raise WeKnoraUnavailableError(
+            "WeKnora request failed",
+            operation=_sanitize_operation(operation),
+            retryable=False,
+        )
+
+    def _read_response(self, request: Request, operation: str) -> str:
+        safe_operation = _sanitize_operation(operation)
         try:
             with urlopen(request, timeout=self.timeout) as response:
-                raw = response.read().decode("utf-8")
+                return response.read().decode("utf-8", errors="replace")
         except HTTPError as exc:
             body_text = exc.read().decode("utf-8", errors="replace")
-            raise KnowledgeBackendUnavailableError(
-                f"WeKnora upload failed with HTTP {exc.code}: {_shorten(body_text)}"
+            raise _http_error_to_weknora_error(exc.code, body_text, safe_operation) from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise WeKnoraTimeoutError(
+                "WeKnora request timed out",
+                error_code="weknora_timeout",
+                operation=safe_operation,
+                retryable=True,
             ) from exc
-        except (URLError, TimeoutError) as exc:
-            raise KnowledgeBackendUnavailableError("WeKnora upload request failed") from exc
+        except URLError as exc:
+            if _url_error_is_timeout(exc):
+                raise WeKnoraTimeoutError(
+                    "WeKnora request timed out",
+                    error_code="weknora_timeout",
+                    operation=safe_operation,
+                    retryable=True,
+                ) from exc
+            raise WeKnoraNetworkError(
+                "WeKnora network request failed",
+                error_code="weknora_network_error",
+                operation=safe_operation,
+                retryable=True,
+            ) from exc
 
-        if not raw:
-            return {}
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise KnowledgeBackendUnavailableError("WeKnora upload returned invalid JSON") from exc
+    def _sleep_before_retry(self, attempt: int) -> None:
+        if self.retry_backoff_seconds <= 0:
+            return
+        delay = min(self.retry_backoff_seconds * (2 ** attempt), 2.0)
+        time.sleep(delay)
 
     def _require_configured(self) -> None:
         if not self.configured:
@@ -886,6 +963,136 @@ def _shorten(value: str, limit: int = 240) -> str:
     if len(collapsed) <= limit:
         return collapsed
     return collapsed[: limit - 3] + "..."
+
+
+def _sanitize_operation(operation: str) -> str:
+    method, _, path = operation.partition(" ")
+    if not path:
+        path = method
+        method = ""
+    path = path.split("?", 1)[0]
+    safe = f"{method} {path}".strip()
+    return _shorten(_redact_sensitive_text(safe), 120)
+
+
+def _http_error_to_weknora_error(
+    status_code: int,
+    body_text: str,
+    operation: str,
+) -> WeKnoraUnavailableError:
+    detail = _extract_error_detail(body_text)
+    message = _public_http_error_message(status_code, detail)
+    if status_code in {401, 403}:
+        return WeKnoraAuthError(
+            message,
+            error_code=f"weknora_http_{status_code}",
+            status_code=status_code,
+            operation=operation,
+            retryable=False,
+        )
+    if status_code == 404:
+        return WeKnoraNotFoundError(
+            message,
+            error_code="weknora_http_404",
+            status_code=status_code,
+            operation=operation,
+            retryable=False,
+        )
+    if status_code == 429:
+        return WeKnoraRateLimitError(
+            message,
+            error_code="weknora_http_429",
+            status_code=status_code,
+            operation=operation,
+            retryable=True,
+        )
+    if 500 <= status_code <= 599:
+        return WeKnoraServerError(
+            message,
+            error_code=f"weknora_http_{status_code}",
+            status_code=status_code,
+            operation=operation,
+            retryable=True,
+        )
+    return WeKnoraUnavailableError(
+        message,
+        error_code=f"weknora_http_{status_code}",
+        status_code=status_code,
+        operation=operation,
+        retryable=False,
+    )
+
+
+def _extract_error_detail(body_text: str) -> str:
+    if not body_text:
+        return ""
+    try:
+        parsed = json.loads(body_text)
+    except json.JSONDecodeError:
+        return _shorten(_redact_sensitive_text(body_text), 160)
+    values: list[object] = []
+    if isinstance(parsed, dict):
+        error = parsed.get("error")
+        if isinstance(error, dict):
+            values.extend(
+                [
+                    error.get("code"),
+                    error.get("error_code"),
+                    error.get("message"),
+                ]
+            )
+        elif error:
+            values.append(error)
+        values.extend(
+            [
+                parsed.get("error_code"),
+                parsed.get("code"),
+                parsed.get("message"),
+                parsed.get("detail"),
+            ]
+        )
+    elif isinstance(parsed, list):
+        values.append(f"{len(parsed)} error items")
+    detail = " ".join(str(value) for value in values if value not in (None, ""))
+    return _shorten(_redact_sensitive_text(detail), 160)
+
+
+def _public_http_error_message(status_code: int, detail: str) -> str:
+    fallback_by_status = {
+        401: "WeKnora authentication failed",
+        403: "WeKnora authorization failed",
+        404: "WeKnora resource was not found",
+        429: "WeKnora rate limit reached",
+    }
+    if 500 <= status_code <= 599:
+        fallback = "WeKnora server returned a retryable error"
+    else:
+        fallback = fallback_by_status.get(status_code, "WeKnora request failed")
+    if not detail:
+        return fallback
+    return f"{fallback}: {detail}"
+
+
+def _url_error_is_timeout(exc: URLError) -> bool:
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return True
+    return "timed out" in str(reason).lower()
+
+
+def _redact_sensitive_text(value: str) -> str:
+    redacted = re.sub(
+        r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+",
+        "Bearer [redacted]",
+        value,
+    )
+    redacted = re.sub(
+        r"(?i)(authorization|x-api-key|api[_-]?key|token|secret|password)(\s*[:=]\s*)\S+",
+        r"\1\2[redacted]",
+        redacted,
+    )
+    redacted = re.sub(r"sk-[A-Za-z0-9_-]{12,}", "sk-[redacted]", redacted)
+    return redacted
 
 
 def _content_hash(value: str) -> str:
