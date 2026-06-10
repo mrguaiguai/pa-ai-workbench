@@ -231,7 +231,22 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         return self.index_document(external_doc_id)
 
     def list_document_chunks(self, external_doc_id: str) -> list[dict]:
-        self._raise_pending("list_document_chunks", "H4")
+        parsed = self._parse_registered_document(external_doc_id)
+        chunks = self.chunker.chunk(parsed)
+        return [
+            {
+                **chunk.to_dict(),
+                "id": f"{external_doc_id}:chunk:{chunk.chunk_index}",
+                "external_doc_id": external_doc_id,
+                "source": self.config.source,
+                "metadata": {
+                    **chunk.metadata,
+                    "source": self.config.source,
+                    "external_doc_id": external_doc_id,
+                },
+            }
+            for chunk in chunks
+        ]
 
     def create_wiki_draft(self, output_id: str, metadata: dict | None = None) -> WikiPage:
         self._raise_pending("create_wiki_draft", "I4")
