@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import field_validator
 from pydantic import model_validator
 
 
@@ -382,10 +383,44 @@ class EvidenceRead(BaseModel):
     metadata: dict
 
 
+RAG_FILTER_KEYS = {
+    "business_area",
+    "document_ids",
+    "document_type",
+    "external_doc_id",
+    "external_doc_ids",
+    "kb_id",
+    "kb_ids",
+    "knowledge_base_id",
+    "knowledge_base_ids",
+    "knowledge_ids",
+    "source_type",
+}
+
+
+def _validate_rag_filters(filters: dict) -> dict:
+    unknown = sorted(str(key) for key in filters if str(key) not in RAG_FILTER_KEYS)
+    if unknown:
+        raise ValueError("Unsupported RAG filter(s): " + ", ".join(unknown))
+    source_type = filters.get("source_type")
+    if source_type in (None, ""):
+        return filters
+    normalized = _normalize_source_type(source_type)
+    if normalized not in {"document_chunk", "wiki_page"}:
+        raise ValueError("source_type must be document_chunk or wiki_page")
+    filters["source_type"] = normalized
+    return filters
+
+
 class RagRetrieveRequest(BaseModel):
-    query: str
+    query: str = Field(min_length=1, max_length=1000)
     filters: dict = Field(default_factory=dict)
-    top_k: int = 8
+    top_k: int = Field(default=8, ge=1, le=50)
+
+    @field_validator("filters")
+    @classmethod
+    def validate_filters(cls, filters: dict) -> dict:
+        return _validate_rag_filters(filters)
 
 
 class RagRetrieveResponse(BaseModel):
@@ -397,9 +432,14 @@ class RagRetrieveResponse(BaseModel):
 
 
 class RagDebugRequest(BaseModel):
-    query: str
+    query: str = Field(min_length=1, max_length=1000)
     filters: dict = Field(default_factory=dict)
-    top_k: int = 8
+    top_k: int = Field(default=8, ge=1, le=50)
+
+    @field_validator("filters")
+    @classmethod
+    def validate_filters(cls, filters: dict) -> dict:
+        return _validate_rag_filters(filters)
 
 
 class RagDebugEvidenceRead(BaseModel):

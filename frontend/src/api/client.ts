@@ -239,6 +239,45 @@ export type Evidence = {
   metadata: Record<string, unknown>;
 };
 
+export type RagDebugRequest = {
+  query: string;
+  filters?: Record<string, unknown>;
+  top_k?: number;
+};
+
+export type RagDebugEvidence = {
+  rank: number;
+  source_type: "document_chunk" | "wiki_page" | string | null;
+  source: string;
+  score: number | null;
+  evidence_id: string | null;
+  document_id: string | null;
+  external_doc_id: string | null;
+  chunk_id: string | null;
+  wiki_page_id: string | null;
+  title: string;
+  summary: string;
+  metadata: Record<string, unknown>;
+};
+
+export type RagDebugResponse = {
+  trace_id: string;
+  status: "ok" | "error" | string;
+  query: string;
+  filters: Record<string, unknown>;
+  top_k: number;
+  requested_source_type: string | null;
+  items: RagDebugEvidence[];
+  total: number;
+  warnings: string[];
+  error: {
+    error_code: string;
+    message: string;
+    operation: string | null;
+    retryable: boolean;
+  } | null;
+};
+
 export type Task = {
   id: string;
   conversation_id: string | null;
@@ -477,6 +516,11 @@ export const apiClient = {
     request<{ output: GeneratedOutput; citations: Citation[] }>(`/api/history/${outputId}`),
   locateCitation: (payload: CitationLocateRequest) =>
     request<CitationLocateResponse>("/api/citations/locate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  debugRag: (payload: RagDebugRequest) =>
+    request<RagDebugResponse>("/api/rag/debug", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

@@ -64,7 +64,7 @@ def _run_smoke() -> dict[str, Any]:
             filters={
                 "source_type": "document_chunk",
                 "business_area": "public_affairs",
-                "service_token": FIXTURE_TOKEN,
+                "kb_id": f"Bearer {FIXTURE_TOKEN}",
             },
             top_k=3,
         )
@@ -75,7 +75,7 @@ def _run_smoke() -> dict[str, Any]:
     _assert(payload["query"] == "synthetic policy debug query", "query mismatch")
     _assert(payload["top_k"] == 3, "top_k mismatch")
     _assert(payload["requested_source_type"] == "document_chunk", "source_type mismatch")
-    _assert(payload["filters"]["service_token"] == "[redacted]", "filter token leaked")
+    _assert(payload["filters"]["kb_id"] == "Bearer [redacted]", "filter token leaked")
     _assert(payload["total"] == 1, "expected one fixture item")
 
     item = payload["items"][0]

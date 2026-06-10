@@ -1833,7 +1833,7 @@ fallback draft、mock chat、mock RAG、keyword-only retrieve 均不能计入 re
 | P3-M2-B1 | Citation 跳转到文档 chunk 或 Wiki page | [x] |
 | P3-M2-B2 | RAG retrieve 调试接口对接 WeKnora | [x] |
 | P3-M2-B3 | Evidence dedup 与 score 展示规范 | [x] |
-| P3-M2-B4 | 检索参数 top_k/source_type/filter 前端调试面板 | [ ] |
+| P3-M2-B4 | 检索参数 top_k/source_type/filter 前端调试面板 | [x] |
 
 #### P3-M2-B1：Citation 跳转到文档 chunk 或 Wiki page
 
@@ -1924,7 +1924,7 @@ frontend build + API smoke + 浏览器检查。
 风险：
 参数过多会干扰业务用户；调试面板默认折叠或仅在调试模式显示。
 
-状态：[ ]
+状态：[x]
 
 ### M2-C：前端体验产品化
 

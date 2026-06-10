@@ -16,9 +16,10 @@ import { HomePage } from "./pages/HomePage";
 import { AnalysisPage } from "./pages/AnalysisPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LibraryPage } from "./pages/LibraryPage";
+import { RagDebugPage } from "./pages/RagDebugPage";
 import { WikiPage } from "./pages/WikiPage";
 
-type RouteId = "/" | "/library" | "/analysis" | "/wiki" | "/history";
+type RouteId = "/" | "/library" | "/analysis" | "/wiki" | "/history" | "/rag-debug";
 
 type NavItem = {
   id: RouteId;
@@ -30,6 +31,7 @@ const navItems: NavItem[] = [
   { id: "/", label: "首页", icon: Home },
   { id: "/library", label: "资料库", icon: Library },
   { id: "/analysis", label: "智能分析", icon: MessageSquareText },
+  { id: "/rag-debug", label: "RAG 调试", icon: Search },
   { id: "/wiki", label: "Wiki", icon: BookOpenText },
   { id: "/history", label: "历史", icon: FileClock },
 ];
@@ -38,13 +40,20 @@ const pageMeta: Record<RouteId, { title: string; eyebrow: string; icon: typeof H
   "/": { title: "工作台首页", eyebrow: "Overview", icon: BarChart3 },
   "/library": { title: "资料库", eyebrow: "Library", icon: Database },
   "/analysis": { title: "智能分析台", eyebrow: "Analysis", icon: MessageSquareText },
+  "/rag-debug": { title: "RAG 检索调试", eyebrow: "Retrieve Debug", icon: Search },
   "/wiki": { title: "Wiki 知识库", eyebrow: "Wiki", icon: Search },
   "/history": { title: "生成历史", eyebrow: "History", icon: FileClock },
 };
 
 function getHashRoute(): RouteId {
   const hash = window.location.hash.replace(/^#/, "").split("?")[0];
-  if (hash === "/library" || hash === "/analysis" || hash === "/wiki" || hash === "/history") {
+  if (
+    hash === "/library" ||
+    hash === "/analysis" ||
+    hash === "/rag-debug" ||
+    hash === "/wiki" ||
+    hash === "/history"
+  ) {
     return hash;
   }
   return "/";
@@ -129,6 +138,8 @@ export function App() {
             <LibraryPage />
           ) : route === "/analysis" ? (
             <AnalysisPage />
+          ) : route === "/rag-debug" ? (
+            <RagDebugPage />
           ) : route === "/wiki" ? (
             <WikiPage />
           ) : route === "/history" ? (
