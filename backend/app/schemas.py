@@ -57,6 +57,12 @@ class DocumentRetryIndexResponse(BaseModel):
     message: str
 
 
+class DocumentBulkRefreshResponse(BaseModel):
+    items: list[DocumentRead]
+    total: int
+    refreshed: int
+
+
 class DocumentChunkRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -110,6 +110,20 @@ export type DocumentRetryIndexResponse = {
   message: string;
 };
 
+export type DocumentListFilters = {
+  status?: string;
+  processing_state?: string;
+  has_error?: boolean;
+  knowledge_backend?: string;
+  refresh_status?: boolean;
+};
+
+export type DocumentBulkRefreshResponse = {
+  items: Document[];
+  total: number;
+  refreshed: number;
+};
+
 export type DocumentChunk = {
   id: string;
   document_id: string;
@@ -455,11 +469,43 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+function documentFilterParams(filters: DocumentListFilters) {
+  const params = new URLSearchParams();
+  if (filters.status && filters.status !== "all") {
+    params.set("status", filters.status);
+  }
+  if (filters.processing_state && filters.processing_state !== "all") {
+    params.set("processing_state", filters.processing_state);
+  }
+  if (filters.has_error !== undefined) {
+    params.set("has_error", String(filters.has_error));
+  }
+  if (filters.knowledge_backend && filters.knowledge_backend !== "all") {
+    params.set("knowledge_backend", filters.knowledge_backend);
+  }
+  if (filters.refresh_status !== undefined) {
+    params.set("refresh_status", String(filters.refresh_status));
+  }
+  return params;
+}
+
 export const apiClient = {
   baseUrl: API_BASE_URL,
   getStatus: () => request<StatusResponse>("/api/status"),
   getModelStatus: () => request<ModelStatusResponse>("/api/model/status"),
-  listDocuments: () => request<ListResponse<Document>>("/api/documents"),
+  listDocuments: (filters: DocumentListFilters = {}) => {
+    const params = documentFilterParams(filters);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<ListResponse<Document>>(`/api/documents${suffix}`);
+  },
+  refreshDocumentStatuses: (filters: DocumentListFilters = {}, limit = 50) => {
+    const params = documentFilterParams(filters);
+    params.set("limit", String(limit));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<DocumentBulkRefreshResponse>(`/api/documents/refresh-status${suffix}`, {
+      method: "POST",
+    });
+  },
   uploadDocument: (payload: DocumentUploadRequest) => {
     const formData = new FormData();
     formData.append("file", payload.file);

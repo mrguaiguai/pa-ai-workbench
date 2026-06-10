@@ -29,6 +29,12 @@ type LibraryForm = {
   source: string;
 };
 
+type LibraryFilters = {
+  status: string;
+  knowledgeBackend: string;
+  errorOnly: boolean;
+};
+
 type LoadState = "idle" | "loading" | "error";
 type ChunkLoadState = "idle" | "loading" | "error";
 type EventLoadState = "idle" | "loading" | "error";
@@ -38,6 +44,12 @@ const initialForm: LibraryForm = {
   businessArea: "",
   documentType: "",
   source: "manual",
+};
+
+const initialFilters: LibraryFilters = {
+  status: "all",
+  knowledgeBackend: "all",
+  errorOnly: false,
 };
 
 const runningStatuses = new Set(["uploaded", "parsing", "chunking", "embedding", "indexing"]);
@@ -215,6 +227,14 @@ function backendLabel(document: Document) {
   return document.knowledge_backend === "weknora_api" ? "WeKnora" : document.knowledge_backend;
 }
 
+function buildDocumentFilters(filters: LibraryFilters) {
+  return {
+    status: filters.status,
+    knowledge_backend: filters.knowledgeBackend,
+    has_error: filters.errorOnly ? true : undefined,
+  };
+}
+
 function stepLabel(step: string | null) {
   const normalized = (step || "").trim().toLowerCase();
   if (normalized === "parse" || normalized === "parsing") {
@@ -300,7 +320,9 @@ export function LibraryPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [form, setForm] = useState<LibraryForm>(initialForm);
+  const [filters, setFilters] = useState<LibraryFilters>(initialFilters);
   const [isUploading, setIsUploading] = useState(false);
+  const [isRefreshingStatuses, setIsRefreshingStatuses] = useState(false);
   const [reindexingId, setReindexingId] = useState<string | null>(null);
   const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
   const [chunks, setChunks] = useState<DocumentChunk[]>([]);
@@ -342,7 +364,7 @@ export function LibraryPage() {
     setLoadState("loading");
     setError(null);
     apiClient
-      .listDocuments()
+      .listDocuments(buildDocumentFilters(filters))
       .then((response) => {
         setDocuments(response.items);
         if (
@@ -364,6 +386,9 @@ export function LibraryPage() {
 
   useEffect(() => {
     loadDocuments();
+  }, [filters.status, filters.knowledgeBackend, filters.errorOnly]);
+
+  useEffect(() => {
     const onLocate = () => {
       const target = libraryHashTarget();
       if (target.documentId) {
@@ -478,6 +503,26 @@ export function LibraryPage() {
       .finally(() => setReindexingId(null));
   };
 
+  const onRefreshStatuses = () => {
+    setIsRefreshingStatuses(true);
+    setError(null);
+    apiClient
+      .refreshDocumentStatuses(buildDocumentFilters(filters))
+      .then((response) => {
+        setDocuments(response.items);
+        if (
+          previewDocumentId &&
+          !response.items.some((document) => document.id === previewDocumentId)
+        ) {
+          setPreviewDocumentId(null);
+          setChunks([]);
+          setEvents([]);
+        }
+      })
+      .catch((refreshError: unknown) => setError(errorMessage(refreshError)))
+      .finally(() => setIsRefreshingStatuses(false));
+  };
+
   return (
     <div className="library-page">
       <section className="library-summary" aria-label="资料库概览">
@@ -560,9 +605,75 @@ export function LibraryPage() {
         <section className="documents-panel" aria-label="资料列表">
           <div className="library-panel-heading">
             <span>Documents</span>
-            <button className="icon-button" type="button" onClick={loadDocuments} title="刷新">
-              <RefreshCw size={16} aria-hidden="true" />
-            </button>
+            <div className="library-heading-actions">
+              <button
+                className="icon-button"
+                type="button"
+                onClick={loadDocuments}
+                title="重新加载列表"
+              >
+                <RefreshCw size={16} aria-hidden="true" />
+              </button>
+              <button
+                className="secondary-action compact"
+                type="button"
+                onClick={onRefreshStatuses}
+                disabled={isRefreshingStatuses}
+              >
+                {isRefreshingStatuses ? (
+                  <Loader2 size={16} aria-hidden="true" />
+                ) : (
+                  <RefreshCw size={16} aria-hidden="true" />
+                )}
+                <span>批量刷新状态</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="library-filter-bar" aria-label="资料筛选">
+            <label>
+              <span>状态</span>
+              <select
+                value={filters.status}
+                onChange={(event) =>
+                  setFilters((current) => ({ ...current, status: event.target.value }))
+                }
+              >
+                <option value="all">全部</option>
+                <option value="uploaded">uploaded</option>
+                <option value="processing">processing</option>
+                <option value="indexed">indexed</option>
+                <option value="failed">failed</option>
+                <option value="unavailable">unavailable</option>
+              </select>
+            </label>
+            <label>
+              <span>后端</span>
+              <select
+                value={filters.knowledgeBackend}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    knowledgeBackend: event.target.value,
+                  }))
+                }
+              >
+                <option value="all">全部</option>
+                <option value="weknora_api">WeKnora</option>
+                <option value="mock">mock</option>
+                <option value="extracted">extracted</option>
+              </select>
+            </label>
+            <label className="library-filter-toggle">
+              <input
+                type="checkbox"
+                checked={filters.errorOnly}
+                onChange={(event) =>
+                  setFilters((current) => ({ ...current, errorOnly: event.target.checked }))
+                }
+              />
+              <span>仅错误/不可用</span>
+            </label>
           </div>
 
           {error ? <ErrorState message={error} /> : null}

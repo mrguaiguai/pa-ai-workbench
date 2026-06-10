@@ -70,12 +70,53 @@ async def create_document(
     return document
 
 
-def list_documents(session: Session) -> list[Document]:
+def list_documents(
+    session: Session,
+    status: str | None = None,
+    processing_state: str | None = None,
+    has_error: bool | None = None,
+    knowledge_backend: str | None = None,
+    refresh_status: bool = False,
+) -> list[Document]:
     statement = select(Document).order_by(Document.created_at.desc())
     documents = list(session.exec(statement).all())
-    for document in documents:
-        sync_document_status(session, document)
-    return documents
+    if refresh_status:
+        for document in documents:
+            sync_document_status(session, document)
+    return [
+        document
+        for document in documents
+        if _document_matches_filters(
+            session=session,
+            document=document,
+            status=status,
+            processing_state=processing_state,
+            has_error=has_error,
+            knowledge_backend=knowledge_backend,
+        )
+    ]
+
+
+def refresh_document_statuses(
+    session: Session,
+    status: str | None = None,
+    processing_state: str | None = None,
+    has_error: bool | None = None,
+    knowledge_backend: str | None = None,
+    limit: int = 50,
+) -> list[Document]:
+    documents = list_documents(
+        session=session,
+        status=status,
+        processing_state=processing_state,
+        has_error=has_error,
+        knowledge_backend=knowledge_backend,
+        refresh_status=False,
+    )
+    refreshed: list[Document] = []
+    for document in documents[: max(limit, 0)]:
+        refreshed.append(sync_document_status(session, document))
+    return refreshed
 
 
 def get_document(session: Session, document_id: str) -> Document | None:
@@ -83,6 +124,57 @@ def get_document(session: Session, document_id: str) -> Document | None:
     if document is not None:
         sync_document_status(session, document)
     return document
+
+
+def _document_matches_filters(
+    session: Session,
+    document: Document,
+    status: str | None,
+    processing_state: str | None,
+    has_error: bool | None,
+    knowledge_backend: str | None,
+) -> bool:
+    if knowledge_backend and document.knowledge_backend != knowledge_backend:
+        return False
+    normalized_status = (status or "").strip().lower()
+    if normalized_status and normalized_status != "all":
+        if normalized_status == "processing":
+            if document.status not in PROCESSING_STATUSES:
+                return False
+        elif normalized_status == "unavailable":
+            if not _has_unavailable_status_event(session, document.id):
+                return False
+        elif document.status != normalized_status:
+            return False
+
+    summary = document_processing_summary(document)
+    normalized_state = (processing_state or "").strip().lower()
+    if normalized_state and normalized_state != "all":
+        if summary.get("processing_state") != normalized_state:
+            return False
+
+    if has_error is not None:
+        has_document_error = bool(
+            document.status == "failed"
+            or document.error_message
+            or summary.get("processing_timed_out")
+            or _has_unavailable_status_event(session, document.id)
+        )
+        if has_document_error != has_error:
+            return False
+    return True
+
+
+def _has_unavailable_status_event(session: Session, document_id: str) -> bool:
+    statement = (
+        select(DocumentProcessingEvent)
+        .where(DocumentProcessingEvent.document_id == document_id)
+        .where(DocumentProcessingEvent.step == "weknora_status")
+        .where(DocumentProcessingEvent.status == "failed")
+        .order_by(DocumentProcessingEvent.created_at.desc())
+        .limit(1)
+    )
+    return session.exec(statement).first() is not None
 
 
 def sync_document_status(session: Session, document: Document) -> Document:

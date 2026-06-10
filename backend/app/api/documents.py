@@ -5,10 +5,12 @@ from fastapi import Depends
 from fastapi import File
 from fastapi import Form
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import UploadFile
 from sqlmodel import Session
 
 from app.database import get_session
+from app.schemas import DocumentBulkRefreshResponse
 from app.schemas import DocumentListResponse
 from app.schemas import DocumentChunkListResponse
 from app.schemas import DocumentChunkRead
@@ -29,6 +31,7 @@ from app.services.document_service import list_documents
 from app.services.document_service import parse_document_file
 from app.services.document_service import recover_document_processing
 from app.services.document_service import reindex_document_chunks
+from app.services.document_service import refresh_document_statuses
 from app.services.document_service import retry_index_document
 from app.services.document_service import document_processing_summary
 
@@ -60,11 +63,47 @@ async def upload_document(
 @router.get("", response_model=DocumentListResponse)
 def list_document_records(
     session: Annotated[Session, Depends(get_session)],
+    status: Annotated[str | None, Query()] = None,
+    processing_state: Annotated[str | None, Query()] = None,
+    has_error: Annotated[bool | None, Query()] = None,
+    knowledge_backend: Annotated[str | None, Query()] = None,
+    refresh_status: Annotated[bool, Query()] = False,
 ) -> DocumentListResponse:
-    documents = list_documents(session)
+    documents = list_documents(
+        session=session,
+        status=status,
+        processing_state=processing_state,
+        has_error=has_error,
+        knowledge_backend=knowledge_backend,
+        refresh_status=refresh_status,
+    )
     return DocumentListResponse(
         items=[_document_read(session, document) for document in documents],
         total=len(documents),
+    )
+
+
+@router.post("/refresh-status", response_model=DocumentBulkRefreshResponse)
+def refresh_document_records(
+    session: Annotated[Session, Depends(get_session)],
+    status: Annotated[str | None, Query()] = None,
+    processing_state: Annotated[str | None, Query()] = None,
+    has_error: Annotated[bool | None, Query()] = None,
+    knowledge_backend: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> DocumentBulkRefreshResponse:
+    documents = refresh_document_statuses(
+        session=session,
+        status=status,
+        processing_state=processing_state,
+        has_error=has_error,
+        knowledge_backend=knowledge_backend,
+        limit=limit,
+    )
+    return DocumentBulkRefreshResponse(
+        items=[_document_read(session, document) for document in documents],
+        total=len(documents),
+        refreshed=len(documents),
     )
 
 
