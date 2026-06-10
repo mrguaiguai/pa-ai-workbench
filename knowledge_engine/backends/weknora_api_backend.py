@@ -1,4 +1,5 @@
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -28,6 +29,11 @@ from knowledge_engine.schemas import Evidence
 from knowledge_engine.schemas import KnowledgeDocument
 from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
+
+
+WEKNORA_LOGGER = logging.getLogger("pa_ai_workbench.weknora")
+WEKNORA_LOGGER.addHandler(logging.NullHandler())
+WEKNORA_LOG_EXCERPT_LIMIT = 160
 
 
 def _get_timeout_seconds(default: float) -> float:
@@ -391,23 +397,54 @@ class WeKnoraApiBackend(KnowledgeEngine):
     def _perform_json_request(self, request: Request, operation: str) -> dict | list:
         attempts = self.retry_attempts + 1
         last_error: WeKnoraUnavailableError | None = None
+        request_id = uuid4().hex
+        started = time.perf_counter()
+        safe_operation = _sanitize_operation(operation)
         for attempt in range(attempts):
             try:
-                raw = self._read_response(request, operation)
+                raw, status_code = self._read_response(request, safe_operation)
                 if not raw:
+                    _log_weknora_call(
+                        request_id=request_id,
+                        operation=safe_operation,
+                        status="ok",
+                        status_code=status_code,
+                        duration_ms=_elapsed_ms(started),
+                        retry_count=attempt,
+                    )
                     return {}
                 try:
-                    return json.loads(raw)
+                    data = json.loads(raw)
                 except json.JSONDecodeError as exc:
                     raise WeKnoraResponseMappingError(
                         "WeKnora returned invalid JSON",
                         error_code="weknora_invalid_json",
-                        operation=_sanitize_operation(operation),
+                        operation=safe_operation,
                         retryable=False,
                     ) from exc
+                _log_weknora_call(
+                    request_id=request_id,
+                    operation=safe_operation,
+                    status="ok",
+                    status_code=status_code,
+                    duration_ms=_elapsed_ms(started),
+                    retry_count=attempt,
+                    excerpt=_log_excerpt(raw),
+                )
+                return data
             except WeKnoraUnavailableError as exc:
                 last_error = exc
                 if not exc.retryable or attempt >= attempts - 1:
+                    _log_weknora_call(
+                        request_id=request_id,
+                        operation=safe_operation,
+                        status="error",
+                        status_code=exc.status_code,
+                        duration_ms=_elapsed_ms(started),
+                        retry_count=attempt,
+                        error_code=exc.error_code,
+                        excerpt=exc.message,
+                    )
                     raise
                 self._sleep_before_retry(attempt)
         if last_error is not None:
@@ -418,11 +455,11 @@ class WeKnoraApiBackend(KnowledgeEngine):
             retryable=False,
         )
 
-    def _read_response(self, request: Request, operation: str) -> str:
-        safe_operation = _sanitize_operation(operation)
+    def _read_response(self, request: Request, safe_operation: str) -> tuple[str, int | None]:
         try:
             with urlopen(request, timeout=self.timeout) as response:
-                return response.read().decode("utf-8", errors="replace")
+                status_code = getattr(response, "status", None) or response.getcode()
+                return response.read().decode("utf-8", errors="replace"), status_code
         except HTTPError as exc:
             body_text = exc.read().decode("utf-8", errors="replace")
             raise _http_error_to_weknora_error(exc.code, body_text, safe_operation) from exc
@@ -983,6 +1020,47 @@ def _shorten(value: str, limit: int = 240) -> str:
     return collapsed[: limit - 3] + "..."
 
 
+def _elapsed_ms(started: float) -> int:
+    return max(round((time.perf_counter() - started) * 1000), 0)
+
+
+def _log_excerpt(value: str | None, limit: int = WEKNORA_LOG_EXCERPT_LIMIT) -> str | None:
+    if not value:
+        return None
+    return _shorten(_redact_sensitive_text(value), limit)
+
+
+def _log_weknora_call(
+    *,
+    request_id: str,
+    operation: str,
+    status: str,
+    status_code: int | None,
+    duration_ms: int,
+    retry_count: int,
+    error_code: str | None = None,
+    excerpt: str | None = None,
+) -> None:
+    payload = {
+        "event": "weknora_adapter_call",
+        "source": "weknora_api",
+        "request_id": _redact_sensitive_text(request_id),
+        "operation": _sanitize_operation(operation),
+        "status": status,
+        "status_code": status_code,
+        "duration_ms": duration_ms,
+        "retry_count": retry_count,
+        "error_code": _redact_sensitive_text(error_code or "") or None,
+        "excerpt": _log_excerpt(excerpt),
+    }
+    payload = {key: value for key, value in payload.items() if value is not None}
+    message = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    if status == "error":
+        WEKNORA_LOGGER.warning(message)
+    else:
+        WEKNORA_LOGGER.info(message)
+
+
 def _sanitize_operation(operation: str) -> str:
     method, _, path = operation.partition(" ")
     if not path:
@@ -1110,6 +1188,7 @@ def _redact_sensitive_text(value: str) -> str:
         redacted,
     )
     redacted = re.sub(r"sk-[A-Za-z0-9_-]{12,}", "sk-[redacted]", redacted)
+    redacted = re.sub(r"https?://[^\s\"'<>]+", "https://[redacted]", redacted)
     return redacted
 
 

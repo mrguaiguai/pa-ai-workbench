@@ -2027,7 +2027,7 @@ frontend build + fixture 历史数据检查。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M2-D1 | WeKnora 调用日志元数据与脱敏 | [ ] |
+| P3-M2-D1 | WeKnora 调用日志元数据与脱敏 | [x] |
 | P3-M2-D2 | PA task / adapter request id 串联 | [ ] |
 | P3-M2-D3 | 试点反馈问题模板与回归清单 | [ ] |
 | P3-M2-D4 | 内网部署 README 和故障排查文档 | [ ] |
@@ -2053,7 +2053,7 @@ unit tests + grep secret pattern + 手动检查样例日志。
 风险：
 过度脱敏会降低排障能力；保留 id 和短摘要。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M2-D2：PA task / adapter request id 串联
 
