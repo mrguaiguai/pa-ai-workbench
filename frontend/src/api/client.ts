@@ -34,6 +34,21 @@ export type StatusResponse = {
     health_status: string | null;
     message: string | null;
   };
+  backend_capabilities: {
+    active_backend: string;
+    selected_backend: string;
+    environment: string;
+    strict_fallback_mode: boolean;
+    known_backend: boolean;
+    release_eligible: boolean;
+    capabilities: Record<string, "supported" | "partial" | "unsupported" | "dev-only" | string>;
+    matrix: Record<
+      string,
+      Record<string, "supported" | "partial" | "unsupported" | "dev-only" | string>
+    >;
+    fallback_policy: Record<string, boolean | string>;
+    notes: string[];
+  };
   memory_recent_limit: number;
   database: string;
   counts: Record<string, number>;

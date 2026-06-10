@@ -351,6 +351,7 @@ class StatusResponse(BaseModel):
     knowledge_backend: str
     mock_mode: bool
     weknora: WeKnoraStatus
+    backend_capabilities: dict[str, Any] = Field(default_factory=dict)
     memory_recent_limit: int
     database: str
     counts: dict[str, int]

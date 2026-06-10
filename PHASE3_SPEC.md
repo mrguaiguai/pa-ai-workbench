@@ -2158,7 +2158,7 @@ checker 过慢会被绕过；拆分 static 与 live gates。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M3-A0 | backend capability matrix 与 fallback fail-closed 规则 | [ ] |
+| P3-M3-A0 | backend capability matrix 与 fallback fail-closed 规则 | [x] |
 | P3-M3-A1 | KnowledgeBackend contract tests 完整化 | [ ] |
 | P3-M3-A2 | mock / weknora_api / extracted parity matrix | [ ] |
 | P3-M3-A3 | backend feature flags 与能力探测 | [ ] |
@@ -2186,7 +2186,7 @@ citation trace 时不能标记为真实引用。
 风险：
 规则不清会让 M3 重复 M1 的 mock 掩盖问题。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M3-A1：KnowledgeBackend contract tests 完整化
 
