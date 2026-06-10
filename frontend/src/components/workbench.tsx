@@ -1,6 +1,9 @@
 import {
   AlertTriangle,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
+  Copy,
   ExternalLink,
   FileText,
   Loader2,
@@ -102,6 +105,8 @@ export function CitationList({
 }) {
   const [locatingKey, setLocatingKey] = useState<string | null>(null);
   const [locationMessage, setLocationMessage] = useState<Record<string, string>>({});
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
+  const [copyMessage, setCopyMessage] = useState<Record<string, string>>({});
 
   if (citations.length === 0) {
     return <EmptyState text={emptyText} compact />;
@@ -141,10 +146,41 @@ export function CitationList({
       .finally(() => setLocatingKey(null));
   };
 
+  const toggleExpanded = (key: string) => {
+    setExpandedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const copyCitation = (citation: CitationListItem, index: number) => {
+    const key = citationKey(citation, index);
+    if (!navigator.clipboard) {
+      setCopyMessage((current) => ({ ...current, [key]: "复制失败" }));
+      return;
+    }
+    navigator.clipboard
+      .writeText(citationCopyText(citation))
+      .then(() => {
+        setCopyMessage((current) => ({ ...current, [key]: "已复制" }));
+      })
+      .catch(() => {
+        setCopyMessage((current) => ({ ...current, [key]: "复制失败" }));
+      });
+  };
+
   return (
     <div className="citation-list">
       {citations.map((citation, index) => {
         const key = citationKey(citation, index);
+        const expanded = expandedKeys.has(key);
+        const traceable = citationTraceable(citation);
+        const metadataEntries = citationMetadataEntries(citation);
         return (
           <article
             className={`citation-item ${citation.source === "weknora_api" ? "weknora" : ""}`}
@@ -168,12 +204,41 @@ export function CitationList({
                     <ExternalLink size={15} aria-hidden="true" />
                   )}
                 </button>
+                <button
+                  className="icon-button citation-locate-button"
+                  type="button"
+                  onClick={() => copyCitation(citation, index)}
+                  title="复制引用"
+                  aria-label="复制引用"
+                >
+                  {copyMessage[key] === "已复制" ? (
+                    <CheckCircle2 size={15} aria-hidden="true" />
+                  ) : (
+                    <Copy size={15} aria-hidden="true" />
+                  )}
+                </button>
+                <button
+                  className="icon-button citation-locate-button"
+                  type="button"
+                  onClick={() => toggleExpanded(key)}
+                  title={expanded ? "收起" : "展开"}
+                  aria-label={expanded ? "收起" : "展开"}
+                >
+                  {expanded ? (
+                    <ChevronUp size={15} aria-hidden="true" />
+                  ) : (
+                    <ChevronDown size={15} aria-hidden="true" />
+                  )}
+                </button>
               </div>
             </div>
-            <p>{citation.text}</p>
+            <p>{citationExcerpt(citation.text, expanded)}</p>
             <div className="citation-meta-row">
               <span className={`citation-source-type ${citationSourceClass(citation)}`}>
                 {citationSourceLabel(citation)}
+              </span>
+              <span className={traceable ? "citation-locatable" : "citation-not-locatable"}>
+                {traceable ? "locatable" : "not locatable"}
               </span>
               <span>{citation.source}</span>
               {citationEvidenceId(citation) ? <span>{citationEvidenceId(citation)}</span> : null}
@@ -185,6 +250,19 @@ export function CitationList({
               <div className="citation-locate-message">
                 <AlertTriangle size={14} aria-hidden="true" />
                 <span>{locationMessage[key]}</span>
+              </div>
+            ) : null}
+            {copyMessage[key] ? (
+              <div className="citation-copy-message">
+                <CheckCircle2 size={14} aria-hidden="true" />
+                <span>{copyMessage[key]}</span>
+              </div>
+            ) : null}
+            {expanded && metadataEntries.length > 0 ? (
+              <div className="citation-detail-grid" aria-label="Citation metadata">
+                {metadataEntries.map(([label, value]) => (
+                  <span key={label}>{`${label}: ${value}`}</span>
+                ))}
               </div>
             ) : null}
           </article>
@@ -386,6 +464,67 @@ function citationScoreTitle(citation: CitationListItem) {
   return citation.score === null || citation.score === undefined
     ? "No backend score returned"
     : "Backend retrieval score";
+}
+
+function citationExcerpt(text: string, expanded: boolean) {
+  const normalized = text.split(/\s+/).join(" ");
+  if (expanded || normalized.length <= 260) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 257).trim()}...`;
+}
+
+function citationTraceable(citation: CitationListItem) {
+  const sourceType = citationSourceType(citation);
+  if (sourceType === "wiki_page") {
+    return Boolean(citationEvidenceId(citation) && citationWikiPageId(citation));
+  }
+  if (sourceType === "document_chunk") {
+    return Boolean(
+      citationEvidenceId(citation) &&
+        citation.chunk_id &&
+        (citation.document_id || citation.external_doc_id),
+    );
+  }
+  return false;
+}
+
+function citationMetadataEntries(citation: CitationListItem): Array<[string, string]> {
+  const metadata = citationMetadata(citation);
+  const entries: Array<[string, string]> = [];
+  for (const key of [
+    "retrieval_rank",
+    "raw_retrieval_rank",
+    "score_display",
+    "score_semantics",
+    "citation_source_type",
+    "business_area",
+    "document_type",
+    "wiki_page_id",
+    "chunk_index",
+    "page_number",
+    "section_path",
+  ]) {
+    const value = metadata[key];
+    if (value !== null && value !== undefined && value !== "") {
+      entries.push([key, typeof value === "string" ? value : JSON.stringify(value)]);
+    }
+  }
+  return entries;
+}
+
+function citationCopyText(citation: CitationListItem) {
+  return [
+    `title: ${citation.title}`,
+    `source: ${citation.source}`,
+    `source_type: ${citationSourceType(citation) || "unknown"}`,
+    `evidence_id: ${citationEvidenceId(citation) || ""}`,
+    `chunk_id: ${citation.chunk_id || ""}`,
+    `wiki_page_id: ${citationWikiPageId(citation) || ""}`,
+    `external_doc_id: ${citation.external_doc_id || ""}`,
+    `score: ${citationScoreDisplay(citation)}`,
+    `text: ${citationExcerpt(citation.text, true)}`,
+  ].join("\n");
 }
 
 function optionalCitationString(value: unknown) {

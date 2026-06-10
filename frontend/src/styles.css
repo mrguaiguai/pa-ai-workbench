@@ -3061,9 +3061,25 @@ p {
   padding: 7px 8px;
 }
 
+.citation-copy-message {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  border: 1px solid #bfd9cb;
+  border-radius: 8px;
+  background: #eef7f1;
+  color: #256340;
+  padding: 7px 8px;
+}
+
 .citation-locate-message svg {
   flex: 0 0 auto;
   margin-top: 1px;
+}
+
+.citation-copy-message svg {
+  flex: 0 0 auto;
 }
 
 .citation-locate-message span {
@@ -3071,6 +3087,16 @@ p {
   color: inherit;
   font-size: 0.76rem;
   line-height: 1.35;
+}
+
+.citation-copy-message span {
+  color: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.citation-item p {
+  overflow-wrap: anywhere;
 }
 
 .citation-meta-row {
@@ -3117,6 +3143,39 @@ p {
 .citation-meta-row .citation-source-type.mock {
   background: #f5f0ea;
   color: #6a4a2f;
+}
+
+.citation-meta-row .citation-locatable {
+  background: #eef7f1;
+  color: #256340;
+}
+
+.citation-meta-row .citation-not-locatable {
+  background: #fff8e8;
+  color: #7a5312;
+}
+
+.citation-detail-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+  border-top: 1px solid #e4eaee;
+  padding-top: 10px;
+}
+
+.citation-detail-grid span {
+  min-height: 24px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #52636e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 4px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @keyframes spin {
