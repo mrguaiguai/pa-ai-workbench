@@ -1832,7 +1832,7 @@ fallback draft、mock chat、mock RAG、keyword-only retrieve 均不能计入 re
 | --- | --- | --- |
 | P3-M2-B1 | Citation 跳转到文档 chunk 或 Wiki page | [x] |
 | P3-M2-B2 | RAG retrieve 调试接口对接 WeKnora | [x] |
-| P3-M2-B3 | Evidence dedup 与 score 展示规范 | [ ] |
+| P3-M2-B3 | Evidence dedup 与 score 展示规范 | [x] |
 | P3-M2-B4 | 检索参数 top_k/source_type/filter 前端调试面板 | [ ] |
 
 #### P3-M2-B1：Citation 跳转到文档 chunk 或 Wiki page
@@ -1902,7 +1902,7 @@ fixture retrieve results + Agent citation regression。
 风险：
 不同 WeKnora 检索模式 score 语义不同，UI 不应过度解释。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M2-B4：检索参数 top_k/source_type/filter 前端调试面板
 

@@ -2,6 +2,7 @@ from typing import Any
 
 from agent.schemas import Citation
 from knowledge_engine.base import KnowledgeEngine
+from knowledge_engine.evidence import normalize_evidence_results
 from knowledge_engine.factory import create_knowledge_engine
 from knowledge_engine.schemas import Evidence
 
@@ -25,10 +26,13 @@ class RealRetrieverTool:
         if not query.strip():
             return []
         resolved_filters = self._build_filters(filters=filters, source_type=source_type)
-        resolved_top_k = self.default_top_k if top_k is None else top_k
-        evidence_items = self.knowledge_engine.retrieve(
-            query=query,
-            filters=resolved_filters,
+        resolved_top_k = max(self.default_top_k if top_k is None else top_k, 0)
+        evidence_items = normalize_evidence_results(
+            self.knowledge_engine.retrieve(
+                query=query,
+                filters=resolved_filters,
+                top_k=max(resolved_top_k * 2, resolved_top_k),
+            ),
             top_k=resolved_top_k,
         )
         return [self._to_citation(evidence) for evidence in evidence_items]

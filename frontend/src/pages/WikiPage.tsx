@@ -17,6 +17,7 @@ import type { FormEvent } from "react";
 import {
   ApiError,
   WikiPage as WikiPageDetail,
+  WikiCitation,
   WikiPageSummary,
   apiClient,
 } from "../api/client";
@@ -241,6 +242,33 @@ function evidenceTypeLabel(sourceType?: string | null) {
     return "Mock";
   }
   return normalized || "Evidence";
+}
+
+function wikiCitationScoreDisplay(citation: WikiCitation) {
+  const display = optionalString(citation.metadata?.score_display);
+  if (display) {
+    return display;
+  }
+  if (citation.score === null || citation.score === undefined) {
+    return "Score unavailable";
+  }
+  return `Score ${citation.score.toFixed(2)}`;
+}
+
+function wikiCitationScoreTitle(citation: WikiCitation) {
+  return (
+    optionalString(citation.metadata?.score_semantics) ||
+    (citation.score === null || citation.score === undefined
+      ? "No backend score returned"
+      : "Backend retrieval score")
+  );
+}
+
+function optionalString(value: unknown) {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  return String(value).trim();
 }
 
 function sourceRefCount(page: WikiPageDetail | null) {
@@ -859,9 +887,9 @@ export function WikiPage() {
                 <article className="wiki-binding-item" key={citation.id}>
                   <div>
                     <strong>{evidenceTypeLabel(citation.source_type)}</strong>
-                    {citation.score === null || citation.score === undefined ? null : (
-                      <span>{citation.score.toFixed(2)}</span>
-                    )}
+                    <span title={wikiCitationScoreTitle(citation)}>
+                      {wikiCitationScoreDisplay(citation)}
+                    </span>
                   </div>
                   <p>{citation.excerpt}</p>
                   <div className="wiki-ref-list compact">

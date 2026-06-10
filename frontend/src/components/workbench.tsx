@@ -153,9 +153,7 @@ export function CitationList({
             <div className="citation-title-row">
               <strong>{citation.title}</strong>
               <div className="citation-title-actions">
-                {citation.score === null || citation.score === undefined ? null : (
-                  <span>{citation.score.toFixed(2)}</span>
-                )}
+                <span title={citationScoreTitle(citation)}>{citationScoreDisplay(citation)}</span>
                 <button
                   className="icon-button citation-locate-button"
                   type="button"
@@ -365,6 +363,29 @@ function citationMetadata(citation: CitationListItem) {
   } catch {
     return {};
   }
+}
+
+function citationScoreDisplay(citation: CitationListItem) {
+  const metadata = citationMetadata(citation);
+  const display = optionalCitationString(metadata.score_display);
+  if (display) {
+    return display;
+  }
+  if (citation.score === null || citation.score === undefined) {
+    return "Score unavailable";
+  }
+  return `Score ${citation.score.toFixed(2)}`;
+}
+
+function citationScoreTitle(citation: CitationListItem) {
+  const metadata = citationMetadata(citation);
+  const semantics = optionalCitationString(metadata.score_semantics);
+  if (semantics) {
+    return semantics;
+  }
+  return citation.score === null || citation.score === undefined
+    ? "No backend score returned"
+    : "Backend retrieval score";
 }
 
 function optionalCitationString(value: unknown) {
