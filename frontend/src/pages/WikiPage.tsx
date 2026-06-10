@@ -282,6 +282,71 @@ function sourceRefCount(page: WikiPageDetail | null) {
   );
 }
 
+function publishRisks(page: WikiPageDetail, availability: ReturnType<typeof ragAvailability>) {
+  const risks: string[] = [];
+  if (sourceRefCount(page) === 0 && (page.wiki_citations?.length ?? 0) === 0) {
+    risks.push("No source refs or citation bindings are attached.");
+  }
+  if (!page.content.trim()) {
+    risks.push("Page content is empty.");
+  }
+  if (availability.className !== "searchable") {
+    risks.push("Published pages are not considered retrievable until indexing succeeds.");
+  }
+  if (page.source === "mock") {
+    risks.push("This page is backed by mock data.");
+  }
+  return risks;
+}
+
+function PublishConfirmPanel({
+  page,
+  availability,
+  onCancel,
+  onConfirm,
+  loading,
+}: {
+  page: WikiPageDetail;
+  availability: ReturnType<typeof ragAvailability>;
+  onCancel: () => void;
+  onConfirm: () => void;
+  loading: boolean;
+}) {
+  const risks = publishRisks(page, availability);
+  return (
+    <section className="wiki-publish-confirm" aria-label="发布确认">
+      <div>
+        <strong>Publish confirmation</strong>
+        <span>{availability.label}</span>
+      </div>
+      <p>{availability.hint}</p>
+      <div className="wiki-ref-list compact">
+        <span>{`source refs: ${sourceRefCount(page)}`}</span>
+        <span>{`bindings: ${page.wiki_citations?.length ?? 0}`}</span>
+        <span>{`citations: ${page.citations.length}`}</span>
+        <span>{`status: ${page.status ?? "draft"}`}</span>
+      </div>
+      {risks.length ? (
+        <div className="wiki-publish-risks">
+          {risks.map((risk) => (
+            <span key={risk}>{risk}</span>
+          ))}
+        </div>
+      ) : null}
+      <div className="wiki-publish-actions">
+        <button className="secondary-action compact" type="button" onClick={onCancel}>
+          <X size={16} aria-hidden="true" />
+          <span>取消</span>
+        </button>
+        <button className="primary-action compact" type="button" onClick={onConfirm} disabled={loading}>
+          {loading ? <Loader2 size={16} aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+          <span>{loading ? "发布中" : "确认发布"}</span>
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function wikiSlugFromHash() {
   const query = window.location.hash.split("?")[1] || "";
   return new URLSearchParams(query).get("slug");
@@ -301,6 +366,8 @@ export function WikiPage() {
   const [indexState, setIndexState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
+  const [editorNotice, setEditorNotice] = useState<string | null>(null);
+  const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
 
   const selectedSummary = useMemo(
     () => results.find((result) => result.slug === selectedSlug) ?? null,
@@ -358,6 +425,8 @@ export function WikiPage() {
         setSelectedSlug(response.slug);
         setEditorMode("view");
         setEditorError(null);
+        setEditorNotice(null);
+        setPublishConfirmOpen(false);
         setIndexState("idle");
         setPageState("idle");
         upsertResult(response);
@@ -421,6 +490,8 @@ export function WikiPage() {
     setEditorForm(emptyEditorForm);
     setEditorMode("create");
     setEditorError(null);
+    setEditorNotice(null);
+    setPublishConfirmOpen(false);
     setIndexState("idle");
     setError(null);
   };
@@ -432,11 +503,14 @@ export function WikiPage() {
     setEditorForm(formFromPage(page));
     setEditorMode("edit");
     setEditorError(null);
+    setEditorNotice(null);
+    setPublishConfirmOpen(false);
   };
 
   const cancelEdit = () => {
     setEditorMode("view");
     setEditorError(null);
+    setEditorNotice(null);
   };
 
   const savePage = (event: FormEvent<HTMLFormElement>) => {
@@ -452,6 +526,7 @@ export function WikiPage() {
 
     setSaveState("loading");
     setEditorError(null);
+    setEditorNotice(null);
 
     const payload = {
       title,
@@ -480,6 +555,8 @@ export function WikiPage() {
         setEditorForm(formFromPage(response));
         setEditorMode("view");
         setSaveState("idle");
+        setEditorNotice("Draft saved.");
+        setPublishConfirmOpen(false);
         setIndexState("idle");
         upsertResult(response);
       })
@@ -489,6 +566,13 @@ export function WikiPage() {
       });
   };
 
+  const requestPublish = () => {
+    if (!page || publishState === "loading" || pageStatus === "published") {
+      return;
+    }
+    setPublishConfirmOpen(true);
+  };
+
   const publishPage = () => {
     if (!page || publishState === "loading") {
       return;
@@ -496,6 +580,7 @@ export function WikiPage() {
 
     setPublishState("loading");
     setError(null);
+    setPublishConfirmOpen(false);
     apiClient
       .publishWikiPage(page.slug)
       .then((response) => {
@@ -634,7 +719,7 @@ export function WikiPage() {
                   type="button"
                   title={pageStatus === "published" ? "已发布" : "发布"}
                   disabled={publishState === "loading" || pageStatus === "published"}
-                  onClick={publishPage}
+                  onClick={requestPublish}
                 >
                   {publishState === "loading" ? (
                     <Loader2 size={16} aria-hidden="true" />
@@ -687,6 +772,7 @@ export function WikiPage() {
         ) : isEditing ? (
           <form className="wiki-editor-form" onSubmit={savePage}>
             {editorError ? <ErrorState message={editorError} /> : null}
+            {editorNotice ? <div className="wiki-editor-notice">{editorNotice}</div> : null}
 
             <div className="form-grid wiki-editor-fields">
               <label>
@@ -772,6 +858,16 @@ export function WikiPage() {
           </form>
         ) : page ? (
           <article className="wiki-article">
+            {editorNotice ? <div className="wiki-editor-notice">{editorNotice}</div> : null}
+            {publishConfirmOpen ? (
+              <PublishConfirmPanel
+                page={page}
+                availability={availability}
+                onCancel={() => setPublishConfirmOpen(false)}
+                onConfirm={publishPage}
+                loading={publishState === "loading"}
+              />
+            ) : null}
             <div className="wiki-article-title">
               <div className="wiki-status-pills">
                 <span>{pageStatus}</span>

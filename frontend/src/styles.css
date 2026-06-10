@@ -2097,6 +2097,81 @@ p {
   gap: 10px;
 }
 
+.wiki-editor-notice {
+  border: 1px solid #bfd9cb;
+  border-radius: 8px;
+  background: #eef7f1;
+  color: #256340;
+  font-size: 0.82rem;
+  font-weight: 900;
+  padding: 9px 10px;
+}
+
+.wiki-publish-confirm {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  border: 1px solid #edd8a8;
+  border-radius: 8px;
+  background: #fff8e8;
+  padding: 12px;
+}
+
+.wiki-publish-confirm > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wiki-publish-confirm strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #17212b;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki-publish-confirm > div:first-child span {
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #7a5312;
+  font-size: 0.74rem;
+  font-weight: 900;
+  padding: 4px 8px;
+}
+
+.wiki-publish-confirm p {
+  color: #6b4d18;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.wiki-publish-risks {
+  display: grid;
+  gap: 6px;
+}
+
+.wiki-publish-risks span {
+  border: 1px solid #edc7c2;
+  border-radius: 8px;
+  background: #fff1ef;
+  color: #9b382d;
+  font-size: 0.76rem;
+  font-weight: 900;
+  padding: 7px 8px;
+}
+
+.wiki-publish-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .wiki-index-card,
 .wiki-binding-list {
   display: grid;
