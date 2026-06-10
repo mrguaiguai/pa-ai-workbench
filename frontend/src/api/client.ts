@@ -118,6 +118,16 @@ export type DocumentListFilters = {
   refresh_status?: boolean;
 };
 
+export type HistoryListFilters = {
+  query?: string;
+  task_type?: string;
+  status?: string;
+  citation_source?: string;
+  source_type?: string;
+  evidence_state?: string;
+  has_warnings?: boolean;
+};
+
 export type DocumentBulkRefreshResponse = {
   items: Document[];
   total: number;
@@ -316,6 +326,13 @@ export type GeneratedOutput = {
   content_markdown: string | null;
   warnings_json: string | null;
   status: string;
+  citation_count: number;
+  weknora_citation_count: number;
+  mock_citation_count: number;
+  document_citation_count: number;
+  wiki_citation_count: number;
+  warning_count: number;
+  evidence_state: string;
   created_at: string;
   updated_at: string;
 };
@@ -489,6 +506,32 @@ function documentFilterParams(filters: DocumentListFilters) {
   return params;
 }
 
+function historyFilterParams(filters: HistoryListFilters) {
+  const params = new URLSearchParams();
+  if (filters.query?.trim()) {
+    params.set("query", filters.query.trim());
+  }
+  if (filters.task_type && filters.task_type !== "all") {
+    params.set("task_type", filters.task_type);
+  }
+  if (filters.status && filters.status !== "all") {
+    params.set("status", filters.status);
+  }
+  if (filters.citation_source && filters.citation_source !== "all") {
+    params.set("citation_source", filters.citation_source);
+  }
+  if (filters.source_type && filters.source_type !== "all") {
+    params.set("source_type", filters.source_type);
+  }
+  if (filters.evidence_state && filters.evidence_state !== "all") {
+    params.set("evidence_state", filters.evidence_state);
+  }
+  if (filters.has_warnings !== undefined) {
+    params.set("has_warnings", String(filters.has_warnings));
+  }
+  return params;
+}
+
 export const apiClient = {
   baseUrl: API_BASE_URL,
   getStatus: () => request<StatusResponse>("/api/status"),
@@ -557,7 +600,11 @@ export const apiClient = {
   getTask: (taskId: string) => request<Task>(`/api/tasks/${taskId}`),
   getOutput: (outputId: string) =>
     request<{ output: GeneratedOutput; citations: Citation[] }>(`/api/outputs/${outputId}`),
-  listHistory: () => request<ListResponse<GeneratedOutput>>("/api/history"),
+  listHistory: (filters: HistoryListFilters = {}) => {
+    const params = historyFilterParams(filters);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<ListResponse<GeneratedOutput>>(`/api/history${suffix}`);
+  },
   getHistoryOutput: (outputId: string) =>
     request<{ output: GeneratedOutput; citations: Citation[] }>(`/api/history/${outputId}`),
   locateCitation: (payload: CitationLocateRequest) =>

@@ -200,6 +200,13 @@ class GeneratedOutputRead(BaseModel):
     content_markdown: str | None = None
     warnings_json: str | None = None
     status: str
+    citation_count: int = 0
+    weknora_citation_count: int = 0
+    mock_citation_count: int = 0
+    document_citation_count: int = 0
+    wiki_citation_count: int = 0
+    warning_count: int = 0
+    evidence_state: str = "unknown"
     created_at: datetime
     updated_at: datetime
 

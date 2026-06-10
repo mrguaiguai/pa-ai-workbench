@@ -12,6 +12,7 @@ import {
   ApiError,
   Citation,
   GeneratedOutput,
+  HistoryListFilters,
   WikiPage,
   apiClient,
 } from "../api/client";
@@ -32,12 +33,32 @@ type HistoryFilters = {
   query: string;
   taskType: string;
   status: string;
+  citationSource: string;
+  sourceType: string;
+  evidenceState: string;
+  warningFilter: string;
 };
 
 const initialFilters: HistoryFilters = {
   query: "",
   taskType: "all",
   status: "all",
+  citationSource: "all",
+  sourceType: "all",
+  evidenceState: "all",
+  warningFilter: "all",
+};
+
+const baseTaskTypeOptions = ["knowledge_qa", "policy_analysis", "case_review", "wiki_draft"];
+const baseStatusOptions = ["completed", "failed", "running", "created"];
+
+const evidenceStateLabels: Record<string, string> = {
+  no_evidence: "No evidence",
+  mock_only: "Mock only",
+  weknora: "WeKnora",
+  mixed: "Mixed",
+  other: "Other",
+  unknown: "Unknown",
 };
 
 function formatDate(value: string) {
@@ -76,19 +97,6 @@ function formatContent(output: GeneratedOutput | null) {
   }
 }
 
-function matchesFilter(output: GeneratedOutput, filters: HistoryFilters) {
-  const query = filters.query.trim().toLowerCase();
-  const haystack = `${output.title} ${output.task_type} ${output.content_markdown ?? ""} ${
-    output.content_json ?? ""
-  }`.toLowerCase();
-
-  return (
-    (!query || haystack.includes(query)) &&
-    (filters.taskType === "all" || output.task_type === filters.taskType) &&
-    (filters.status === "all" || output.status === filters.status)
-  );
-}
-
 function citationMetadata(citation: Citation) {
   if (!citation.metadata_json) {
     return {} as Record<string, unknown>;
@@ -108,6 +116,31 @@ function isWeKnoraCitation(citation: Citation) {
   return citation.source === "weknora_api" || metadata.source === "weknora_api";
 }
 
+function historyListFilters(filters: HistoryFilters): HistoryListFilters {
+  return {
+    query: filters.query,
+    task_type: filters.taskType,
+    status: filters.status,
+    citation_source: filters.citationSource,
+    source_type: filters.sourceType,
+    evidence_state: filters.evidenceState,
+    has_warnings:
+      filters.warningFilter === "with_warnings"
+        ? true
+        : filters.warningFilter === "no_warnings"
+          ? false
+          : undefined,
+  };
+}
+
+function evidenceStateLabel(output: GeneratedOutput) {
+  return evidenceStateLabels[output.evidence_state || "unknown"] ?? output.evidence_state;
+}
+
+function compactCountLabel(label: string, count: number | undefined) {
+  return `${label} ${count ?? 0}`;
+}
+
 export function HistoryPage() {
   const [filters, setFilters] = useState<HistoryFilters>(initialFilters);
   const [outputs, setOutputs] = useState<GeneratedOutput[]>([]);
@@ -122,22 +155,29 @@ export function HistoryPage() {
   const [error, setError] = useState<string | null>(null);
 
   const taskTypeOptions = useMemo(
-    () => Array.from(new Set(outputs.map((output) => output.task_type))).sort(),
+    () => Array.from(new Set([...baseTaskTypeOptions, ...outputs.map((output) => output.task_type)])).sort(),
     [outputs],
   );
   const statusOptions = useMemo(
-    () => Array.from(new Set(outputs.map((output) => output.status))).sort(),
+    () => Array.from(new Set([...baseStatusOptions, ...outputs.map((output) => output.status)])).sort(),
     [outputs],
-  );
-  const filteredOutputs = useMemo(
-    () => outputs.filter((output) => matchesFilter(output, filters)),
-    [filters, outputs],
   );
   const warnings = useMemo(
     () => parseWarningsJson(selectedOutput?.warnings_json),
     [selectedOutput],
   );
   const citationSummary = useMemo(() => {
+    if (selectedOutput) {
+      return {
+        weknoraCount: selectedOutput.weknora_citation_count,
+        mockCount: selectedOutput.mock_citation_count,
+        otherCount:
+          selectedOutput.citation_count -
+          selectedOutput.weknora_citation_count -
+          selectedOutput.mock_citation_count,
+        totalCount: selectedOutput.citation_count,
+      };
+    }
     const weknoraCount = citations.filter(isWeKnoraCitation).length;
     return {
       weknoraCount,
@@ -145,7 +185,7 @@ export function HistoryPage() {
       otherCount: citations.length - weknoraCount,
       totalCount: citations.length,
     };
-  }, [citations]);
+  }, [citations, selectedOutput]);
   const displayContent = useMemo(() => formatContent(selectedOutput), [selectedOutput]);
 
   const loadDetail = (outputId: string) => {
@@ -172,7 +212,7 @@ export function HistoryPage() {
     setHistoryState("loading");
     setError(null);
     apiClient
-      .listHistory()
+      .listHistory(historyListFilters(filters))
       .then((response) => {
         setOutputs(response.items);
         setHistoryState("idle");
@@ -196,7 +236,7 @@ export function HistoryPage() {
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [filters]);
 
   const onSelectOutput = (outputId: string) => {
     setSelectedOutputId(outputId);
@@ -298,24 +338,83 @@ export function HistoryPage() {
                 ))}
               </select>
             </label>
+            <label>
+              <span>Citation source</span>
+              <select
+                value={filters.citationSource}
+                onChange={(event) =>
+                  setFilters({ ...filters, citationSource: event.target.value })
+                }
+              >
+                <option value="all">全部</option>
+                <option value="weknora_api">真实 WeKnora</option>
+                <option value="mock">Mock</option>
+                <option value="none">无 evidence</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </label>
+            <label>
+              <span>Source type</span>
+              <select
+                value={filters.sourceType}
+                onChange={(event) =>
+                  setFilters({ ...filters, sourceType: event.target.value })
+                }
+              >
+                <option value="all">全部</option>
+                <option value="document_chunk">Document chunk</option>
+                <option value="wiki_page">Wiki page</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </label>
+            <label>
+              <span>Evidence</span>
+              <select
+                value={filters.evidenceState}
+                onChange={(event) =>
+                  setFilters({ ...filters, evidenceState: event.target.value })
+                }
+              >
+                <option value="all">全部</option>
+                <option value="no_evidence">No evidence</option>
+                <option value="mock_only">Mock only</option>
+                <option value="weknora">WeKnora</option>
+                <option value="mixed">Mixed</option>
+                <option value="other">Other</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </label>
+            <label>
+              <span>Warning</span>
+              <select
+                value={filters.warningFilter}
+                onChange={(event) =>
+                  setFilters({ ...filters, warningFilter: event.target.value })
+                }
+              >
+                <option value="all">全部</option>
+                <option value="with_warnings">有 warning</option>
+                <option value="no_warnings">无 warning</option>
+              </select>
+            </label>
           </div>
         </section>
 
         <section className="history-results-panel">
           <div className="history-panel-heading">
             <span>Outputs</span>
-            <strong>{filteredOutputs.length}</strong>
+            <strong>{outputs.length}</strong>
           </div>
 
           {error ? <ErrorState message={error} /> : null}
 
           {historyState === "loading" ? (
             <EmptyState text="加载中" loading />
-          ) : filteredOutputs.length === 0 ? (
+          ) : outputs.length === 0 ? (
             <EmptyState icon={FileClock} text="暂无历史" />
           ) : (
             <div className="history-output-list">
-              {filteredOutputs.map((output) => (
+              {outputs.map((output) => (
                 <button
                   className={
                     output.id === selectedOutputId
@@ -330,6 +429,15 @@ export function HistoryPage() {
                   <div>
                     <span>{output.task_type}</span>
                     <StatusBadge status={output.status} />
+                    <span>{evidenceStateLabel(output)}</span>
+                  </div>
+                  <div className="history-output-metrics">
+                    <span>{compactCountLabel("Cites", output.citation_count)}</span>
+                    <span>{compactCountLabel("WeKnora", output.weknora_citation_count)}</span>
+                    <span>{compactCountLabel("Mock", output.mock_citation_count)}</span>
+                    <span>{compactCountLabel("Doc", output.document_citation_count)}</span>
+                    <span>{compactCountLabel("Wiki", output.wiki_citation_count)}</span>
+                    <span>{compactCountLabel("Warn", output.warning_count)}</span>
                   </div>
                   <time>{formatDate(output.created_at)}</time>
                 </button>
@@ -352,6 +460,9 @@ export function HistoryPage() {
             <div className="history-detail-meta">
               <span>{selectedOutput.task_type}</span>
               <span>{selectedOutput.status}</span>
+              <span>{evidenceStateLabel(selectedOutput)}</span>
+              <span>{compactCountLabel("Cites", selectedOutput.citation_count)}</span>
+              <span>{compactCountLabel("Warn", selectedOutput.warning_count)}</span>
               <span>{formatDate(selectedOutput.created_at)}</span>
             </div>
             <pre>{displayContent}</pre>
