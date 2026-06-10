@@ -102,6 +102,36 @@ def normalize_extracted_wiki_page(page: WikiPage) -> WikiPage:
     )
 
 
+def extracted_wiki_fallback_metadata(
+    metadata: dict[str, Any] | None = None,
+    *,
+    slug: str,
+    page_id: str | None = None,
+    status: str = "draft",
+    operation: str = "create",
+) -> dict[str, Any]:
+    normalized = _wiki_metadata(metadata or {}, slug, page_id=page_id)
+    published = status == "published"
+    sync_pending = published or operation in {"update", "publish", "index"}
+    normalized["status"] = status
+    normalized["wiki_state"] = "sync_pending" if sync_pending else "draft"
+    normalized["wiki_message"] = (
+        "Local extracted Wiki page is published locally and waiting for WeKnora sync."
+        if sync_pending
+        else "Local extracted Wiki draft is not searchable by WeKnora."
+    )
+    normalized["wiki_next_action"] = "sync_weknora" if sync_pending else "publish"
+    normalized["wiki_retryable"] = False
+    normalized["wiki_retrievable"] = False
+    normalized["weknora_retrievable"] = False
+    normalized["weknora_sync_status"] = "pending" if sync_pending else "not_synced"
+    normalized["weknora_sync_operation"] = operation
+    normalized["weknora_index_status"] = "not_synced"
+    normalized["sync_conflict_status"] = normalized.get("sync_conflict_status") or "none"
+    normalized["local_publish_state"] = status
+    return normalized
+
+
 def wiki_page_to_extracted_evidence(page: WikiPage) -> Evidence:
     normalized_page = normalize_extracted_wiki_page(page)
     page_id = _wiki_page_id(normalized_page)

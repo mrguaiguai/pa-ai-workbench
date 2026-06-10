@@ -11,6 +11,7 @@ from knowledge_engine.chunking import DocumentChunkCandidate
 from knowledge_engine.chunking import ParagraphChunker
 from knowledge_engine.citations import CitationBuilder
 from knowledge_engine.backends.extracted_schema import EXTRACTED_SOURCE
+from knowledge_engine.backends.extracted_schema import extracted_wiki_fallback_metadata
 from knowledge_engine.backends.extracted_schema import normalize_extracted_chunk_preview
 from knowledge_engine.backends.extracted_schema import normalize_extracted_document
 from knowledge_engine.backends.extracted_schema import normalize_extracted_evidence
@@ -34,6 +35,7 @@ from knowledge_engine.schemas import WikiPageSummary
 from knowledge_engine.vectorstores import VectorStore
 from knowledge_engine.vectorstores import VectorRecord
 from knowledge_engine.vectorstores import get_vector_store
+from knowledge_engine.wiki import InMemoryWikiStore
 from knowledge_engine.wiki import WikiStore
 
 
@@ -70,7 +72,7 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
         self.vector_store = self.components.vector_store or get_vector_store()
         self.embedding_provider = embedding_provider or get_embedding_provider()
         self.citation_builder = self.components.citation_builder or CitationBuilder()
-        self.wiki_store = self.components.wiki_store
+        self.wiki_store = self.components.wiki_store or InMemoryWikiStore()
         self.retriever = self.components.retriever or VectorRetriever(
             embedding_provider=self.embedding_provider,
             vector_store=self.vector_store,
@@ -293,17 +295,215 @@ class ExtractedKnowledgeBackend(KnowledgeEngine):
     def create_wiki_draft(self, output_id: str, metadata: dict | None = None) -> WikiPage:
         self._raise_pending("create_wiki_draft", "I4")
 
-    def create_wiki_page(self, payload: dict) -> WikiPage:
-        self._raise_pending("create_wiki_page", "I2")
+    def create_wiki_page(
+        self,
+        payload: dict,
+        kb_id: str | None = None,
+    ) -> WikiPage:
+        slug = self._wiki_slug(payload)
+        page = WikiPage(
+            slug=slug,
+            title=str(payload.get("title") or "Untitled"),
+            page_type=str(payload.get("page_type") or payload.get("type") or "wiki"),
+            summary=str(payload.get("summary") or ""),
+            content=str(payload.get("content") or payload.get("content_markdown") or ""),
+            citations=self._wiki_payload_citations(payload),
+            source=EXTRACTED_SOURCE,
+            metadata=extracted_wiki_fallback_metadata(
+                self._wiki_payload_metadata(payload, kb_id=kb_id),
+                slug=slug,
+                page_id=self._wiki_page_id(payload, slug),
+                status=str(payload.get("status") or "draft"),
+                operation="create",
+            ),
+        )
+        return self._upsert_wiki_page(page)
 
-    def update_wiki_page(self, slug: str, payload: dict) -> WikiPage:
-        self._raise_pending("update_wiki_page", "I2")
+    def update_wiki_page(
+        self,
+        slug: str,
+        payload: dict,
+        kb_id: str | None = None,
+    ) -> WikiPage:
+        current = self.read_wiki_page(slug, kb_id=kb_id)
+        current_metadata = current.metadata if current is not None else {}
+        current_status = str(current_metadata.get("status") or "draft")
+        page = WikiPage(
+            slug=slug.strip(),
+            title=str(payload.get("title") or (current.title if current else "Untitled")),
+            page_type=str(
+                payload.get("page_type")
+                or payload.get("type")
+                or (current.page_type if current else "wiki")
+            ),
+            summary=str(payload.get("summary") or (current.summary if current else "")),
+            content=str(
+                payload.get("content")
+                or payload.get("content_markdown")
+                or (current.content if current else "")
+            ),
+            citations=(
+                self._wiki_payload_citations(payload)
+                if "citations" in payload
+                else (current.citations if current else [])
+            ),
+            source=EXTRACTED_SOURCE,
+            metadata=extracted_wiki_fallback_metadata(
+                {
+                    **current_metadata,
+                    **self._wiki_payload_metadata(payload, kb_id=kb_id),
+                },
+                slug=slug.strip(),
+                page_id=self._wiki_page_id(payload, slug.strip(), current_metadata),
+                status=str(payload.get("status") or current_status),
+                operation="update",
+            ),
+        )
+        return self._upsert_wiki_page(page)
 
     def publish_wiki_page(self, slug: str) -> WikiPage:
-        self._raise_pending("publish_wiki_page", "I3")
+        current = self.read_wiki_page(slug)
+        if current is None:
+            raise KnowledgeDocumentNotFoundError(f"Wiki page is not registered: {slug}")
+        published = WikiPage(
+            slug=current.slug,
+            title=current.title,
+            page_type=current.page_type,
+            summary=current.summary,
+            content=current.content,
+            citations=current.citations,
+            source=EXTRACTED_SOURCE,
+            metadata=extracted_wiki_fallback_metadata(
+                current.metadata,
+                slug=current.slug,
+                page_id=self._wiki_page_id({}, current.slug, current.metadata),
+                status="published",
+                operation="publish",
+            ),
+        )
+        return self._upsert_wiki_page(published)
 
     def index_wiki_page(self, slug: str) -> dict:
-        self._raise_pending("index_wiki_page", "I5")
+        current = self.read_wiki_page(slug)
+        if current is None:
+            raise KnowledgeDocumentNotFoundError(f"Wiki page is not registered: {slug}")
+        metadata = extracted_wiki_fallback_metadata(
+            current.metadata,
+            slug=current.slug,
+            page_id=self._wiki_page_id({}, current.slug, current.metadata),
+            status=str(current.metadata.get("status") or "draft"),
+            operation="index",
+        )
+        self._upsert_wiki_page(
+            WikiPage(
+                slug=current.slug,
+                title=current.title,
+                page_type=current.page_type,
+                summary=current.summary,
+                content=current.content,
+                citations=current.citations,
+                source=EXTRACTED_SOURCE,
+                metadata=metadata,
+            )
+        )
+        return {
+            "slug": current.slug,
+            "status": metadata["wiki_state"],
+            "source": EXTRACTED_SOURCE,
+            "wiki_retrievable": False,
+            "weknora_retrievable": False,
+            "metadata": metadata,
+        }
+
+    def _upsert_wiki_page(self, page: WikiPage) -> WikiPage:
+        normalized = normalize_extracted_wiki_page(page)
+        upsert = getattr(self.wiki_store, "upsert", None)
+        if callable(upsert):
+            upsert(normalized)
+        return normalized
+
+    @staticmethod
+    def _wiki_slug(payload: dict) -> str:
+        slug = str(payload.get("slug") or "").strip()
+        if slug:
+            return slug
+        title = str(payload.get("title") or "untitled").strip().lower()
+        normalized = "-".join(part for part in title.replace("_", "-").split() if part)
+        return normalized or f"local-wiki-{uuid4().hex[:12]}"
+
+    @staticmethod
+    def _wiki_page_id(
+        payload: dict,
+        slug: str,
+        metadata: dict | None = None,
+    ) -> str:
+        candidates = [
+            payload.get("id"),
+            payload.get("wiki_page_id"),
+            (metadata or {}).get("id"),
+            (metadata or {}).get("wiki_page_id"),
+        ]
+        for candidate in candidates:
+            if candidate not in (None, ""):
+                return str(candidate)
+        return f"extracted:{slug}"
+
+    @staticmethod
+    def _wiki_payload_metadata(payload: dict, kb_id: str | None = None) -> dict:
+        page_metadata = payload.get("page_metadata")
+        metadata = dict(page_metadata) if isinstance(page_metadata, dict) else {}
+        raw_metadata = payload.get("metadata")
+        if isinstance(raw_metadata, dict):
+            metadata.update(raw_metadata)
+        if kb_id:
+            metadata.setdefault("kb_id", kb_id)
+        for key in (
+            "tags",
+            "business_area",
+            "source_output_id",
+            "source_document_ids",
+            "source_citation_ids",
+            "created_by",
+        ):
+            if key in payload:
+                metadata[key] = payload.get(key)
+        return metadata
+
+    def _wiki_payload_citations(self, payload: dict) -> list[Evidence]:
+        raw_citations = payload.get("citations")
+        if not isinstance(raw_citations, list):
+            return []
+        citations: list[Evidence] = []
+        for index, item in enumerate(raw_citations, start=1):
+            if not isinstance(item, dict):
+                continue
+            source_type = str(item.get("source_type") or "document_chunk")
+            chunk_id = item.get("chunk_id")
+            wiki_page_id = item.get("wiki_page_id")
+            evidence_id = (
+                item.get("evidence_id")
+                or (f"document_chunk:{chunk_id}" if chunk_id else None)
+                or (f"wiki_page:{wiki_page_id}" if wiki_page_id else None)
+                or f"wiki_citation:{index}"
+            )
+            citations.append(
+                normalize_extracted_evidence(
+                    Evidence(
+                        document_id=item.get("document_id"),
+                        external_doc_id=item.get("external_doc_id"),
+                        chunk_id=chunk_id,
+                        title=str(item.get("title") or payload.get("title") or "Wiki citation"),
+                        text=str(item.get("text") or item.get("excerpt") or ""),
+                        score=item.get("score"),
+                        source=EXTRACTED_SOURCE,
+                        metadata=item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
+                        evidence_id=str(evidence_id),
+                        source_type=source_type,
+                        wiki_page_id=wiki_page_id,
+                    )
+                )
+            )
+        return citations
 
     def _pipeline_status(self) -> dict[str, str]:
         return {

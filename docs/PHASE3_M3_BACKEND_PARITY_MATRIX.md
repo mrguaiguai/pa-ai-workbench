@@ -20,7 +20,7 @@ real document content.
 | rag_debug | dev-only | supported | partial |
 | wiki_search | dev-only | supported | partial |
 | wiki_read | dev-only | supported | partial |
-| wiki_create_update_publish | unsupported | supported | unsupported |
+| wiki_create_update_publish | unsupported | supported | partial |
 | citation_trace | unsupported | supported | partial |
 | status_recovery | dev-only | supported | partial |
 | real_data_source | unsupported | supported | unsupported |
@@ -33,7 +33,7 @@ real document content.
 | Release evidence | Never release evidence. | Release candidate after live gates pass. | Never release evidence. |
 | Citation trace | unsupported; citations must not be called real. | supported for document chunks and Wiki pages. | partial; local trace only, not WeKnora trace. |
 | Status recovery | dev-only synthetic status. | supported document/Wiki recovery through adapter-safe status checks. | partial local status only. |
-| Wiki | dev-only search/read, no create/update/publish. | supported search/read/create/update/publish. | partial search/read when local store exists, no create/update/publish. |
+| Wiki | dev-only search/read, no create/update/publish. | supported search/read/create/update/publish. | partial local create/update/publish state plus search/read; sync remains pending until WeKnora is available. |
 | Retrieve debug | dev-only synthetic trace. | supported sanitized trace, no raw response or long excerpts. | partial local trace, no WeKnora parity guarantee. |
 | Quality limits | Demo-only ranking and fixed fixtures. | Depends on live WeKnora, embedding, model, KB binding, and release checks. | Local fallback quality, no hybrid/rerank/live indexing guarantee. |
 
@@ -43,8 +43,8 @@ Unsupported capability must not silently succeed:
 
 - `mock.document_chunks` must fail or be absent instead of inventing chunk records.
 - `mock.wiki_create_update_publish` must fail or be absent.
-- `extracted.wiki_create_update_publish` must fail until a dedicated fallback task
-  implements it.
+- `extracted.wiki_create_update_publish` is local fallback only; it must keep
+  `source=extracted`, show sync pending, and never claim WeKnora retrievability.
 - `real_data_source=unsupported` means the backend must not be counted as
   WeKnora release evidence.
 

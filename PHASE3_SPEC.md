@@ -2282,7 +2282,7 @@ fixture multi-KB tests + live smoke 可选。
 | --- | --- | --- |
 | P3-M3-B1 | extracted fallback 与 WeKnora API schema 对齐 | [x] |
 | P3-M3-B2 | Python chunk / retrieval 与 WeKnora 结果对照测试 | [x] |
-| P3-M3-B3 | Wiki fallback 的最小同步策略 | [ ] |
+| P3-M3-B3 | Wiki fallback 的最小同步策略 | [x] |
 | P3-M3-B4 | 可切换 backend 的 E2E smoke | [ ] |
 
 #### P3-M3-B1：extracted fallback 与 WeKnora API schema 对齐
@@ -2350,7 +2350,7 @@ fixture wiki fallback tests。
 风险：
 本地 Wiki 可能与 WeKnora 冲突，需保留 sync conflict 状态。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M3-B4：可切换 backend 的 E2E smoke
 

@@ -163,18 +163,22 @@ def _assert_unsupported_behavior() -> int:
     checks += 1
 
     extracted = ExtractedKnowledgeBackend()
-    for method_name, args in (
-        ("create_wiki_page", ({"slug": "unsupported"},)),
-        ("update_wiki_page", ("unsupported", {"slug": "unsupported"})),
-        ("publish_wiki_page", ("unsupported",)),
-        ("index_wiki_page", ("unsupported",)),
-    ):
-        try:
-            getattr(extracted, method_name)(*args)
-        except NotImplementedError:
-            checks += 1
-            continue
-        raise SmokeError(f"extracted.{method_name} unexpectedly succeeded")
+    created = extracted.create_wiki_page(
+        {
+            "slug": "partial-local",
+            "title": "Partial Local",
+            "content": "Sanitized local fallback body.",
+        }
+    )
+    published = extracted.publish_wiki_page("partial-local")
+    indexed = extracted.index_wiki_page("partial-local")
+    if created.source != "extracted" or published.source != "extracted":
+        raise SmokeError("extracted local Wiki fallback used wrong source")
+    if published.metadata.get("weknora_retrievable") is not False:
+        raise SmokeError("extracted local Wiki fallback claimed WeKnora retrievable")
+    if indexed.get("wiki_retrievable") is not False:
+        raise SmokeError("extracted local Wiki index claimed retrievable")
+    checks += 3
     return checks
 
 

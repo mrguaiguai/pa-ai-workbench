@@ -283,6 +283,15 @@ def _assert_base_contract(fixture: BackendFixture) -> int:
         _assert_wiki_page(created, fixture.expected_source)
         _assert_wiki_page(updated, fixture.expected_source)
         checks += 2
+    elif capabilities["wiki_create_update_publish"] == "partial":
+        created = backend.create_wiki_page(_wiki_payload("contract-created"), kb_id="kb-contract")
+        published = backend.publish_wiki_page("contract-created")
+        indexed = backend.index_wiki_page("contract-created")
+        _assert_wiki_page(created, fixture.expected_source)
+        _assert_wiki_page(published, fixture.expected_source)
+        _assert(indexed.get("source") == fixture.expected_source, "partial wiki index source mismatch")
+        _assert(indexed.get("wiki_retrievable") is False, "partial wiki must not be retrievable")
+        checks += 3
 
     return checks
 
@@ -294,7 +303,7 @@ def _assert_unsupported_contract(fixture: BackendFixture) -> int:
     if capabilities["document_chunks"] == "unsupported":
         _assert_unsupported(backend, "list_document_chunks", "missing-doc")
         checks += 1
-    if capabilities["wiki_create_update_publish"] != "supported":
+    if capabilities["wiki_create_update_publish"] == "unsupported":
         _assert_unsupported(backend, "create_wiki_page", _wiki_payload("unsupported"))
         checks += 1
         _assert_unsupported(backend, "update_wiki_page", "unsupported", _wiki_payload("unsupported"))

@@ -249,6 +249,18 @@ def _page_record_to_read(session: Session, page: WikiPageModel) -> WikiPageRead:
 def _wiki_page_to_read(page: WikiPage) -> WikiPageRead:
     metadata = _normalized_wiki_page_metadata(page)
     wiki_retrievable = bool(metadata.get("weknora_retrievable") or page.source == "weknora_api")
+    wiki_state = str(
+        metadata.get("wiki_state")
+        or ("retrievable" if wiki_retrievable else "unknown")
+    )
+    wiki_message = str(
+        metadata.get("wiki_message")
+        or (
+            "Wiki page was returned by WeKnora."
+            if wiki_retrievable
+            else "Wiki page status is unknown."
+        )
+    )
     return WikiPageRead(
         id=metadata.get("id"),
         slug=page.slug,
@@ -291,16 +303,12 @@ def _wiki_page_to_read(page: WikiPage) -> WikiPageRead:
         embedding_status=metadata.get("embedding_status"),
         vector_id=metadata.get("vector_id"),
         indexed_at=metadata.get("indexed_at"),
-        wiki_state="retrievable" if wiki_retrievable else "unknown",
-        wiki_message=(
-            "Wiki page was returned by WeKnora."
-            if wiki_retrievable
-            else "Wiki page status is unknown."
-        ),
-        wiki_next_action="ask" if wiki_retrievable else "refresh",
-        wiki_retryable=False,
+        wiki_state=wiki_state,
+        wiki_message=wiki_message,
+        wiki_next_action=metadata.get("wiki_next_action") or ("ask" if wiki_retrievable else "refresh"),
+        wiki_retryable=bool(metadata.get("wiki_retryable")),
         wiki_retrievable=wiki_retrievable,
-        wiki_index_timed_out=False,
+        wiki_index_timed_out=bool(metadata.get("wiki_index_timed_out")),
         wiki_processing_seconds=0,
         created_at=metadata.get("created_at"),
         updated_at=metadata.get("updated_at"),

@@ -66,7 +66,7 @@ BACKEND_CAPABILITY_MATRIX: dict[str, dict[str, str]] = {
         "rag_debug": "partial",
         "wiki_search": "partial",
         "wiki_read": "partial",
-        "wiki_create_update_publish": "unsupported",
+        "wiki_create_update_publish": "partial",
         "citation_trace": "partial",
         "status_recovery": "partial",
         "real_data_source": "unsupported",

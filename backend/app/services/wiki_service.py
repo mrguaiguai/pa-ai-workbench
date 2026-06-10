@@ -376,6 +376,16 @@ def wiki_status_summary(page: WikiPageModel) -> dict[str, Any]:
     index_status = str(metadata.get("weknora_index_status") or "").strip().lower()
     retrievable = bool(metadata.get("weknora_retrievable"))
 
+    if metadata.get("local_wiki_fallback") and page.status == WikiPageStatus.PUBLISHED:
+        return {
+            "wiki_state": "sync_pending",
+            "wiki_message": "Local fallback Wiki page is waiting for WeKnora sync.",
+            "wiki_next_action": "recover",
+            "wiki_retryable": False,
+            "wiki_retrievable": False,
+            "wiki_index_timed_out": False,
+            "wiki_processing_seconds": processing_seconds,
+        }
     if sync_status == "failed":
         return {
             "wiki_state": "publish_failed" if sync_operation == "publish" else "sync_failed",
@@ -483,6 +493,14 @@ def _sync_page_to_weknora(
     operation: str,
 ) -> None:
     settings = get_settings()
+    if settings.knowledge_backend == "extracted":
+        _mark_local_wiki_fallback(
+            session=session,
+            page=page,
+            operation=operation,
+            backend_name="extracted",
+        )
+        return
     if settings.knowledge_backend != "weknora_api":
         return
 
@@ -644,6 +662,39 @@ def _mark_weknora_sync_failed(
             "weknora_sync_operation": operation,
             "weknora_synced_at": None,
             "weknora_sync_error": _excerpt(error, 240),
+        },
+    )
+
+
+def _mark_local_wiki_fallback(
+    session: Session,
+    page: WikiPageModel,
+    operation: str,
+    backend_name: str,
+) -> None:
+    metadata = page_metadata(page)
+    published = page.status == WikiPageStatus.PUBLISHED
+    sync_pending = published or operation in {"update", "publish"}
+    if sync_pending and page.embedding_status == "pending":
+        page.embedding_status = "sync_pending"
+    session.add(page)
+    _set_page_metadata(
+        session=session,
+        page=page,
+        metadata={
+            **metadata,
+            "fallback_backend": backend_name,
+            "fallback_explicit": True,
+            "local_wiki_fallback": True,
+            "weknora_sync_status": "pending" if sync_pending else "not_synced",
+            "weknora_sync_operation": operation,
+            "weknora_synced_at": None,
+            "weknora_sync_error": None,
+            "weknora_index_status": "not_synced",
+            "weknora_retrievable": False,
+            "wiki_state": "sync_pending" if sync_pending else "draft",
+            "wiki_retrievable": False,
+            "sync_conflict_status": metadata.get("sync_conflict_status") or "none",
         },
     )
 
