@@ -1,3 +1,4 @@
+import time
 from typing import Any
 
 from agent.context import AgentContext
@@ -153,7 +154,30 @@ class KnowledgeQaWorkflow:
         )
         if not request.document_ids:
             return citations
-        scoped_document_ids = set(request.document_ids)
+        scoped = self._scope_citations(citations, request.document_ids)
+        if scoped:
+            return scoped
+        return self._retrieve_scoped_retry(request)
+
+    def _retrieve_scoped_retry(self, request: AgentRequest) -> list[Citation]:
+        for attempt in range(3):
+            retry_citations = self.retriever.retrieve(
+                query=request.query_or_topic,
+                filters={"document_ids": request.document_ids},
+                top_k=self.top_k,
+            )
+            scoped = self._scope_citations(retry_citations, request.document_ids)
+            if scoped or attempt == 2:
+                return scoped
+            time.sleep(2)
+        return []
+
+    @staticmethod
+    def _scope_citations(
+        citations: list[Citation],
+        document_ids: list[str],
+    ) -> list[Citation]:
+        scoped_document_ids = set(document_ids)
         return [
             citation
             for citation in citations
@@ -164,6 +188,8 @@ class KnowledgeQaWorkflow:
     @staticmethod
     def _build_filters(request: AgentRequest) -> dict[str, Any]:
         filters: dict[str, Any] = {}
+        if request.document_ids:
+            filters["document_ids"] = request.document_ids
         if request.business_area:
             filters["business_area"] = request.business_area
         if request.document_type:

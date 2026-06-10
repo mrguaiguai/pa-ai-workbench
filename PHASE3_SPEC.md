@@ -1652,7 +1652,7 @@ WeKnora runtime 变成 release gate：
 | P3-M2-A2 | 文档处理状态轮询与失败恢复 | [x] |
 | P3-M2-A3 | Wiki 发布/索引异步状态恢复 | [x] |
 | P3-M2-A4 | Agent 无证据和弱证据策略增强 | [x] |
-| P3-M2-A5 | PA real LLM 接入与 DeepSeek smoke | [ ] |
+| P3-M2-A5 | PA real LLM 接入与 DeepSeek smoke | [x] |
 
 #### P3-M2-A0：Real runtime preflight gate
 
@@ -1824,7 +1824,7 @@ fallback draft、mock chat、mock RAG、keyword-only retrieve 均不能计入 re
 公网模型 API 延迟、限流和费用会影响 smoke 稳定性；checker 应区分配置失败、
 网络失败、模型失败和 WeKnora evidence 失败。
 
-状态：[ ]
+状态：[x]
 
 ### M2-B：引用定位与检索调试
 

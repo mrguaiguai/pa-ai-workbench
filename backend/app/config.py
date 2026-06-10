@@ -6,6 +6,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+WORKBENCH_DIR = BACKEND_DIR.parent
+REPO_ROOT = WORKBENCH_DIR.parent
+load_dotenv(REPO_ROOT / ".env")
+load_dotenv(WORKBENCH_DIR / ".env")
 load_dotenv(BACKEND_DIR / ".env")
 
 
