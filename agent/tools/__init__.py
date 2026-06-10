@@ -4,6 +4,8 @@ from agent.tools.capability_guard import AgentCapabilityError
 from agent.tools.capability_guard import AgentCapabilityGuard
 from agent.tools.evidence_policy import EvidencePolicy
 from agent.tools.evidence_policy import EvidencePolicyResult
+from agent.tools.faithfulness_checker import FaithfulnessChecker
+from agent.tools.faithfulness_checker import FaithfulnessCheckResult
 from agent.tools.registry import ToolDefinition
 from agent.tools.registry import ToolRegistry
 from agent.tools.registry import create_builtin_tool_registry
@@ -24,6 +26,8 @@ __all__ = [
     "AgentCapabilityGuard",
     "EvidencePolicy",
     "EvidencePolicyResult",
+    "FaithfulnessChecker",
+    "FaithfulnessCheckResult",
     "InMemoryWikiDraftWriter",
     "RealRetrieverTool",
     "RetrieverTool",

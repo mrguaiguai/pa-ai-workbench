@@ -2381,7 +2381,7 @@ backend switch smoke scripts。
 | P3-M3-C1 | WeKnora hybrid/rerank 能力参数透出设计 | [x] |
 | P3-M3-C2 | PA retrieval quality golden set | [x] |
 | P3-M3-C3 | RAG 质量指标与人工评价表 | [x] |
-| P3-M3-C4 | Agent 输出 faithfulness 回归验收 | [ ] |
+| P3-M3-C4 | Agent 输出 faithfulness 回归验收 | [x] |
 
 #### P3-M3-C1：WeKnora hybrid/rerank 能力参数透出设计
 
@@ -2469,7 +2469,7 @@ golden set + Agent regression。
 风险：
 自动 faithfulness 只能辅助，关键样例需人工 review。
 
-状态：[ ]
+状态：[x]
 
 ### M3-D：本地产品化交付
 
