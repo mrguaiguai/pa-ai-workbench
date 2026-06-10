@@ -368,6 +368,8 @@ export type RagDebugResponse = {
   filters: Record<string, unknown>;
   top_k: number;
   requested_source_type: string | null;
+  retrieval_options: Record<string, unknown>;
+  debug_trace: Array<Record<string, unknown>>;
   items: RagDebugEvidence[];
   total: number;
   warnings: string[];

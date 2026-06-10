@@ -287,6 +287,14 @@ def backend_capability_snapshot(
             release_eligible=release_eligible,
             fail_closed=fail_closed,
         ),
+        "retrieval_parameters": {
+            "schema_version": "p3-m3-c1",
+            "requires_explicit_enable": True,
+            "default_forwarding": False,
+            "hybrid": "reserved" if active_backend == "weknora_api" else "local_or_unsupported",
+            "rerank": "reserved" if active_backend == "weknora_api" else "unsupported",
+            "threshold": "reserved" if active_backend == "weknora_api" else "local_or_unsupported",
+        },
         "notes": [
             "Mock and extracted results must not be counted as WeKnora release evidence.",
             "Extracted is selectable only as an explicit backend, never as automatic fallback.",

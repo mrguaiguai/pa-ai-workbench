@@ -31,6 +31,10 @@ from knowledge_engine.schemas import KnowledgeDocument
 from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
 from knowledge_engine.log_context import current_weknora_log_context
+from knowledge_engine.retrieval import RETRIEVAL_OPTIONS_KEY
+from knowledge_engine.retrieval import normalize_retrieval_options
+from knowledge_engine.retrieval import retrieval_debug_trace
+from knowledge_engine.retrieval import retrieval_options_payload
 
 
 WEKNORA_LOGGER = logging.getLogger("pa_ai_workbench.weknora")
@@ -242,7 +246,12 @@ class WeKnoraApiBackend(KnowledgeEngine):
         payload = self._retrieve_payload(normalized_query, filters)
         data = self._request_json("POST", "/api/v1/knowledge-search", payload)
         items = self._unwrap_items(data)
-        evidence_items = [self._to_evidence(item) for item in items if isinstance(item, dict)]
+        retrieval_metadata = self._retrieval_metadata(filters)
+        evidence_items = [
+            self._to_evidence(item, retrieval_metadata)
+            for item in items
+            if isinstance(item, dict)
+        ]
         if source_type_filter:
             evidence_items = [
                 evidence
@@ -637,6 +646,10 @@ class WeKnoraApiBackend(KnowledgeEngine):
         )
         if knowledge_ids:
             payload["knowledge_ids"] = knowledge_ids
+        options = normalize_retrieval_options(filters.get(RETRIEVAL_OPTIONS_KEY))
+        options_payload = retrieval_options_payload(options)
+        if options_payload:
+            payload[RETRIEVAL_OPTIONS_KEY] = options_payload
         return payload
 
     def _wiki_kb_id(self, kb_id: str | None = None) -> str:
@@ -696,8 +709,20 @@ class WeKnoraApiBackend(KnowledgeEngine):
         return []
 
     @staticmethod
-    def _to_evidence(item: dict) -> Evidence:
+    def _retrieval_metadata(filters: dict) -> dict:
+        options = normalize_retrieval_options(filters.get(RETRIEVAL_OPTIONS_KEY))
+        options_payload = retrieval_options_payload(options)
+        return {
+            "retrieval_options": options,
+            "retrieval_debug_trace": retrieval_debug_trace(options),
+            "weknora_retrieval_options_forwarded": bool(options_payload),
+        }
+
+    @staticmethod
+    def _to_evidence(item: dict, retrieval_metadata: dict | None = None) -> Evidence:
         metadata = WeKnoraApiBackend._search_result_metadata(item)
+        if retrieval_metadata:
+            metadata.update(retrieval_metadata)
         source_type = WeKnoraApiBackend._source_type(item, metadata)
         chunk_id = None if source_type == "wiki_page" else item.get("chunk_id") or item.get("id")
         wiki_page_id = (

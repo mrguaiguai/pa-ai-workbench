@@ -7,6 +7,9 @@ from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
+from knowledge_engine.retrieval import RETRIEVAL_OPTIONS_KEY
+from knowledge_engine.retrieval import normalize_retrieval_options
+from knowledge_engine.retrieval import retrieval_debug_trace
 
 
 class DocumentRead(BaseModel):
@@ -408,6 +411,7 @@ RAG_FILTER_KEYS = {
     "knowledge_base_id",
     "knowledge_base_ids",
     "knowledge_ids",
+    RETRIEVAL_OPTIONS_KEY,
     "source_type",
 }
 
@@ -418,11 +422,19 @@ def _validate_rag_filters(filters: dict) -> dict:
         raise ValueError("Unsupported RAG filter(s): " + ", ".join(unknown))
     source_type = filters.get("source_type")
     if source_type in (None, ""):
+        if RETRIEVAL_OPTIONS_KEY in filters:
+            filters[RETRIEVAL_OPTIONS_KEY] = normalize_retrieval_options(
+                filters.get(RETRIEVAL_OPTIONS_KEY)
+            )
         return filters
     normalized = _normalize_source_type(source_type)
     if normalized not in {"document_chunk", "wiki_page"}:
         raise ValueError("source_type must be document_chunk or wiki_page")
     filters["source_type"] = normalized
+    if RETRIEVAL_OPTIONS_KEY in filters:
+        filters[RETRIEVAL_OPTIONS_KEY] = normalize_retrieval_options(
+            filters.get(RETRIEVAL_OPTIONS_KEY)
+        )
     return filters
 
 
@@ -485,10 +497,22 @@ class RagDebugResponse(BaseModel):
     filters: dict
     top_k: int
     requested_source_type: str | None = None
+    retrieval_options: dict = Field(default_factory=dict)
+    debug_trace: list[dict] = Field(default_factory=list)
     items: list[RagDebugEvidenceRead]
     total: int
     warnings: list[str] = Field(default_factory=list)
     error: RagDebugError | None = None
+
+    @model_validator(mode="after")
+    def hydrate_debug_trace(self) -> "RagDebugResponse":
+        if not self.retrieval_options:
+            self.retrieval_options = normalize_retrieval_options(
+                self.filters.get(RETRIEVAL_OPTIONS_KEY)
+            )
+        if not self.debug_trace:
+            self.debug_trace = retrieval_debug_trace(self.retrieval_options)
+        return self
 
 
 class WikiPageSummaryRead(BaseModel):

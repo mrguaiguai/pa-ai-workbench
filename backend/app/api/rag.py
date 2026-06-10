@@ -15,6 +15,9 @@ from app.services.rag_service import retrieve_evidence
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.errors import WeKnoraUnavailableError
 from knowledge_engine.log_context import weknora_log_context
+from knowledge_engine.retrieval import RETRIEVAL_OPTIONS_KEY
+from knowledge_engine.retrieval import normalize_retrieval_options
+from knowledge_engine.retrieval import retrieval_debug_trace
 from knowledge_engine.schemas import Evidence
 
 router = APIRouter(prefix="/api/rag", tags=["rag"])
@@ -52,6 +55,9 @@ DEBUG_METADATA_ALLOWLIST = {
     "weknora_wiki_page_slug",
     "slug",
     "page_type",
+    "retrieval_debug_trace",
+    "retrieval_options",
+    "weknora_retrieval_options_forwarded",
 }
 
 
@@ -77,6 +83,10 @@ def retrieve_rag_debug(request: RagDebugRequest) -> RagDebugResponse:
     trace_id = uuid4().hex
     query = _short_text(request.query, DEBUG_QUERY_LIMIT)
     filters = _sanitize_mapping(request.filters)
+    retrieval_options = normalize_retrieval_options(
+        request.filters.get(RETRIEVAL_OPTIONS_KEY)
+    )
+    debug_trace = retrieval_debug_trace(retrieval_options)
     requested_source_type = _optional_str(
         request.filters.get("source_type")
         or request.filters.get("source")
@@ -97,6 +107,8 @@ def retrieve_rag_debug(request: RagDebugRequest) -> RagDebugResponse:
             filters=filters,
             top_k=request.top_k,
             requested_source_type=requested_source_type,
+            retrieval_options=retrieval_options,
+            debug_trace=debug_trace,
             items=[],
             total=0,
             warnings=[],
@@ -110,6 +122,8 @@ def retrieve_rag_debug(request: RagDebugRequest) -> RagDebugResponse:
             filters=filters,
             top_k=request.top_k,
             requested_source_type=requested_source_type,
+            retrieval_options=retrieval_options,
+            debug_trace=debug_trace,
             items=[],
             total=0,
             warnings=[],
@@ -138,6 +152,8 @@ def retrieve_rag_debug(request: RagDebugRequest) -> RagDebugResponse:
         filters=filters,
         top_k=request.top_k,
         requested_source_type=requested_source_type,
+        retrieval_options=retrieval_options,
+        debug_trace=debug_trace,
         items=items,
         total=len(items),
         warnings=warnings,

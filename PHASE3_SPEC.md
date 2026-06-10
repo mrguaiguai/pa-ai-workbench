@@ -2378,7 +2378,7 @@ backend switch smoke scripts。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P3-M3-C1 | WeKnora hybrid/rerank 能力参数透出设计 | [ ] |
+| P3-M3-C1 | WeKnora hybrid/rerank 能力参数透出设计 | [x] |
 | P3-M3-C2 | PA retrieval quality golden set | [ ] |
 | P3-M3-C3 | RAG 质量指标与人工评价表 | [ ] |
 | P3-M3-C4 | Agent 输出 faithfulness 回归验收 | [ ] |
@@ -2403,7 +2403,7 @@ contract tests + optional live debug。
 风险：
 WeKnora 参数变化快，PA schema 应保持保守。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M3-C2：PA retrieval quality golden set
 
