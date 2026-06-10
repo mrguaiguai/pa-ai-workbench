@@ -470,5 +470,12 @@ class WikiPageRead(BaseModel):
     embedding_status: str | None = None
     vector_id: str | None = None
     indexed_at: datetime | None = None
+    wiki_state: str = "draft"
+    wiki_message: str | None = None
+    wiki_next_action: str | None = None
+    wiki_retryable: bool = False
+    wiki_retrievable: bool = False
+    wiki_index_timed_out: bool = False
+    wiki_processing_seconds: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None

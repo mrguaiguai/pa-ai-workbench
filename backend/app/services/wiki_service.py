@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from typing import Any
 
@@ -50,6 +51,9 @@ class WikiDraftSourceNotFoundError(Exception):
 
 class WikiPageIndexError(Exception):
     pass
+
+
+WIKI_INDEX_TIMEOUT_SECONDS = 30 * 60
 
 
 class SqlModelWikiStore(WikiStore):
@@ -271,6 +275,171 @@ def publish_wiki_page_record(session: Session, slug: str) -> WikiPageModel:
     return page
 
 
+def refresh_wiki_page_status(session: Session, slug: str) -> WikiPageModel:
+    page = get_wiki_page_record(session, slug)
+    if page is None:
+        raise WikiPageNotFoundError(f"Wiki page not found: {slug}")
+
+    settings = get_settings()
+    if settings.knowledge_backend != "weknora_api":
+        return page
+
+    metadata = page_metadata(page)
+    if page.status != WikiPageStatus.PUBLISHED:
+        return page
+    if metadata.get("weknora_sync_status") != "synced":
+        return page
+
+    kb_id = str(metadata.get("kb_id") or settings.weknora_default_kb_id or "").strip()
+    if not kb_id:
+        _mark_weknora_sync_failed(
+            session=session,
+            page=page,
+            operation="refresh",
+            error="WEKNORA_DEFAULT_KB_ID is not configured",
+        )
+        return page
+
+    backend = _weknora_backend(settings)
+    try:
+        remote_page = backend.read_wiki_page(page.slug, kb_id=kb_id)
+    except KnowledgeBackendUnavailableError as exc:
+        _mark_weknora_index_status(
+            session=session,
+            page=page,
+            status="refresh_failed",
+            error=str(exc),
+            retrievable=False,
+        )
+        return page
+    if remote_page is None:
+        _mark_weknora_index_status(
+            session=session,
+            page=page,
+            status="published_not_retrievable",
+            error="WeKnora page is not readable after publish.",
+            retrievable=False,
+        )
+        return page
+
+    if _page_is_retrievable(backend=backend, page=page, kb_id=kb_id):
+        now = utc_now()
+        page.embedding_status = "indexed"
+        page.indexed_at = page.indexed_at or now
+        metadata = {
+            **page_metadata(page),
+            "weknora_index_status": "retrievable",
+            "weknora_retrievable": True,
+            "weknora_retrievable_at": now.isoformat(),
+            "weknora_index_error": None,
+        }
+        _set_page_metadata(session=session, page=page, metadata=metadata)
+        return page
+
+    status = "index_timeout" if _wiki_index_timed_out(page) else "indexing"
+    _mark_weknora_index_status(
+        session=session,
+        page=page,
+        status=status,
+        error=(
+            "Published WeKnora Wiki page is not retrievable before timeout."
+            if status == "indexing"
+            else "Published WeKnora Wiki page did not become retrievable before timeout."
+        ),
+        retrievable=False,
+    )
+    return page
+
+
+def recover_wiki_page_status(session: Session, slug: str) -> tuple[WikiPageModel, str]:
+    page = get_wiki_page_record(session, slug)
+    if page is None:
+        raise WikiPageNotFoundError(f"Wiki page not found: {slug}")
+    summary = wiki_status_summary(page)
+    if summary["wiki_state"] == "retrievable":
+        return page, "Wiki page is already retrievable."
+    if page.status != WikiPageStatus.PUBLISHED:
+        return page, "Draft Wiki pages are not retrievable until published."
+
+    _sync_page_to_weknora(session=session, page=page, operation="publish")
+    refreshed = refresh_wiki_page_status(session=session, slug=slug)
+    return refreshed, "Wiki publish/index status recovery submitted."
+
+
+def wiki_status_summary(page: WikiPageModel) -> dict[str, Any]:
+    metadata = page_metadata(page)
+    processing_seconds = _wiki_processing_seconds(page)
+    sync_status = str(metadata.get("weknora_sync_status") or "").strip().lower()
+    sync_operation = str(metadata.get("weknora_sync_operation") or "").strip().lower()
+    index_status = str(metadata.get("weknora_index_status") or "").strip().lower()
+    retrievable = bool(metadata.get("weknora_retrievable"))
+
+    if sync_status == "failed":
+        return {
+            "wiki_state": "publish_failed" if sync_operation == "publish" else "sync_failed",
+            "wiki_message": _wiki_sync_error(metadata) or "WeKnora Wiki sync failed.",
+            "wiki_next_action": "recover",
+            "wiki_retryable": True,
+            "wiki_retrievable": False,
+            "wiki_index_timed_out": False,
+            "wiki_processing_seconds": processing_seconds,
+        }
+    if page.status != WikiPageStatus.PUBLISHED:
+        return {
+            "wiki_state": "draft",
+            "wiki_message": "Draft Wiki pages are not searchable.",
+            "wiki_next_action": "publish",
+            "wiki_retryable": False,
+            "wiki_retrievable": False,
+            "wiki_index_timed_out": False,
+            "wiki_processing_seconds": processing_seconds,
+        }
+    if retrievable or index_status == "retrievable" or page.indexed_at:
+        return {
+            "wiki_state": "retrievable",
+            "wiki_message": "Published Wiki page is retrievable by WeKnora RAG.",
+            "wiki_next_action": "ask",
+            "wiki_retryable": False,
+            "wiki_retrievable": True,
+            "wiki_index_timed_out": False,
+            "wiki_processing_seconds": processing_seconds,
+        }
+    if index_status in {"index_timeout", "published_not_retrievable", "refresh_failed"}:
+        return {
+            "wiki_state": index_status,
+            "wiki_message": _wiki_index_error(metadata) or "Published Wiki page is not retrievable.",
+            "wiki_next_action": "recover",
+            "wiki_retryable": True,
+            "wiki_retrievable": False,
+            "wiki_index_timed_out": index_status == "index_timeout",
+            "wiki_processing_seconds": processing_seconds,
+        }
+    if sync_status == "synced":
+        timed_out = _wiki_index_timed_out(page)
+        return {
+            "wiki_state": "index_timeout" if timed_out else "indexing",
+            "wiki_message": (
+                "Published Wiki page did not become retrievable before timeout."
+                if timed_out
+                else "Published Wiki page is waiting for WeKnora retrieval indexing."
+            ),
+            "wiki_next_action": "recover" if timed_out else "refresh",
+            "wiki_retryable": timed_out,
+            "wiki_retrievable": False,
+            "wiki_index_timed_out": timed_out,
+            "wiki_processing_seconds": processing_seconds,
+        }
+    return {
+        "wiki_state": "syncing",
+        "wiki_message": "Wiki page is waiting for WeKnora sync.",
+        "wiki_next_action": "refresh",
+        "wiki_retryable": False,
+        "wiki_retrievable": False,
+        "wiki_index_timed_out": False,
+        "wiki_processing_seconds": processing_seconds,
+    }
+
+
 def list_output_citations_for_wiki(
     session: Session,
     output_id: str,
@@ -474,6 +643,33 @@ def _mark_weknora_sync_failed(
     )
 
 
+def _mark_weknora_index_status(
+    session: Session,
+    page: WikiPageModel,
+    status: str,
+    error: str | None = None,
+    retrievable: bool = False,
+) -> None:
+    metadata = page_metadata(page)
+    if status in {"indexing", "index_timeout", "published_not_retrievable", "refresh_failed"}:
+        page.embedding_status = "indexing"
+    if retrievable:
+        page.embedding_status = "indexed"
+        page.indexed_at = page.indexed_at or utc_now()
+    session.add(page)
+    _set_page_metadata(
+        session=session,
+        page=page,
+        metadata={
+            **metadata,
+            "weknora_index_status": status,
+            "weknora_retrievable": retrievable,
+            "weknora_index_checked_at": utc_now().isoformat(),
+            "weknora_index_error": _excerpt(error, 240) if error else None,
+        },
+    )
+
+
 def _set_page_metadata(
     session: Session,
     page: WikiPageModel,
@@ -484,6 +680,69 @@ def _set_page_metadata(
     session.add(page)
     session.commit()
     session.refresh(page)
+
+
+def _page_is_retrievable(
+    backend: WeKnoraApiBackend,
+    page: WikiPageModel,
+    kb_id: str,
+) -> bool:
+    query = page.title or page.slug
+    try:
+        evidence_items = backend.retrieve(
+            query=query,
+            filters={"knowledge_base_ids": [kb_id], "source_type": "wiki_page"},
+            top_k=8,
+        )
+    except KnowledgeBackendUnavailableError:
+        return False
+    for evidence in evidence_items:
+        if evidence.source_type != "wiki_page":
+            continue
+        metadata = evidence.metadata or {}
+        candidates = {
+            evidence.wiki_page_id,
+            metadata.get("weknora_wiki_page_slug"),
+            metadata.get("weknora_slug"),
+            metadata.get("slug"),
+            metadata.get("weknora_wiki_page_id"),
+            metadata.get("id"),
+        }
+        if page.slug in {str(item) for item in candidates if item}:
+            return True
+    return False
+
+
+def _wiki_index_timed_out(page: WikiPageModel) -> bool:
+    if page.status != WikiPageStatus.PUBLISHED:
+        return False
+    return _wiki_processing_seconds(page) >= _wiki_index_timeout_seconds()
+
+
+def _wiki_processing_seconds(page: WikiPageModel) -> int:
+    baseline = page.published_at or page.updated_at
+    delta = utc_now() - baseline
+    return max(int(delta.total_seconds()), 0)
+
+
+def _wiki_index_timeout_seconds() -> int:
+    value = os.getenv("WIKI_INDEX_TIMEOUT_SECONDS")
+    if value is None:
+        return WIKI_INDEX_TIMEOUT_SECONDS
+    try:
+        return max(int(value), 1)
+    except ValueError:
+        return WIKI_INDEX_TIMEOUT_SECONDS
+
+
+def _wiki_sync_error(metadata: dict[str, Any]) -> str | None:
+    value = metadata.get("weknora_sync_error")
+    return _excerpt(str(value), 240) if value else None
+
+
+def _wiki_index_error(metadata: dict[str, Any]) -> str | None:
+    value = metadata.get("weknora_index_error")
+    return _excerpt(str(value), 240) if value else None
 
 
 def page_tags(page: WikiPageModel) -> list[str]:

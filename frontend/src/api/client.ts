@@ -294,6 +294,13 @@ export type WikiPage = {
   embedding_status?: string | null;
   vector_id?: string | null;
   indexed_at?: string | null;
+  wiki_state: string;
+  wiki_message: string | null;
+  wiki_next_action: string | null;
+  wiki_retryable: boolean;
+  wiki_retrievable: boolean;
+  wiki_index_timed_out: boolean;
+  wiki_processing_seconds: number;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -471,6 +478,14 @@ export const apiClient = {
     }),
   publishWikiPage: (slug: string) =>
     request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(slug)}/publish`, {
+      method: "POST",
+    }),
+  refreshWikiStatus: (slug: string) =>
+    request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(slug)}/refresh-status`, {
+      method: "POST",
+    }),
+  recoverWikiStatus: (slug: string) =>
+    request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(slug)}/recover-status`, {
       method: "POST",
     }),
   reindexWikiPage: (slug: string) =>

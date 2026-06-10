@@ -159,6 +159,9 @@ function indexStatus(page: WikiPageDetail | null) {
   if (!page) {
     return "not loaded";
   }
+  if (page.wiki_state) {
+    return page.wiki_state.replace(/_/g, " ");
+  }
   const status = statusLabel(page.status);
   const syncStatus = metadataString(page.metadata, "weknora_sync_status");
   const weknoraIndexStatus = metadataString(page.metadata, "weknora_index_status");
@@ -186,38 +189,43 @@ function indexStatusClass(page: WikiPageDetail | null) {
 
 function ragAvailability(page: WikiPageDetail | null) {
   const status = indexStatus(page);
-  if (status === "indexed searchable") {
+  if (page?.wiki_retrievable || status === "retrievable" || status === "indexed searchable") {
     return {
       label: "可被 RAG 检索",
       className: "searchable",
-      hint: "页面已发布并完成索引。",
+      hint: page?.wiki_message || "页面已发布并完成索引。",
     };
   }
   if (status === "indexing") {
     return {
       label: "索引中",
       className: "indexing",
-      hint: "页面已发布，但索引完成前不要视为可检索。",
+      hint: page?.wiki_message || "页面已发布，但索引完成前不要视为可检索。",
     };
   }
-  if (status === "sync failed") {
+  if (status === "sync failed" || status === "publish failed") {
     return {
       label: "同步失败",
       className: "failed",
-      hint: "发布或同步 WeKnora 失败，需要查看错误并重试。",
+      hint: page?.wiki_message || "发布或同步 WeKnora 失败，需要查看错误并重试。",
     };
   }
-  if (status === "published not indexed") {
+  if (
+    status === "published not indexed" ||
+    status === "published not retrievable" ||
+    status === "index timeout" ||
+    status === "refresh failed"
+  ) {
     return {
       label: "未进入 RAG",
       className: "not-indexed",
-      hint: "页面已发布，但尚未完成索引。",
+      hint: page?.wiki_message || "页面已发布，但尚未完成索引。",
     };
   }
   return {
     label: "草稿不可检索",
     className: "draft",
-    hint: "发布前不会进入 RAG 检索。",
+    hint: page?.wiki_message || "发布前不会进入 RAG 检索。",
   };
 }
 
@@ -451,8 +459,10 @@ export function WikiPage() {
 
     setIndexState("loading");
     setError(null);
-    apiClient
-      .reindexWikiPage(page.slug)
+    const request = page.wiki_retryable
+      ? apiClient.recoverWikiStatus(page.slug)
+      : apiClient.refreshWikiStatus(page.slug);
+    request
       .then((response) => {
         setPage(response);
         setSelectedSlug(response.slug);
@@ -581,9 +591,27 @@ export function WikiPage() {
               <button
                 className={pageState === "loading" ? "icon-button loading" : "icon-button"}
                 type="button"
-                title="刷新"
+                title="刷新状态"
                 disabled={!selectedSlug || pageState === "loading"}
-                onClick={() => selectedSlug && loadPage(selectedSlug)}
+                onClick={() => {
+                  if (!selectedSlug) {
+                    return;
+                  }
+                  setPageState("loading");
+                  setError(null);
+                  apiClient
+                    .refreshWikiStatus(selectedSlug)
+                    .then((response) => {
+                      setPage(response);
+                      setSelectedSlug(response.slug);
+                      setPageState("idle");
+                      upsertResult(response);
+                    })
+                    .catch((refreshError: unknown) => {
+                      setError(errorMessage(refreshError));
+                      setPageState("error");
+                    });
+                }}
               >
                 {pageState === "loading" ? (
                   <Loader2 size={16} aria-hidden="true" />
@@ -722,7 +750,7 @@ export function WikiPage() {
               <button
                 className={indexState === "loading" ? "icon-button loading" : "icon-button"}
                 type="button"
-                title="重新索引"
+                title={page?.wiki_retryable ? "恢复 Wiki 状态" : "刷新 Wiki 状态"}
                 disabled={!page || pageStatus !== "published" || indexState === "loading"}
                 onClick={reindexPage}
               >
@@ -750,10 +778,14 @@ export function WikiPage() {
                 <span>{`vector: ${page.vector_id ?? "not set"}`}</span>
                 <span>{`weknora sync: ${metadataString(page.metadata, "weknora_sync_status") ?? "not set"}`}</span>
                 <span>{`weknora index: ${metadataString(page.metadata, "weknora_index_status") ?? "not set"}`}</span>
+                <span>{`retrievable: ${page.wiki_retrievable ? "yes" : "no"}`}</span>
+                <span>{`timeout: ${page.wiki_index_timed_out ? "yes" : "no"}`}</span>
               </div>
-              {metadataString(page.metadata, "weknora_sync_error") ? (
+              {metadataString(page.metadata, "weknora_sync_error") ||
+              metadataString(page.metadata, "weknora_index_error") ? (
                 <div className="wiki-index-error">
-                  {metadataString(page.metadata, "weknora_sync_error")}
+                  {metadataString(page.metadata, "weknora_sync_error") ||
+                    metadataString(page.metadata, "weknora_index_error")}
                 </div>
               ) : null}
             </div>

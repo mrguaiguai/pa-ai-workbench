@@ -1650,7 +1650,7 @@ WeKnora runtime 变成 release gate：
 | P3-M2-A0 | Real runtime preflight gate | [x] |
 | P3-M2-A1 | WeKnora Adapter 超时、重试、错误码规范 | [x] |
 | P3-M2-A2 | 文档处理状态轮询与失败恢复 | [x] |
-| P3-M2-A3 | Wiki 发布/索引异步状态恢复 | [ ] |
+| P3-M2-A3 | Wiki 发布/索引异步状态恢复 | [x] |
 | P3-M2-A4 | Agent 无证据和弱证据策略增强 | [ ] |
 | P3-M2-A5 | PA real LLM 接入与 DeepSeek smoke | [ ] |
 
@@ -1765,7 +1765,7 @@ fixture 状态测试 + `smoke_weknora_wiki_m1.py` 或 M2 扩展 smoke。
 WeKnora Wiki 没有显式 index job 时，需要用 publish -> retrieve 验证作为最终
 ready 信号。
 
-状态：[ ]
+状态：[x]
 
 #### P3-M2-A4：Agent 无证据和弱证据策略增强
 

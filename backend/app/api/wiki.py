@@ -32,8 +32,11 @@ from app.services.wiki_service import page_source_document_ids
 from app.services.wiki_service import page_tags
 from app.services.wiki_service import publish_wiki_page_record
 from app.services.wiki_service import read_wiki_page
+from app.services.wiki_service import recover_wiki_page_status
+from app.services.wiki_service import refresh_wiki_page_status
 from app.services.wiki_service import search_wiki_pages
 from app.services.wiki_service import update_wiki_page_record
+from app.services.wiki_service import wiki_status_summary
 from app.services.wiki_service import WikiDraftSourceNotFoundError
 from app.services.wiki_service import WikiPageIndexError
 from app.services.wiki_service import WikiPageConflictError
@@ -147,6 +150,30 @@ def publish_wiki(
     return _page_record_to_read(session=session, page=page)
 
 
+@router.post("/pages/{slug}/refresh-status", response_model=WikiPageRead)
+def refresh_wiki_status(
+    slug: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> WikiPageRead:
+    try:
+        page = refresh_wiki_page_status(session=session, slug=slug)
+    except WikiPageNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _page_record_to_read(session=session, page=page)
+
+
+@router.post("/pages/{slug}/recover-status", response_model=WikiPageRead)
+def recover_wiki_status(
+    slug: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> WikiPageRead:
+    try:
+        page, _message = recover_wiki_page_status(session=session, slug=slug)
+    except WikiPageNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _page_record_to_read(session=session, page=page)
+
+
 @router.post("/pages/{slug}/reindex", response_model=WikiPageRead)
 def reindex_wiki(
     slug: str,
@@ -189,6 +216,7 @@ def _page_record_to_read(session: Session, page: WikiPageModel) -> WikiPageRead:
             _citation_record_to_metadata(citation) for citation in citations
         ],
     }
+    status_summary = wiki_status_summary(page)
     return WikiPageRead(
         id=page.id,
         slug=page.slug,
@@ -212,6 +240,7 @@ def _page_record_to_read(session: Session, page: WikiPageModel) -> WikiPageRead:
         embedding_status=page.embedding_status,
         vector_id=page.vector_id,
         indexed_at=page.indexed_at,
+        **status_summary,
         created_at=page.created_at,
         updated_at=page.updated_at,
     )
@@ -219,6 +248,7 @@ def _page_record_to_read(session: Session, page: WikiPageModel) -> WikiPageRead:
 
 def _wiki_page_to_read(page: WikiPage) -> WikiPageRead:
     metadata = _normalized_wiki_page_metadata(page)
+    wiki_retrievable = bool(metadata.get("weknora_retrievable") or page.source == "weknora_api")
     return WikiPageRead(
         id=metadata.get("id"),
         slug=page.slug,
@@ -261,6 +291,17 @@ def _wiki_page_to_read(page: WikiPage) -> WikiPageRead:
         embedding_status=metadata.get("embedding_status"),
         vector_id=metadata.get("vector_id"),
         indexed_at=metadata.get("indexed_at"),
+        wiki_state="retrievable" if wiki_retrievable else "unknown",
+        wiki_message=(
+            "Wiki page was returned by WeKnora."
+            if wiki_retrievable
+            else "Wiki page status is unknown."
+        ),
+        wiki_next_action="ask" if wiki_retrievable else "refresh",
+        wiki_retryable=False,
+        wiki_retrievable=wiki_retrievable,
+        wiki_index_timed_out=False,
+        wiki_processing_seconds=0,
         created_at=metadata.get("created_at"),
         updated_at=metadata.get("updated_at"),
     )

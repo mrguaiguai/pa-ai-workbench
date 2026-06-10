@@ -1868,6 +1868,7 @@ p {
 }
 
 .wiki-index-state.published-not-indexed,
+.wiki-index-state.published-not-retrievable,
 .wiki-index-state.not-indexed {
   border-color: #edd8a8;
   background: #fff8e8;
@@ -1882,7 +1883,10 @@ p {
 }
 
 .wiki-index-state.failed,
-.wiki-index-state.sync-failed {
+.wiki-index-state.sync-failed,
+.wiki-index-state.publish-failed,
+.wiki-index-state.index-timeout,
+.wiki-index-state.refresh-failed {
   border-color: #edc7c2;
   background: #fff1ef;
   color: #9b382d;
