@@ -2031,7 +2031,7 @@ frontend build + fixture 历史数据检查。
 | P3-M2-D2 | PA task / adapter request id 串联 | [x] |
 | P3-M2-D3 | 试点反馈问题模板与回归清单 | [x] |
 | P3-M2-D4 | 内网部署 README 和故障排查文档 | [x] |
-| P3-M2-D5 | M2 release checker 与回归 gate | [ ] |
+| P3-M2-D5 | M2 release checker 与回归 gate | [x] |
 
 #### P3-M2-D1：WeKnora 调用日志元数据与脱敏
 
@@ -2152,7 +2152,7 @@ static checker + optional live M2 smokes。
 风险：
 checker 过慢会被绕过；拆分 static 与 live gates。
 
-状态：[ ]
+状态：[x]
 
 ### M3-A：Adapter 抽象增强
 
