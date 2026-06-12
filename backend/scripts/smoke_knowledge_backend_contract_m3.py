@@ -122,6 +122,33 @@ class FixtureWeKnoraBackend(WeKnoraApiBackend):
                 }
             }
         if method == "POST" and path == "/api/v1/knowledge-search":
+            if payload and payload.get("knowledge_ids"):
+                _assert(
+                    "knowledge_base_ids" not in payload,
+                    "scoped document retrieve should not also request whole-KB search",
+                )
+                return {
+                    "data": [
+                        {
+                            "id": "wk-chunk-contract-other",
+                            "knowledge_id": "wk-doc-contract-other",
+                            "knowledge_base_id": "kb-contract",
+                            "title": "Out Of Scope Evidence",
+                            "content": "This evidence must be filtered by the PA adapter.",
+                            "score": 0.99,
+                            "metadata": {"fixture": "contract"},
+                        },
+                        {
+                            "id": "wk-chunk-contract-001",
+                            "knowledge_id": "wk-doc-contract-001",
+                            "knowledge_base_id": "kb-contract",
+                            "title": "Contract Fixture Evidence",
+                            "content": "Contract fixture evidence summary.",
+                            "score": 0.91,
+                            "metadata": {"fixture": "contract"},
+                        },
+                    ]
+                }
             return {
                 "data": [
                     {
@@ -262,6 +289,18 @@ def _assert_base_contract(fixture: BackendFixture) -> int:
         evidence = backend.retrieve("contract", filters={}, top_k=5)
         _assert_evidence_list(evidence, fixture.expected_source, real=fixture.name == "weknora_api")
         checks += 1
+        if fixture.name == "weknora_api":
+            scoped = backend.retrieve(
+                "contract",
+                filters={"external_doc_ids": ["wk-doc-contract-001"]},
+                top_k=5,
+            )
+            _assert(len(scoped) == 1, "scoped WeKnora retrieve should drop out-of-scope evidence")
+            _assert(
+                scoped[0].external_doc_id == "wk-doc-contract-001",
+                "scoped WeKnora retrieve returned wrong document id",
+            )
+            checks += 1
 
     if capabilities["wiki_search"] in SUPPORTED_OR_PARTIAL:
         summaries = backend.search_wiki(_wiki_query(fixture.name), kb_id=_wiki_kb_id(fixture.name), limit=5)

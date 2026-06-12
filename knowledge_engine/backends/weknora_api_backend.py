@@ -247,11 +247,18 @@ class WeKnoraApiBackend(KnowledgeEngine):
         data = self._request_json("POST", "/api/v1/knowledge-search", payload)
         items = self._unwrap_items(data)
         retrieval_metadata = self._retrieval_metadata(filters)
+        knowledge_scope = _knowledge_scope_filter(filters)
         evidence_items = [
             self._to_evidence(item, retrieval_metadata)
             for item in items
             if isinstance(item, dict)
         ]
+        if knowledge_scope:
+            evidence_items = [
+                evidence
+                for evidence in evidence_items
+                if evidence.external_doc_id in knowledge_scope
+            ]
         if source_type_filter:
             evidence_items = [
                 evidence
@@ -635,17 +642,12 @@ class WeKnoraApiBackend(KnowledgeEngine):
 
     def _retrieve_payload(self, query: str, filters: dict) -> dict:
         payload: dict[str, object] = {"query": query}
-        targets = self.kb_resolver.resolve_many(filters, operation="retrieve")
-        payload["knowledge_base_ids"] = [target.kb_id for target in targets]
-
-        knowledge_ids = _list_filter(
-            filters.get("knowledge_ids")
-            or filters.get("document_ids")
-            or filters.get("external_doc_ids")
-            or filters.get("external_doc_id")
-        )
+        knowledge_ids = _knowledge_scope_filter(filters)
         if knowledge_ids:
             payload["knowledge_ids"] = knowledge_ids
+        else:
+            targets = self.kb_resolver.resolve_many(filters, operation="retrieve")
+            payload["knowledge_base_ids"] = [target.kb_id for target in targets]
         options = normalize_retrieval_options(filters.get(RETRIEVAL_OPTIONS_KEY))
         options_payload = retrieval_options_payload(options)
         if options_payload:
@@ -999,6 +1001,15 @@ def _list_filter(value: object) -> list[str]:
     else:
         values = [str(value).strip()]
     return [item for item in values if item]
+
+
+def _knowledge_scope_filter(filters: dict) -> list[str]:
+    return _list_filter(
+        filters.get("knowledge_ids")
+        or filters.get("document_ids")
+        or filters.get("external_doc_ids")
+        or filters.get("external_doc_id")
+    )
 
 
 def _multipart_body(boundary: str, file_path: Path, fields: dict[str, str]) -> bytes:

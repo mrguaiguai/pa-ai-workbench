@@ -138,7 +138,7 @@ def _run_live_smoke(config: SmokeConfig, temp_dir: Path) -> dict[str, str]:
     document = _upload_fixture(backend, document_path)
     external_doc_id = _require_external_doc_id(document)
     status = _wait_until_indexed(backend, external_doc_id, config)
-    evidence = _retrieve_evidence(backend, external_doc_id, query)
+    evidence = _wait_for_retrievable_evidence(backend, external_doc_id, query, config)
     _assert_traceable_document_evidence(evidence, external_doc_id)
     return {
         "external_doc_id": external_doc_id,
@@ -229,30 +229,35 @@ def _wait_until_indexed(
     )
 
 
-def _retrieve_evidence(
+def _wait_for_retrievable_evidence(
     backend: WeKnoraApiBackend,
     external_doc_id: str,
     query: str,
+    config: SmokeConfig,
 ) -> Evidence:
-    try:
-        evidence_items = backend.retrieve(
-            query=query,
-            filters={
-                "external_doc_ids": [external_doc_id],
-                "source_type": "document_chunk",
-            },
-            top_k=20,
-        )
-    except KnowledgeBackendUnavailableError as exc:
-        raise SmokeError(f"retrieve failed: {exc}") from exc
-    if not evidence_items:
-        raise SmokeError("retrieve returned no evidence for uploaded smoke document")
-    for evidence in evidence_items:
-        if evidence.external_doc_id == external_doc_id:
-            return evidence
+    deadline = time.monotonic() + config.wait_seconds
+    last_count = 0
+    while time.monotonic() <= deadline:
+        try:
+            evidence_items = backend.retrieve(
+                query=query,
+                filters={
+                    "external_doc_ids": [external_doc_id],
+                    "source_type": "document_chunk",
+                },
+                top_k=20,
+            )
+        except KnowledgeBackendUnavailableError as exc:
+            raise SmokeError(f"retrieve failed: {exc}") from exc
+        last_count = len(evidence_items)
+        for evidence in evidence_items:
+            if evidence.external_doc_id == external_doc_id:
+                return evidence
+        time.sleep(config.poll_seconds)
     raise SmokeError(
-        "retrieve returned evidence, but none matched uploaded document "
-        f"{external_doc_id}"
+        "retrieve did not return traceable evidence for uploaded document "
+        f"{external_doc_id} within {config.wait_seconds}s "
+        f"(last evidence count after scope filtering: {last_count})"
     )
 
 
