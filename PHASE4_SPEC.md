@@ -274,7 +274,7 @@ RAG / Wiki 调试页用于测试和定位问题，可以开放：
 | --- | --- | --- |
 | P4-A1 | 合成脱敏测试语料规范定稿 | [x] |
 | P4-A2 | 测试问题集与期望命中矩阵规范 | [x] |
-| P4-A3 | 测试语料安全检查规则 | [ ] |
+| P4-A3 | 测试语料安全检查规则 | [x] |
 | P4-A4 | 合成脱敏测试语料包生成 | [x] |
 
 #### P4-A1：合成脱敏测试语料规范定稿
@@ -558,7 +558,73 @@ Phase 4 问题集用于把检索调试从“看起来回答不错”变成可复
 风险：
 测试阶段最容易把真实资料误提交，必须先把边界写清楚。
 
-状态：[ ]
+规则输出：
+
+#### P4-A3.1 禁止内容清单
+
+Phase 4 测试语料只能使用合成脱敏内容。任何新增或替换语料、问题集、命中矩阵和验收记录中，均禁止出现：
+
+| 类型 | 禁止内容 | 处理要求 |
+| --- | --- | --- |
+| 真实主体 | 真实公司、真实机构、真实客户、真实项目、真实个人 | 必须替换为虚构名称，不得只做部分遮挡 |
+| 真实标识 | 真实政策编号、真实合同编号、真实监管编号、真实工单号 | 必须改为虚构编号，例如 `SYN-POLICY-001` |
+| 联系信息 | 手机号、邮箱、身份证号、地址、银行卡号 | 不得进入 fixture；如需格式测试，使用明显虚构样例 |
+| 私有系统 | 真实内网地址、私有系统 URL、内部域名、数据库地址 | 不得提交；用 `example.invalid` 或文字说明替代 |
+| 凭据密钥 | API Key、service token、Bearer token、secret、password、数据库连接串 | 发现即阻断提交，不能进入 diff |
+| 真实文件 | 上传文件、客户资料、真实日志、数据库、缓存、导出包 | 不得放入 `backend/fixtures/phase4_rag_wiki_qa/` |
+| 模型输出 | 未脱敏模型输出、真实用户问答、真实 prompt / completion | 必须人工重写为合成材料后再使用 |
+
+#### P4-A3.2 人工安全检查清单
+
+每次新增或修改 `backend/fixtures/phase4_rag_wiki_qa/` 或相关 spec 前，必须人工确认：
+
+1. 文档标题、正文、表格、脚注、引用片段均不含真实公司、真实个人、真实客户或真实项目。
+2. 所有政策、法规、案例、FAQ、Wiki 种子材料均为虚构，不能复刻真实政策编号或真实案例细节。
+3. 所有锚点均为 `TEST-RAG-*`、`TEST-WIKI-*` 或 `TEST-DISTRACTOR-*`，不夹带真实业务 ID。
+4. `manifest.json`、`questions.json`、`hit_matrix.md` 中的标题、答案要点和主要检查点不包含敏感信息。
+5. 无答案问题不得暗示真实监管部门、真实客户或真实个人信息。
+6. 干扰材料只能是合成材料，不得从真实活动安排、真实会议纪要或真实排期复制。
+7. 提交前检查 `git status --ignored --short`，确认 `.env`、上传文件、数据库、日志、`backend/data/`、`backend/uploads/`、`frontend/dist/`、`node_modules/` 等没有被 stage。
+
+#### P4-A3.3 后续可脚本化检查方向
+
+后续如需把安全检查自动化，可新增只读 checker，但不在 P4-A3 中实现。脚本化方向：
+
+1. 扫描 fixture 文档和 JSON 中的敏感关键词：`API Key`、`service token`、`Bearer`、`password`、`secret`、`jdbc:`、`postgres://`、`mysql://`。
+2. 扫描常见个人信息模式：手机号、邮箱、身份证样式、银行卡样式、URL 和内网 IP。
+3. 校验 `manifest.json` 中所有 `safety` 字段为 true。
+4. 校验所有文档只包含允许锚点前缀：`TEST-RAG-`、`TEST-WIKI-`、`TEST-DISTRACTOR-`。
+5. 校验 `questions.json` 中的 `expected_anchors` 和 `forbidden_anchors` 均来自 manifest。
+6. 输出只读报告，不自动改写语料，避免把误报修正成新的失真内容。
+
+#### P4-A3.4 提交前阻断规则
+
+出现以下任一情况时，必须停止 commit 并报告：
+
+- `git status --short` 显示 `.env`、数据库、日志、上传文件、真实导出文件或未脱敏输出被修改或新增。
+- `git status --ignored --short` 中的敏感路径被显式 stage。
+- diff 中出现 API Key、service token、Bearer token、私有 URL 或数据库连接串。
+- fixture 文档中出现真实公司、真实个人、真实客户、真实项目或真实政策编号。
+- 问题集或命中矩阵要求系统回答真实客户名称、真实监管口径或真实内网资料。
+
+允许提交的范围仅限：
+
+- 合成脱敏 Markdown fixture。
+- `manifest.json`、`questions.json`、`hit_matrix.md`。
+- 与本阶段任务直接相关的 spec、测试脚本或只读 checker。
+
+#### P4-A3.5 安全验收记录口径
+
+完成每次语料或问题集相关任务时，报告中必须说明安全检查层级：
+
+- `fixture`：只验证合成脱敏 fixture 与 spec。
+- `mock`：只验证 mock 行为，不代表真实 RAG / Wiki 安全验收。
+- `local live`：本地真实链路，但不得使用真实敏感资料。
+- `真实 WeKnora live`：只能使用已批准的脱敏材料，且不能提交上传结果、日志或数据库。
+
+无论哪一层，mock / fixture 结果都不能冒充真实 RAG / Wiki live 验收。
+
+状态：[x]
 
 #### P4-A4：合成脱敏测试语料包生成
 
