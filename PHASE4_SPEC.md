@@ -661,7 +661,7 @@ P4-A1 到 P4-A3 的语料、问题集和安全规则。
 | --- | --- | --- |
 | P4-B1 | RAG 调试参数前端规划 | [x] |
 | P4-B2 | RAG 检索质量基线指标 | [x] |
-| P4-B3 | 文档 / Wiki 混合检索对照测试规划 | [ ] |
+| P4-B3 | 文档 / Wiki 混合检索对照测试规划 | [x] |
 
 #### P4-B1：RAG 调试参数前端规划
 
@@ -855,7 +855,74 @@ RAG 调试参数、Wiki 发布检索要求、问题集。
 风险：
 混合检索如果不拆开测试，会难以判断问题来自文档索引还是 Wiki 索引。
 
-状态：[ ]
+规划输出：
+
+#### P4-B3.1 对照测试目标
+
+文档 / Wiki 混合检索对照测试用于定位问题来源：是文档索引未命中、Wiki 发布后未进入检索、混合检索排序不稳定，还是回答阶段引用选择错误。每个对照测试必须在同一验收层级内比较，不得把 fixture / mock / local live / 真实 WeKnora live 混在一起判断。
+
+对照范围：
+
+- 文档-only：只允许 `source_type=document_chunk`。
+- Wiki-only：只允许 `source_type=wiki_page`。
+- all-source：不传 `source_type`，允许 document_chunk 和 wiki_page 同时返回。
+
+#### P4-B3.2 测试问题分组
+
+| 分组 | 问题示例 | 对照目的 |
+| --- | --- | --- |
+| 文档-only 基线 | P4Q-001 到 P4Q-012、P4Q-014 到 P4Q-016、P4Q-022 到 P4Q-024 | 验证政策、法规、案例、FAQ 和版本冲突主要由 `document_chunk` 支撑 |
+| Wiki-only 基线 | P4Q-017 到 P4Q-019 | 验证 Wiki 发布并索引后能以 `wiki_page` 独立命中 |
+| 混合引用 | P4Q-013 | 验证 all-source 下可同时返回 `document_chunk` 与 `wiki_page` |
+| 无答案 / 干扰排除 | P4Q-020 到 P4Q-023 | 验证错误召回不应升级为错误引用或编造答案 |
+
+#### P4-B3.3 执行步骤
+
+同一问题至少按以下顺序执行：
+
+1. 准备材料：确认 `backend/fixtures/phase4_rag_wiki_qa/documents/*.md` 已进入当前验收层级的知识库。
+2. Wiki 准备：涉及 Wiki 的问题，先将 `TEST-WIKI-001` 作为 Wiki 草稿发布，并确认索引状态可检索。
+3. 文档-only：在 RAG debug 中设置来源为“仅文档”，实际 filters 应包含 `source_type=document_chunk`。
+4. Wiki-only：在 RAG debug 中设置来源为“仅 Wiki”，实际 filters 应包含 `source_type=wiki_page`。
+5. all-source：在 RAG debug 中设置来源为“全部来源”，不传 `source_type`。
+6. 统一参数：同一轮对照保持相同 `top_k`、KB ID、Document IDs、business_area、document_type、score threshold、hybrid 和 rerank 设置。
+7. 记录结果：分别记录命中锚点、rank、score、source_type、evidence_id、chunk_id、wiki_page_id 和人工结论。
+
+#### P4-B3.4 判定口径
+
+| 场景 | 通过 | 警告 | 失败 |
+| --- | --- | --- | --- |
+| 文档-only | 文档题命中期望 `TEST-RAG-*`，且 source_type 为 `document_chunk` | 期望锚点命中但 rank 过低，或出现少量无关文档 | 未命中期望文档，或返回 `wiki_page` |
+| Wiki-only | Wiki 题命中 `TEST-WIKI-001`，且 source_type 为 `wiki_page` | 命中 Wiki 但缺少 `wiki_page_id` 或排序过低 | Wiki 题不命中，或返回 `document_chunk` |
+| all-source | 混合题可同时看到 document_chunk 和 wiki_page，或按问题要求命中正确来源 | 只命中一种来源但答案仍可部分成立 | 混合题关键来源缺失，或错误来源主导答案 |
+| 无答案 | 即使命中相似材料，也提示依据不足 | 错误召回出现但未被引用 | 把错误召回当作依据或编造答案 |
+| 干扰排除 | 不引用 forbidden_anchors 作为政策 / 法规依据 | forbidden_anchors 排名靠后但未被引用 | forbidden_anchors 被当作主要依据 |
+
+#### P4-B3.5 记录模板
+
+每个问题建议记录三行，分别对应 document-only、Wiki-only、all-source：
+
+| 字段 | 说明 |
+| --- | --- |
+| 问题 ID | 例如 `P4Q-013` |
+| 对照范围 | 文档-only / Wiki-only / all-source |
+| 请求 filters | 记录是否包含 `source_type=document_chunk`、`source_type=wiki_page` 或不传 source_type |
+| top_k 与调试参数 | 记录 `top_k`、threshold、hybrid、rerank |
+| 实际命中 | 锚点、rank、score |
+| source_type | `document_chunk` / `wiki_page` / 其他 |
+| 追溯字段 | `evidence_id`、`chunk_id`、`wiki_page_id` |
+| 人工判断 | pass / warn / fail |
+| 备注 | 错误召回、相似文档混淆、无答案拒答或版本冲突说明 |
+
+#### P4-B3.6 常见定位结论
+
+- 文档-only 失败、Wiki-only 正常：优先检查文档上传、chunking、文档索引和 document filter。
+- 文档-only 正常、Wiki-only 失败：优先检查 Wiki 发布、索引状态和 `source_type=wiki_page` 映射。
+- 两者单独正常、all-source 失败：优先检查混合排序、score threshold、hybrid / rerank 设置和引用选择。
+- all-source 命中但知识问答引用错误：优先检查回答阶段的 citation 绑定和 evidence 选择，不要先改检索。
+- 无答案问题命中相似材料：记录为错误召回风险，但最终回答仍应依据不足。
+
+状态：[x]
 
 ### P4-C：Wiki 创建、发布、索引、检索闭环
 
