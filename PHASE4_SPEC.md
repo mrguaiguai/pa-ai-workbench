@@ -928,7 +928,7 @@ RAG 调试参数、Wiki 发布检索要求、问题集。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P4-C1 | Wiki 测试闭环验收流程 | [ ] |
+| P4-C1 | Wiki 测试闭环验收流程 | [x] |
 | P4-C2 | Wiki citation 追溯验收规则 | [ ] |
 | P4-C3 | Wiki 状态中文化规划 | [ ] |
 
@@ -955,7 +955,67 @@ Wiki 闭环测试步骤。
 风险：
 只验证页面显示 published 不等于 Wiki 已进入 RAG 检索。
 
-状态：[ ]
+流程输出：
+
+#### P4-C1.1 测试前置条件
+
+Wiki 闭环测试使用合成脱敏材料 `TEST-WIKI-001`，不得使用真实 Wiki 页面、真实内部知识库或真实客户资料。开始前确认：
+
+1. `backend/fixtures/phase4_rag_wiki_qa/documents/008_timeliness_wiki_seed.md` 可作为 Wiki 种子材料。
+2. 与 Wiki 关联的问题已在 `questions.json` 中定义，重点包括 P4Q-013、P4Q-017、P4Q-018、P4Q-019。
+3. RAG debug 可按 `source_type=wiki_page` 过滤 Wiki evidence。
+4. 当前验收层级已标明为 fixture、mock、local live 或真实 WeKnora live。
+5. 若使用真实 WeKnora live，只能上传合成脱敏材料，不提交上传产物、日志、数据库或 `.env`。
+
+#### P4-C1.2 Wiki 闭环步骤
+
+Wiki 测试闭环必须按以下顺序执行并记录结果：
+
+1. 创建草稿：将 `TEST-WIKI-001` 种子材料创建为 Wiki 草稿，标题建议使用“时限管理专题 Wiki 种子材料”，slug 建议使用稳定测试值，例如 `phase4-timeliness-wiki-seed`。
+2. 编辑草稿：确认草稿正文包含 `TEST-WIKI-001`、关联政策锚点、关联法规锚点、关联案例锚点和“常见误区”段落。
+3. 保存草稿：保存后重新打开页面，确认标题、摘要、正文、业务域、标签和来源引用未丢失。
+4. 发布：执行 Wiki 发布操作，确认页面状态从 draft 进入 published 或等价发布状态。
+5. 刷新索引：发布后执行刷新索引状态或 reindex 操作，不能只看 published；必须记录 `embedding_status`、`indexed_at`、`wiki_retrievable`、`weknora_sync_status`、`weknora_index_status`。
+6. RAG debug 命中：在 RAG debug 中使用 Wiki-only 范围，即 `source_type=wiki_page`，测试 P4Q-017、P4Q-018、P4Q-019 是否命中 `TEST-WIKI-001`。
+7. 混合检索：在 all-source 范围测试 P4Q-013，确认结果可同时记录 Wiki evidence 和文档 evidence。
+8. 知识问答引用：在正式知识问答或 `knowledge_qa` 流程中测试 Wiki 相关问题，确认回答引用中能展示 Wiki 来源，且不会把 Wiki evidence 伪装成文档 evidence。
+
+#### P4-C1.3 每步记录字段
+
+| 步骤 | 必记字段 |
+| --- | --- |
+| 创建草稿 | slug、title、page_type、business_area、source refs、创建时间 |
+| 编辑草稿 | 是否包含 `TEST-WIKI-001`、关联锚点、常见误区、脱敏说明 |
+| 发布 | 发布前 status、发布后 status、published_at、发布风险提示 |
+| 刷新索引 | embedding_status、indexed_at、vector_id、wiki_retrievable、wiki_index_timed_out |
+| RAG debug | query、top_k、filters、trace_id、rank、source_type、wiki_page_id、evidence_id |
+| 知识问答引用 | 问题 ID、答案要点、引用类型、引用标题、是否依据不足 |
+
+#### P4-C1.4 通过 / 警告 / 失败口径
+
+| 检查项 | 通过 | 警告 | 失败 |
+| --- | --- | --- | --- |
+| 草稿创建 | 可保存并重新读取，正文包含 `TEST-WIKI-001` | 元信息不完整但正文完整 | 草稿无法创建或锚点丢失 |
+| 发布 | 状态变为 published，发布时间可见 | published 但来源引用为空 | 发布失败或状态不稳定 |
+| 索引 | 刷新索引后显示可检索，或可通过 RAG debug 命中 | published 但暂未 indexed，需要继续等待或重试 | published 后长期不可检索且无错误说明 |
+| Wiki-only 检索 | P4Q-017 到 P4Q-019 命中 `TEST-WIKI-001` 且 source_type 为 `wiki_page` | 命中但缺少 `wiki_page_id` 或排序过低 | 不命中 Wiki，或返回 `document_chunk` |
+| all-source 混合检索 | P4Q-013 能同时记录 Wiki 与文档 evidence | 只命中一种来源但答案部分可用 | 关键来源缺失或错误来源主导答案 |
+| 知识问答引用 | 回答展示 Wiki 引用并覆盖答案要点 | 回答正确但引用展示不完整 | 回答无引用、引用错误或编造 Wiki 来源 |
+
+#### P4-C1.5 闭环验收结论
+
+Wiki 闭环只有在以下条件同时满足时才算通过：
+
+- 草稿创建、编辑、保存、发布均可复现。
+- 发布后执行过刷新索引或 reindex，并记录索引状态。
+- RAG debug 的 Wiki-only 测试能命中 `source_type=wiki_page`。
+- all-source 测试能解释 Wiki evidence 与 document_chunk evidence 的关系。
+- 知识问答引用能展示 Wiki 来源，并能与原始文档引用区分。
+- 验收报告明确当前层级是 fixture、mock、local live 还是真实 WeKnora live。
+
+如果只完成发布但没有 RAG debug 命中，不能认定 Wiki 检索闭环通过；如果只在 mock / fixture 通过，不能冒充真实 WeKnora live 通过。
+
+状态：[x]
 
 #### P4-C2：Wiki citation 追溯验收规则
 
