@@ -275,6 +275,7 @@ RAG / Wiki 调试页用于测试和定位问题，可以开放：
 | P4-A1 | 合成脱敏测试语料规范定稿 | [ ] |
 | P4-A2 | 测试问题集与期望命中矩阵规范 | [ ] |
 | P4-A3 | 测试语料安全检查规则 | [ ] |
+| P4-A4 | 合成脱敏测试语料包生成 | [x] |
 
 #### P4-A1：合成脱敏测试语料规范定稿
 
@@ -350,6 +351,35 @@ RAG / Wiki 调试页用于测试和定位问题，可以开放：
 测试阶段最容易把真实资料误提交，必须先把边界写清楚。
 
 状态：[ ]
+
+#### P4-A4：合成脱敏测试语料包生成
+
+目标：
+生成第一版可上传测试的合成脱敏语料包，用于验证 RAG、Wiki、知识问答、引用追溯、无答案拒答和干扰召回。
+
+范围：
+只新增合成脱敏 fixture 文件，不改前端、后端、RAG 逻辑、Wiki 逻辑或 Agent 逻辑；不自动上传到系统。
+
+输入：
+P4-A1 到 P4-A3 的语料、问题集和安全规则。
+
+输出：
+`backend/fixtures/phase4_rag_wiki_qa/`，包含 9 份独立 Markdown 测试文档、`manifest.json`、`questions.json` 和 `hit_matrix.md`。
+
+验收标准：
+9 份文档均有唯一锚点；问题集包含 24 个问题；命中矩阵覆盖所有问题；内容均为虚构脱敏材料；问题覆盖精确事实、条款定位、跨文档综合、案例复盘、Wiki 检索、无答案、干扰排除和新旧版本冲突。
+
+验证方式：
+`test -d backend/fixtures/phase4_rag_wiki_qa/documents`；
+`find backend/fixtures/phase4_rag_wiki_qa/documents -name "*.md" | wc -l`；
+`python -m json.tool backend/fixtures/phase4_rag_wiki_qa/manifest.json`；
+`python -m json.tool backend/fixtures/phase4_rag_wiki_qa/questions.json`；
+`rg -n "TEST-RAG|TEST-WIKI|TEST-DISTRACTOR" backend/fixtures/phase4_rag_wiki_qa`。
+
+风险：
+合成语料过于规整会高估检索质量；后续 live 测试仍需用脱敏真实形态材料复核。
+
+状态：[x]
 
 ### P4-B：RAG 调试页参数与检索质量基线
 

@@ -1,0 +1,112 @@
+{
+  "corpus_id": "phase4_rag_wiki_qa_v1",
+  "version": "1.0",
+  "purpose": "Synthetic sanitized corpus for testing RAG, Wiki retrieval, knowledge QA, citation traceability, insufficient-evidence refusal, distractor suppression, and version-conflict handling.",
+  "safety": {
+    "synthetic": true,
+    "sanitized": true,
+    "no_real_company": true,
+    "no_real_person": true,
+    "no_real_customer": true,
+    "no_real_project": true,
+    "no_private_endpoint": true,
+    "no_real_policy_number": true,
+    "no_api_key_or_token": true
+  },
+  "recommended_upload_order": [
+    "001_old_reporting_policy.md",
+    "002_new_reporting_policy.md",
+    "003_data_retention_audit_rules.md",
+    "004_external_publication_rules.md",
+    "005_bluebay_delay_case.md",
+    "006_beichen_correction_case.md",
+    "007_ingestion_qa_faq.md",
+    "008_timeliness_wiki_seed.md",
+    "009_distractor_event_schedule.md"
+  ],
+  "documents": [
+    {
+      "anchor": "TEST-RAG-001",
+      "filename": "documents/001_old_reporting_policy.md",
+      "title": "旧版专项信息报送时限政策",
+      "type": "policy_notice",
+      "test_purpose": ["old_policy", "deadline", "version_conflict", "citation_accuracy"],
+      "key_terms": ["五个工作日", "七个工作日", "待复核附件", "简化报送", "例外台账"]
+    },
+    {
+      "anchor": "TEST-RAG-002",
+      "filename": "documents/002_new_reporting_policy.md",
+      "title": "新版专项信息报送时限政策",
+      "type": "policy_notice",
+      "test_purpose": ["new_policy", "deadline", "risk_level", "version_conflict"],
+      "key_terms": ["三个工作日", "事项卡片", "依据不足", "风险分级", "未确认附件"]
+    },
+    {
+      "anchor": "TEST-RAG-003",
+      "filename": "documents/003_data_retention_audit_rules.md",
+      "title": "数据留存与访问审计法规条款",
+      "type": "regulation_articles",
+      "test_purpose": ["article_lookup", "retention_period", "audit_fields", "similar_clause_disambiguation"],
+      "key_terms": ["九十日", "一百八十日", "访问审计字段", "trace id", "删除前检查命中矩阵"]
+    },
+    {
+      "anchor": "TEST-RAG-004",
+      "filename": "documents/004_external_publication_rules.md",
+      "title": "外部材料引用与发布校验法规条款",
+      "type": "regulation_articles",
+      "test_purpose": ["article_lookup", "publication_check", "citation_validation", "withdrawal"],
+      "key_terms": ["引用校验", "待补证据", "可发布", "版本冲突", "撤回说明"]
+    },
+    {
+      "anchor": "TEST-RAG-005",
+      "filename": "documents/005_bluebay_delay_case.md",
+      "title": "蓝湾模拟支付延迟响应历史案例",
+      "type": "historical_case",
+      "test_purpose": ["case_timeline", "delay_root_cause", "case_disambiguation"],
+      "key_terms": ["蓝湾模拟支付", "晚两个工作日", "资料清单先行", "附件版本不一致", "复核退回"]
+    },
+    {
+      "anchor": "TEST-RAG-006",
+      "filename": "documents/006_beichen_correction_case.md",
+      "title": "北辰样例信贷信息更正历史案例",
+      "type": "historical_case",
+      "test_purpose": ["case_timeline", "correction", "version_misuse", "case_disambiguation"],
+      "key_terms": ["北辰样例信贷", "过期口径", "版本日期", "新版优先", "更正记录"]
+    },
+    {
+      "anchor": "TEST-RAG-007",
+      "filename": "documents/007_ingestion_qa_faq.md",
+      "title": "资料入库、索引与问答 FAQ",
+      "type": "faq_manual",
+      "test_purpose": ["workflow_qa", "debug_steps", "insufficient_evidence", "wiki_test_process"],
+      "key_terms": ["唯一测试锚点", "top_k", "仅文档", "仅 Wiki", "依据不足"]
+    },
+    {
+      "anchor": "TEST-WIKI-001",
+      "filename": "documents/008_timeliness_wiki_seed.md",
+      "title": "时限管理专题 Wiki 种子材料",
+      "type": "wiki_seed",
+      "test_purpose": ["wiki_publish", "wiki_retrieve", "mixed_document_wiki_citations", "topic_summary"],
+      "key_terms": ["时限管理", "source_type=wiki_page", "旧版五个工作日", "新版三个工作日", "Wiki 发布后检索"]
+    },
+    {
+      "anchor": "TEST-DISTRACTOR-001",
+      "filename": "documents/009_distractor_event_schedule.md",
+      "title": "活动排期与材料准备提醒",
+      "type": "distractor",
+      "test_purpose": ["distractor_suppression", "negative_retrieval", "insufficient_evidence"],
+      "key_terms": ["活动排期", "培训演示", "排版", "讲师", "干扰召回"]
+    }
+  ],
+  "question_count": 24,
+  "question_distribution": {
+    "precise_fact": 5,
+    "article_lookup": 4,
+    "cross_document_synthesis": 4,
+    "case_review": 3,
+    "wiki_retrieval": 3,
+    "insufficient_evidence": 2,
+    "distractor_suppression": 2,
+    "version_conflict": 1
+  }
+}
