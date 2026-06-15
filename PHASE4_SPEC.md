@@ -385,7 +385,7 @@ P4-A1 到 P4-A3 的语料、问题集和安全规则。
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P4-B1 | RAG 调试参数前端规划 | [ ] |
+| P4-B1 | RAG 调试参数前端规划 | [x] |
 | P4-B2 | RAG 检索质量基线指标 | [ ] |
 | P4-B3 | 文档 / Wiki 混合检索对照测试规划 | [ ] |
 
@@ -412,7 +412,61 @@ P4-A1 到 P4-A3 的语料、问题集和安全规则。
 风险：
 参数暴露过多会提高使用门槛；参数暴露过少会降低调试效率。
 
-状态：[ ]
+规划输出：
+
+#### P4-B1.1 调试页参数分层
+
+RAG / Wiki 调试页只服务测试、定位和调参，不作为正式知识问答入口。调试参数分为三层：
+
+| 层级 | 参数 | 当前状态 | 用途 | 前端呈现建议 |
+| --- | --- | --- | --- | --- |
+| 基础检索 | `query` | 已有 | 输入测试问题或期望命中矩阵问题 | 中文标签“测试问题”，保留字段名 `query` 作为技术提示 |
+| 基础检索 | `top_k` | 已有，范围 1-50 | 验证 top_k 内命中、错误召回和相似文档混淆 | 中文标签“返回数量”，显示 `top_k` |
+| 来源范围 | `source_type=document_chunk` | 已有 | 仅测文档 chunk evidence | 中文选项“仅文档” |
+| 来源范围 | `source_type=wiki_page` | 已有 | 仅测 Wiki evidence | 中文选项“仅 Wiki” |
+| 来源范围 | 不传 `source_type` | 已有 | 文档 / Wiki 混合检索，即 all-source | 中文选项“全部来源” |
+| 精确过滤 | `kb_id` / `knowledge_base_id` | API 允许，前端已有 `kb_id` | 指定知识库范围，区分 fixture、本地 live、真实 WeKnora live | 中文标签“知识库 ID”，保留 `KB ID` 辅助说明 |
+| 精确过滤 | `document_ids` | 已有 | 限定一组文档，复现命中矩阵问题 | 中文标签“文档 ID”，支持逗号分隔 |
+| 精确过滤 | `business_area` | 已有 | 按业务域过滤 | 中文标签“业务域” |
+| 精确过滤 | `document_type` | 已有 | 按政策、法规、案例、FAQ、Wiki seed、干扰材料等类型过滤 | 中文标签“资料类型” |
+| 质量调参 | `retrieval_options.threshold.score` | API 允许，前端待补 | 调试 score threshold 对错误召回和无答案问题的影响 | 中文标签“分数阈值”，仅调试页开放 |
+| 质量调参 | `retrieval_options.hybrid.enabled` | API 预留，前端待补 | 对照 hybrid 开关对关键词锚点命中的影响 | 中文开关“混合检索”，显示 `hybrid` |
+| 质量调参 | `retrieval_options.hybrid.keyword_weight` / `vector_weight` / `match_count` | API 预留，前端待补 | 调整关键词与向量权重、候选数 | 高级折叠区，避免默认干扰 |
+| 质量调参 | `retrieval_options.rerank.enabled` | API 预留，前端待补 | 对照 rerank 开关对相似文档混淆和新旧版本判断的影响 | 中文开关“重排”，显示 `rerank` |
+| 质量调参 | `retrieval_options.rerank.model` / `top_n` | API 预留，前端待补 | 记录重排模型与重排候选数 | 高级折叠区，默认关闭 |
+| 追溯信息 | `trace_id` | 后端已返回 | 关联一次调试请求、日志和人工记录 | 结果顶部显示“调试追踪 ID” |
+| 追溯信息 | `debug_trace` | 后端已返回 | 展示 hybrid / rerank / threshold 的 requested 或 skipped 状态 | 结果区显示“调试 trace”，保留 stage/status/reason |
+| 追溯信息 | `evidence_id` / `chunk_id` / `wiki_page_id` / `source_type` | 后端已返回 | 判断 document_chunk 与 wiki_page 是否可追溯 | 每条 evidence 的元信息区展示 |
+
+#### P4-B1.2 正式知识问答页隐藏参数
+
+正式知识问答页只保留低门槛输入，不暴露工程调参。以下内容不得进入默认知识问答页：
+
+- raw `filters`、raw `metadata`、WeKnora 原始字段和后端原始响应。
+- `score threshold`、`hybrid`、`rerank`、`retrieval_options`、`debug_trace`。
+- `kb_id`、`document_ids`、`business_area`、`document_type` 的自由文本调试输入。
+- `trace_id`、`chunk_id`、`evidence_id` 等定位字段的主视觉展示。
+
+正式知识问答页允许保留：
+
+- 问题输入。
+- 简单检索范围：全部来源 / 仅文档 / 仅 Wiki。
+- 答案、引用、来源类型中文标签。
+- 依据不足提示。
+
+若后续需要在正式页展示技术细节，只能放入引用详情或开发者调试折叠区，默认不展开。
+
+#### P4-B1.3 与合成语料问题集的使用关系
+
+P4-B1 调试参数用于复现 `backend/fixtures/phase4_rag_wiki_qa/questions.json` 与 `hit_matrix.md`：
+
+1. 精确事实、条款定位和案例复盘题，先用“仅文档”范围验证 `document_chunk` 命中。
+2. Wiki 检索题，先发布 `TEST-WIKI-001` 后用“仅 Wiki”范围验证 `wiki_page` 命中。
+3. 跨文档综合、版本冲突和混合引用题，用“全部来源”记录 document_chunk / wiki_page 的共同命中情况。
+4. 无答案和干扰排除题，记录 top_k 内错误召回、score threshold 变化和是否仍应提示依据不足。
+5. 每次人工记录至少包含问题 ID、检索范围、top_k、命中锚点、source_type、score、trace_id 和判断结论。
+
+状态：[x]
 
 #### P4-B2：RAG 检索质量基线指标
 
