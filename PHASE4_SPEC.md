@@ -1231,7 +1231,7 @@ Wiki 状态中文化规划完成后，后续实现应满足：
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P4-D1 | `knowledge_qa` 默认检索策略规划 | [ ] |
+| P4-D1 | `knowledge_qa` 默认检索策略规划 | [x] |
 | P4-D2 | 知识问答引用与拒答验收规则 | [ ] |
 | P4-D3 | 知识问答结果展示中文化规划 | [ ] |
 
@@ -1258,7 +1258,99 @@ RAG 调试页测试结果和问题集表现。
 风险：
 默认策略如果过宽，容易引入干扰；过窄则容易漏掉 Wiki 或关键条款。
 
-状态：[ ]
+规划输出：
+
+#### P4-D1.1 默认体验边界
+
+`knowledge_qa` 是 Phase 4 第一段唯一重点 Agent 工作流。正式知识问答页应保持简单，不暴露 RAG debug 的工程参数。默认体验只允许：
+
+- 问题输入。
+- 简单检索范围：全部来源、仅文档、仅 Wiki。
+- 回答、引用、依据不足提示。
+
+正式知识问答页默认不展示：
+
+- raw filters、raw metadata、WeKnora 原始响应。
+- score threshold、hybrid、rerank、debug_trace。
+- KB ID、Document IDs、business_area、document_type 的自由文本调试区。
+
+这些参数只能留在 RAG / Wiki 调试页。
+
+#### P4-D1.2 默认检索范围
+
+默认策略：
+
+| 场景 | 默认范围 | 理由 |
+| --- | --- | --- |
+| 普通知识问答 | all-source | 同时覆盖文档 evidence 和 Wiki evidence，避免漏掉已发布专题 |
+| 用户明确选择“仅文档” | document | 只允许 `document_chunk`，用于政策、法规、案例、FAQ 问题 |
+| 用户明确选择“仅 Wiki” | wiki | 只允许 `wiki_page`，用于已发布专题页问题 |
+| Wiki 未发布或不可检索 | document 或依据不足 | 不把 draft / published-not-indexed Wiki 当成可用依据 |
+| 无答案 / 资料不足 | all-source 后拒答 | 不因命中相似材料而编造答案 |
+
+默认 all-source 不代表无限放宽。回答阶段必须仍按 evidence 质量、source_type 和答案要点判断是否足以回答。
+
+#### P4-D1.3 默认 `top_k`
+
+默认知识问答建议使用 `top_k=5` 作为正式体验起点，原因：
+
+1. 与现有 QA agent 默认值一致，避免规划与当前行为冲突。
+2. 正式页面应减少干扰 evidence，降低相似文档混淆。
+3. P4-B2 的质量基线仍可在 RAG debug 使用 `top_k=8` 做诊断，不要求正式页暴露该参数。
+
+后续若 P4-B2 / P4-B3 真实回归显示 `top_k=5` 漏掉 Wiki 或跨文档关键锚点，可在单独任务中调整默认值；调整前必须记录 fixture / local live / 真实 WeKnora live 的对照结果。
+
+#### P4-D1.4 Wiki 参与策略
+
+Wiki 参与正式知识问答必须满足：
+
+- Wiki 页面已发布，并且索引状态为 retrievable / indexed searchable 或等价状态。
+- Wiki evidence 返回 `source_type=wiki_page`。
+- Wiki citation 至少可定位到 `wiki_page_id`、标题和片段。
+- Draft、published not indexed、sync failed、index timeout、fallback unavailable 不得被当作正式 Wiki evidence。
+
+默认 all-source 下：
+
+- 精确事实、条款定位、案例复盘优先使用 document_chunk；若 Wiki 只做专题总结，不能替代原始条款引用。
+- Wiki 检索题和专题总结题允许优先使用 wiki_page。
+- 混合题（例如 P4Q-013）应同时保留 Wiki evidence 与 document_chunk evidence。
+
+#### P4-D1.5 依据不足触发口径
+
+`knowledge_qa` 应在以下情况提示依据不足：
+
+1. 检索结果为空，或没有命中期望锚点 / 相关 evidence。
+2. 只命中干扰材料、旧版材料或相似但不相关材料。
+3. 问题要求真实监管部门、真实客户名称、真实政策编号等资料库未提供的信息。
+4. Wiki 题只找到 draft / published not indexed 页面，不能确认其可检索。
+5. 引用无法追溯，缺少 source_type、evidence_id、chunk_id 或 wiki_page_id 等关键定位字段。
+
+依据不足提示应说明“当前资料库没有足够依据”，不要输出泛化常识答案，也不要把 mock / fallback 证据包装成真实依据。
+
+#### P4-D1.6 与测试问题集的关系
+
+默认策略应优先用以下问题回归：
+
+| 问题类型 | 问题示例 | 默认期望 |
+| --- | --- | --- |
+| 文档事实 / 条款 | P4Q-001 到 P4Q-009 | document_chunk 引用充分 |
+| 跨文档综合 | P4Q-010 到 P4Q-013 | all-source 下覆盖多个锚点 |
+| 案例复盘 | P4Q-014 到 P4Q-016 | document_chunk 为主，不混淆案例 |
+| Wiki 检索 | P4Q-017 到 P4Q-019 | wiki_page 引用充分 |
+| 无答案 | P4Q-020、P4Q-021 | 明确依据不足 |
+| 干扰排除 | P4Q-022、P4Q-023 | 不把干扰材料当政策依据 |
+| 新旧版本 | P4Q-024 | 优先新版，并说明旧版差异 |
+
+#### P4-D1.7 后续实现注意事项
+
+P4-D1 只是默认策略规划，不改 Agent 代码。后续实现如需调整 agent，应保持：
+
+- `policy_analysis` 和 `case_review` 现状不变。
+- `knowledge_qa` 不直接依赖 raw WeKnora response。
+- 正式页不暴露 debug 参数。
+- mock / fixture 不能作为真实 RAG / Wiki live 通过依据。
+
+状态：[x]
 
 #### P4-D2：知识问答引用与拒答验收规则
 
