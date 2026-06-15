@@ -930,7 +930,7 @@ RAG 调试参数、Wiki 发布检索要求、问题集。
 | --- | --- | --- |
 | P4-C1 | Wiki 测试闭环验收流程 | [x] |
 | P4-C2 | Wiki citation 追溯验收规则 | [x] |
-| P4-C3 | Wiki 状态中文化规划 | [ ] |
+| P4-C3 | Wiki 状态中文化规划 | [x] |
 
 #### P4-C1：Wiki 测试闭环验收流程
 
@@ -1148,7 +1148,84 @@ Wiki 状态中文术语表。
 风险：
 状态文案如果过于技术化，用户无法判断下一步该做什么。
 
-状态：[ ]
+规划输出：
+
+#### P4-C3.1 中文化目标
+
+Wiki 状态中文化的目标不是隐藏所有技术字段，而是让用户能快速判断：
+
+1. 当前页面是草稿、已发布、索引中、可检索还是失败。
+2. 是否已经进入 RAG / Wiki 检索。
+3. 下一步应该编辑、发布、刷新索引、重试同步，还是直接用于知识问答。
+4. 当前状态属于 mock / fixture / local live / 真实 WeKnora live 哪一层级。
+
+技术字段可保留在调试详情中，但页面主状态、按钮提示、风险提示和空状态应优先使用中文表达。
+
+#### P4-C3.2 状态中文术语表
+
+| 技术状态 / 字段 | 中文主文案 | 用户含义 | 建议下一步 |
+| --- | --- | --- | --- |
+| `draft` | 草稿 | 页面尚未发布，不会进入检索 | 继续编辑或发布 |
+| `draft not searchable` | 草稿，暂不可检索 | 未发布的 Wiki 不参与 RAG | 发布后再刷新索引 |
+| `published` | 已发布 | 页面已发布，但不等于可检索 | 检查索引状态 |
+| `published not indexed` | 已发布，未完成索引 | 页面已发布但尚未进入向量 / Wiki 检索 | 点击刷新索引或等待索引 |
+| `published not retrievable` | 已发布，暂不可检索 | 后端尚未确认 RAG 可命中 | 刷新状态或重试 reindex |
+| `indexing` | 索引中 | 页面正在进入检索链路 | 等待完成后复查 |
+| `indexed searchable` | 已索引，可检索 | 页面已可被 RAG 命中 | 可进入 RAG debug 或知识问答 |
+| `ready` | 已就绪 | 页面状态满足下一步测试条件 | 根据来源范围执行 RAG debug |
+| `retrievable` | 可检索 | Wiki 已进入可检索状态 | 可用于 Wiki-only / all-source 测试 |
+| `sync pending` / `sync_pending` | 同步待确认 | 已提交同步，但状态未最终确认 | 稍后刷新状态 |
+| `failed` | 失败 | 操作失败但来源尚未细分 | 查看错误详情，区分发布 / 同步 / 索引失败 |
+| `sync failed` | 同步失败 | Wiki 同步到后端或 WeKnora 失败 | 查看错误并重试 |
+| `publish failed` | 发布失败 | 发布动作未成功完成 | 检查错误并重新发布 |
+| `refresh failed` | 刷新失败 | 状态刷新或 reindex 检查失败 | 重试刷新，必要时查看后端日志 |
+| `index timeout` | 索引超时 | 发布后长时间未变为可检索 | 标记风险并重试索引 |
+| `fallback unavailable` | fallback 不可用 | 当前后备能力不可用 | 不把该状态当作真实通过 |
+| `unknown` / `not loaded` | 状态未知 | 页面未加载或后端没有返回完整状态 | 重新选择页面或刷新 |
+| `archived` | 已归档 | 页面不作为当前检索资料使用 | 如需测试应恢复或新建草稿 |
+
+#### P4-C3.3 页面区域文案建议
+
+| 页面位置 | 当前常见文案 | 中文化建议 |
+| --- | --- | --- |
+| 页面状态 pill | `draft` / `published` | `草稿` / `已发布` |
+| 索引状态标题 | `Index` | `索引状态` |
+| 来源区域标题 | `Sources` | `来源引用` |
+| 绑定区域标题 | `Bindings` | `Citation 绑定` 或 `引用绑定` |
+| 发布确认标题 | `Publish confirmation` | `发布确认` |
+| 发布风险 | `Published pages are not considered retrievable until indexing succeeds.` | `页面发布后仍需完成索引，才可视为可检索。` |
+| source refs | `source refs` | `来源引用数` |
+| citations | `citations` | `引用数` |
+| status | `status` | `状态` |
+| published | `published` | `发布时间` |
+| indexed | `indexed` | `索引时间` |
+| embedding | `embedding` | `索引向量状态` |
+| retrievable | `retrievable` | `是否可检索` |
+| timeout | `timeout` | `是否超时` |
+
+#### P4-C3.4 颜色和动作提示规则
+
+状态中文化必须同时给出动作提示：
+
+- 草稿类状态：提示“继续编辑或发布”，不展示为可检索。
+- 已发布但未索引：提示“刷新索引或稍后重试”，不能显示为可用于知识问答。
+- 索引中：提示“等待索引完成”，避免用户反复点击发布。
+- 可检索：提示“可用于 RAG debug 和知识问答”，并允许进入 Wiki-only / all-source 测试。
+- 失败类状态：提示“查看错误并重试”，不要只显示 failed。
+- fallback unavailable：提示“后备能力不可用，不能作为真实链路验收”。
+
+#### P4-C3.5 验收口径
+
+Wiki 状态中文化规划完成后，后续实现应满足：
+
+1. 用户在第一眼能看到中文主状态，而不是只看到 `draft`、`published`、`indexing` 或 `retrievable`。
+2. 每个状态都有对应下一步动作提示。
+3. 调试字段可以保留英文技术名，但必须放在详情区或辅助信息中。
+4. `published` 不得被翻译成“已可检索”；必须与索引 / retrievable 状态分开。
+5. failed 类状态必须说明是发布、同步、刷新还是索引失败。
+6. mock / fallback 状态不得被文案包装成真实 WeKnora live 成功。
+
+状态：[x]
 
 ### P4-D：知识问答单工作流质量优化
 
