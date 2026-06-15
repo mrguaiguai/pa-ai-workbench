@@ -273,7 +273,7 @@ RAG / Wiki 调试页用于测试和定位问题，可以开放：
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | P4-A1 | 合成脱敏测试语料规范定稿 | [x] |
-| P4-A2 | 测试问题集与期望命中矩阵规范 | [ ] |
+| P4-A2 | 测试问题集与期望命中矩阵规范 | [x] |
 | P4-A3 | 测试语料安全检查规则 | [ ] |
 | P4-A4 | 合成脱敏测试语料包生成 | [x] |
 
@@ -419,7 +419,121 @@ backend/fixtures/phase4_rag_wiki_qa/
 风险：
 只写问题不写期望命中会让 RAG 调试变成主观感觉。
 
-状态：[ ]
+规范输出：
+
+#### P4-A2.1 问题集定位与规模
+
+Phase 4 问题集用于把检索调试从“看起来回答不错”变成可复核的命中、引用和拒答检查。问题集必须与合成语料包一一对应，当前基准文件为 `backend/fixtures/phase4_rag_wiki_qa/questions.json`，当前规模为 24 个问题。
+
+问题集要求：
+
+- 总量保持 20-25 个问题，避免过少导致覆盖不足，也避免过多让人工回归成本失控。
+- 每个问题必须能回到一个或多个测试锚点，或明确声明没有期望锚点。
+- 每个问题必须记录答案要点，而不是只记录关键词。
+- 每个问题必须明确是否必须引用文档、是否必须引用 Wiki、是否应该回答“依据不足”。
+- 问题文本必须使用中文，并尽量接近真实用户提问方式，但不得包含真实机构、真实客户、真实政策编号或真实敏感信息。
+
+#### P4-A2.2 `questions.json` 字段规范
+
+`questions.json` 顶层字段：
+
+| 字段 | 类型 | 要求 |
+| --- | --- | --- |
+| `corpus_id` | string | 必须与 `manifest.json` 中的语料包 ID 一致 |
+| `version` | string | 问题集版本，语料或题目变更时递增 |
+| `questions` | array | 20-25 个问题对象 |
+
+每个问题对象字段：
+
+| 字段 | 类型 | 是否必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | string | 是 | 使用 `P4Q-NNN`，编号稳定，不因排序调整复用 |
+| `type` | string | 是 | 问题类型，见 P4-A2.3 |
+| `query` | string | 是 | 用户问题文本 |
+| `expected_anchors` | string[] | 是 | 期望命中的 `TEST-RAG-*`、`TEST-WIKI-*` 或 `TEST-DISTRACTOR-*`；无答案问题为空数组 |
+| `expected_answer_points` | string[] | 是 | 期望答案要点，用于人工判断回答是否覆盖关键事实 |
+| `expected_source_types` | string[] | 是 | 期望 evidence 类型，允许 `document_chunk`、`wiki_page`；无答案问题为空数组 |
+| `must_cite_document` | boolean | 是 | 回答是否必须引用文档 evidence |
+| `must_cite_wiki` | boolean | 是 | 回答是否必须引用 Wiki evidence |
+| `should_answer_insufficient` | boolean | 是 | 是否应该提示依据不足或资料库无依据 |
+| `retrieval_scope` | string | 是 | 推荐检索范围：`document`、`wiki`、`all` |
+| `forbidden_anchors` | string[] | 否 | 不应被当作依据的干扰锚点 |
+
+字段约束：
+
+1. `expected_anchors` 中的锚点必须存在于 `manifest.json`，除非数组为空。
+2. `expected_source_types` 必须与 `must_cite_document`、`must_cite_wiki` 保持一致。
+3. `should_answer_insufficient=true` 时，`expected_anchors` 和 `expected_source_types` 应为空，且 `must_cite_document=false`、`must_cite_wiki=false`。
+4. `retrieval_scope=wiki` 的问题应至少要求 `must_cite_wiki=true`，除非用于验证 Wiki 无答案。
+5. 带有 `forbidden_anchors` 的问题必须在期望答案要点中说明为什么不能引用该锚点。
+
+#### P4-A2.3 问题类型覆盖
+
+问题集必须覆盖以下类型：
+
+| 类型 | 当前建议数量 | 检查重点 |
+| --- | --- | --- |
+| `precise_fact` 精确事实 | 4-6 | 单一锚点事实是否命中，是否误用相似材料 |
+| `article_lookup` 条款定位 | 3-5 | 能否定位法规法条、校验要求、撤回要求等结构化条款 |
+| `cross_document_synthesis` 跨文档综合 | 3-5 | 能否同时引用多个文档或 Wiki / 文档混合 evidence |
+| `case_review` 案例复盘 | 2-4 | 能否区分相似案例的原因、结果和处置动作 |
+| `wiki_retrieval` Wiki 检索 | 2-4 | Wiki 发布后能否以 `wiki_page` evidence 命中并引用 |
+| `insufficient_evidence` 无答案 | 2-3 | 是否提示依据不足，不编造外部事实 |
+| `distractor_suppression` 干扰排除 | 1-3 | 是否避免把干扰材料当成政策或法规依据 |
+| `version_conflict` 新旧版本冲突 | 1-2 | 是否说明新版优先，并解释旧版差异 |
+
+覆盖要求：
+
+- 至少一题必须同时要求文档引用和 Wiki 引用。
+- 至少两题必须要求回答“依据不足”。
+- 至少一题必须包含 `forbidden_anchors`，用于检查干扰材料是否被错误采用。
+- 新旧版本冲突题必须同时包含旧版和新版锚点，并在答案要点中说明当前优先规则。
+
+#### P4-A2.4 期望命中矩阵格式
+
+期望命中矩阵文件为 `backend/fixtures/phase4_rag_wiki_qa/hit_matrix.md`，用于人工回归和调试页记录。矩阵至少包含：
+
+| 列 | 说明 |
+| --- | --- |
+| 问题 ID | 对应 `questions.json` 的 `id` |
+| 类型 | 中文问题类型，便于人工扫描 |
+| 期望命中锚点 | 对应 `expected_anchors`；无答案问题写“无” |
+| 推荐范围 | `document`、`wiki` 或 `all` |
+| 必须文档引用 | 对应 `must_cite_document` |
+| 必须 Wiki 引用 | 对应 `must_cite_wiki` |
+| 应提示依据不足 | 对应 `should_answer_insufficient` |
+| 主要检查点 | 对应 `expected_answer_points` 的人工摘要 |
+
+矩阵维护规则：
+
+1. 新增、删除、替换问题时，必须同步更新 `questions.json` 和 `hit_matrix.md`。
+2. 矩阵中的“期望命中锚点”必须与问题集字段一致，不得只写自然语言描述。
+3. 矩阵中的“主要检查点”必须覆盖答案要点、禁用锚点或依据不足要求。
+4. Wiki 题必须标出必须 Wiki 引用；文档题必须标出必须文档引用。
+5. 无答案题必须在矩阵中明确“应提示依据不足=是”。
+
+#### P4-A2.5 人工判定口径
+
+一次问题回归至少记录：
+
+- 问题 ID 和原始 `query`。
+- 检索范围和 `top_k`。
+- 实际命中锚点及其排序。
+- 实际 `source_type`：`document_chunk`、`wiki_page` 或其他。
+- 答案是否覆盖全部期望答案要点。
+- 是否满足必须引用文档 / 必须引用 Wiki。
+- 是否正确提示依据不足。
+- 是否命中或引用了 `forbidden_anchors`。
+
+通过标准：
+
+1. 非无答案问题必须命中至少一个期望锚点，并覆盖关键答案要点。
+2. 标记必须引用文档的问题，答案引用中必须出现可追溯的 `document_chunk`。
+3. 标记必须引用 Wiki 的问题，答案引用中必须出现可追溯的 `wiki_page`。
+4. 无答案问题即使检索到相似或干扰材料，也必须明确说明资料库依据不足。
+5. 干扰排除问题不得把 `forbidden_anchors` 当成政策、法规或案例依据。
+
+状态：[x]
 
 #### P4-A3：测试语料安全检查规则
 
