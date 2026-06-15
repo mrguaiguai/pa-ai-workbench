@@ -929,7 +929,7 @@ RAG 调试参数、Wiki 发布检索要求、问题集。
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | P4-C1 | Wiki 测试闭环验收流程 | [x] |
-| P4-C2 | Wiki citation 追溯验收规则 | [ ] |
+| P4-C2 | Wiki citation 追溯验收规则 | [x] |
 | P4-C3 | Wiki 状态中文化规划 | [ ] |
 
 #### P4-C1：Wiki 测试闭环验收流程
@@ -1040,7 +1040,90 @@ Wiki evidence 至少能说明 `source_type=wiki_page`、`evidence_id`、`wiki_pa
 风险：
 不可追溯 Wiki citation 会导致知识问答看似有来源、实际无法定位。
 
-状态：[ ]
+规则输出：
+
+#### P4-C2.1 Wiki citation 定位
+
+Wiki citation 追溯规则用于确保知识问答引用的 Wiki evidence 可以被用户定位回 Wiki 页面，而不是只显示一个“有来源”的模糊标签。P4-C2 只定义验收规则，不改 citation 代码。
+
+Wiki evidence 与文档 evidence 的核心区别：
+
+- Wiki evidence 必须标记 `source_type=wiki_page`。
+- Wiki evidence 必须能定位到 Wiki 页面，至少包含 `wiki_page_id` 或可解析的 Wiki slug / title。
+- 文档 evidence 使用 `source_type=document_chunk`，并优先依赖 `document_id`、`external_doc_id`、`chunk_id`。
+- Wiki citation 不得伪装成 document_chunk，也不得把 mock fallback 标记成真实 WeKnora Wiki 来源。
+
+#### P4-C2.2 必备追溯字段
+
+Wiki evidence / citation 至少应能说明：
+
+| 字段 | 必须性 | 验收说明 |
+| --- | --- | --- |
+| `source_type=wiki_page` | 必须 | 用于区分 Wiki evidence 和 document_chunk |
+| `evidence_id` | 必须或可推导 | 应能唯一标识该条 evidence；若后端推导生成，必须稳定可记录 |
+| `wiki_page_id` | 必须 | 用于定位 Wiki 页面；若当前层级只能返回 slug，必须记录降级原因 |
+| 标题 | 必须 | 应显示 Wiki 页面标题，例如“时限管理专题 Wiki 种子材料” |
+| 摘要或片段 | 必须 | 应展示足够短的片段，能解释回答依据，不暴露长篇原文 |
+| 来源状态 | 必须 | 至少能说明 published / indexed / retrievable 或等价状态 |
+| `source` | 必须 | 应区分 `wiki`、`weknora_api`、mock / fixture 等来源层级 |
+| score | 可选 | 若后端提供则展示；无 score 时应明确 score unavailable |
+
+#### P4-C2.3 验收问题与检查点
+
+优先使用以下问题验收 Wiki citation：
+
+| 问题 | 推荐范围 | 必须检查 |
+| --- | --- | --- |
+| P4Q-017 | wiki | 命中 `TEST-WIKI-001`，引用为 `source_type=wiki_page` |
+| P4Q-018 | wiki | Wiki 常见误区回答必须来自 Wiki evidence |
+| P4Q-019 | wiki | 明确说明 Wiki evidence 应带有 `source_type=wiki_page`，并与原始文档 evidence 区分 |
+| P4Q-013 | all | 同时记录 Wiki evidence 与 document_chunk evidence |
+
+每次验收必须记录：
+
+- 问题 ID。
+- 检索范围：wiki 或 all-source。
+- 命中的 Wiki 标题、rank、score。
+- `source_type`、`evidence_id`、`wiki_page_id`。
+- 页面状态：published、indexed、retrievable 或对应状态。
+- 引用展示是否能让用户回到 Wiki 页面。
+
+#### P4-C2.4 通过 / 警告 / 失败口径
+
+| 检查项 | 通过 | 警告 | 失败 |
+| --- | --- | --- | --- |
+| source_type | 明确为 `source_type=wiki_page` | 字段来自 metadata 推导但最终可显示 | 缺失或错误显示为 document_chunk |
+| evidence_id | 存在且稳定 | 可由 wiki_page_id / slug 推导但未直接展示 | 缺失且无法定位单条 evidence |
+| wiki_page_id | 存在并可用于定位页面 | 只有 slug / title，需后续补齐 ID | 缺失且无法定位 Wiki 页面 |
+| 标题与片段 | 标题和摘要 / 片段可读 | 片段过短但仍可判断 | 无标题或无可读依据 |
+| 来源状态 | 能看到 published / indexed / retrievable 等状态 | 状态可读但不完整 | 只显示 published，无法判断是否可检索 |
+| 文档 / Wiki 区分 | Wiki 和 document_chunk 在引用区清楚区分 | 文案略技术化但字段正确 | Wiki citation 被当作文档引用或反之 |
+
+#### P4-C2.5 阻断规则
+
+出现以下情况，不能认定 Wiki citation 追溯验收通过：
+
+- Wiki 题回答有引用，但引用没有 `source_type=wiki_page`。
+- 引用只有标题，没有 `evidence_id`、`wiki_page_id`、slug 或任何可定位字段。
+- 页面只显示 published，但没有索引状态或 RAG debug 命中证据。
+- fallback / mock 证据被标记为真实 WeKnora Wiki citation。
+- Wiki citation 片段包含真实资料、未脱敏输出或长篇原文泄露。
+
+#### P4-C2.6 记录模板
+
+| 字段 | 示例 |
+| --- | --- |
+| 问题 ID | `P4Q-019` |
+| 范围 | wiki |
+| 标题 | 时限管理专题 Wiki 种子材料 |
+| source_type | `source_type=wiki_page` |
+| evidence_id | `wiki:phase4-timeliness-wiki-seed` 或后端返回值 |
+| wiki_page_id | 后端返回的 Wiki page id |
+| 状态 | published / indexed / retrievable |
+| 片段 | Wiki evidence 应带有 `source_type=wiki_page` |
+| 人工结论 | pass / warn / fail |
+
+状态：[x]
 
 #### P4-C3：Wiki 状态中文化规划
 
