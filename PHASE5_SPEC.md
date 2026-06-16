@@ -237,7 +237,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 | P5-E1 | 修复核心页面残留英文术语 | [x] |
 | P5-E2 | 在知识问答页加入简单知识来源选择 | [x] |
 | P5-E3 | 统一真实 / mock / fallback / partial / unavailable 状态展示 | [x] |
-| P5-E4 | 前端构建与浏览器验收达到 PASS | [ ] |
+| P5-E4 | 前端构建与浏览器验收达到 PASS | [x] |
 
 ### P5-F：自动回归与真实报告
 
@@ -623,7 +623,7 @@ frontend build；浏览器检查 payload 或后端记录。
 `test -f docs/PHASE5_REAL_FRONTEND_PASS_REPORT.md`；
 `rg -n "首页|资料库|RAG 调试|Wiki|知识问答|历史|PASS|PHASE5_REAL" docs/PHASE5_REAL_FRONTEND_PASS_REPORT.md`。
 
-状态：[ ]
+状态：[x]
 
 ### P5-F1：增加真实 RAG 24 问矩阵脚本
 

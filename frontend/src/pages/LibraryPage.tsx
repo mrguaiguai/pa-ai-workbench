@@ -196,7 +196,7 @@ function readinessClass(document: Document) {
 
 function statusHint(document: Document) {
   if (document.processing_message) {
-    return document.processing_message;
+    return localizedProcessingMessage(document.processing_message);
   }
   if (document.status === "failed") {
     return document.failed_step
@@ -221,6 +221,16 @@ function statusHint(document: Document) {
     return "解析完成后进入分块";
   }
   return "等待 WeKnora/本地流程处理";
+}
+
+function localizedProcessingMessage(message: string) {
+  const normalized = message.trim();
+  const labels: Record<string, string> = {
+    "Document is indexed and ready for grounded answers.": "文档已索引，可用于有依据回答。",
+    "Document parsed, chunked, embedded, and indexed.": "文档已完成解析、分块、向量化和索引。",
+    "Document chunks rebuilt, embedded, and indexed.": "文档分块已重建、向量化并完成索引。",
+  };
+  return labels[normalized] ?? normalized;
 }
 
 function backendLabel(document: Document) {
