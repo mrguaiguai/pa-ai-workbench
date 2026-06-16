@@ -215,7 +215,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P5-C1 | 完善 published Wiki 索引字段覆盖 | [ ] |
+| P5-C1 | 完善 published Wiki 索引字段覆盖 | [x] |
 | P5-C2 | 修复 P4Q-017 到 P4Q-019 Wiki-only 自然语言召回 | [ ] |
 | P5-C3 | 稳定 Wiki evidence 与 citation traceability | [ ] |
 | P5-C4 | 真实 Wiki 闭环复测达到 PASS | [ ] |

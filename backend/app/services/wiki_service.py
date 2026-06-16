@@ -593,27 +593,181 @@ def _weknora_wiki_payload(
     citations = list_wiki_citation_records(session=session, wiki_page_id=page.id)
     source_refs = _weknora_source_refs(page=page, citations=citations)
     chunk_refs = _weknora_chunk_refs(citations)
+    index_metadata = _wiki_index_metadata(
+        page=page,
+        citations=citations,
+        metadata=metadata,
+        source_refs=source_refs,
+        chunk_refs=chunk_refs,
+    )
+    index_text = _wiki_index_text(
+        page=page,
+        metadata=index_metadata,
+        citations=citations,
+    )
     return {
         "slug": page.slug,
         "title": page.title,
         "summary": page.summary or "",
-        "content": page.content_markdown,
+        "content": index_text if page.status == WikiPageStatus.PUBLISHED else page.content_markdown,
         "page_type": page.page_type or "wiki",
         "status": page.status or WikiPageStatus.DRAFT,
         "source_refs": source_refs,
         "chunk_refs": chunk_refs,
+        "aliases": _wiki_index_aliases(page=page, metadata=index_metadata),
         "page_metadata": {
-            **metadata,
-            "pa_wiki_page_id": page.id,
-            "pa_source_output_id": page.source_output_id,
-            "pa_source_document_ids": page_source_document_ids(page),
-            "pa_source_citation_ids": page_source_citation_ids(page),
-            "pa_tags": page_tags(page),
-            "pa_business_area": page.business_area,
-            "pa_created_by": page.created_by,
-            "source": metadata.get("source") or "pa_ai_workbench",
+            **index_metadata,
+            "wiki_index_text": index_text,
+            "wiki_index_field_version": "p5-c1",
         },
     }
+
+
+def _wiki_index_metadata(
+    page: WikiPageModel,
+    citations: list[WikiCitation],
+    metadata: dict[str, Any],
+    source_refs: list[str],
+    chunk_refs: list[str],
+) -> dict[str, Any]:
+    tags = page_tags(page)
+    source_document_ids = page_source_document_ids(page)
+    source_citation_ids = page_source_citation_ids(page)
+    citation_evidence_ids = [
+        citation.evidence_id for citation in citations if citation.evidence_id
+    ]
+    citation_source_types = sorted(
+        {citation.source_type for citation in citations if citation.source_type}
+    )
+    anchors = _wiki_index_anchors(metadata=metadata, page=page)
+    return {
+        **metadata,
+        "source": metadata.get("source") or "pa_ai_workbench",
+        "source_type": "wiki_page",
+        "citation_source_type": "wiki_page",
+        "wiki_page_id": page.id,
+        "pa_wiki_page_id": page.id,
+        "pa_wiki_slug": page.slug,
+        "pa_wiki_title": page.title,
+        "pa_wiki_status": page.status,
+        "pa_wiki_page_type": page.page_type or "wiki",
+        "pa_wiki_summary": page.summary or "",
+        "pa_source_output_id": page.source_output_id,
+        "pa_source_document_ids": source_document_ids,
+        "pa_source_citation_ids": source_citation_ids,
+        "pa_tags": tags,
+        "pa_business_area": page.business_area,
+        "pa_created_by": page.created_by,
+        "weknora_source_refs": source_refs,
+        "weknora_chunk_refs": chunk_refs,
+        "source_refs": source_refs,
+        "chunk_refs": chunk_refs,
+        "wiki_citation_evidence_ids": citation_evidence_ids,
+        "wiki_citation_source_types": citation_source_types,
+        "anchor": anchors[0] if anchors else metadata.get("anchor"),
+        "anchors": anchors,
+        "test_anchor": metadata.get("test_anchor") or (anchors[0] if anchors else None),
+    }
+
+
+def _wiki_index_aliases(page: WikiPageModel, metadata: dict[str, Any]) -> list[str]:
+    values: list[str] = [
+        page.slug,
+        page.title,
+        page.summary or "",
+        page.business_area or "",
+        page.page_type or "wiki",
+        "source_type=wiki_page",
+    ]
+    values.extend(page_tags(page))
+    values.extend(_metadata_strings(metadata.get("anchor")))
+    values.extend(_metadata_strings(metadata.get("anchors")))
+    values.extend(_metadata_strings(metadata.get("test_anchor")))
+    values.extend(_metadata_strings(metadata.get("aliases")))
+    return _dedupe_nonempty(values)
+
+
+def _wiki_index_text(
+    page: WikiPageModel,
+    metadata: dict[str, Any],
+    citations: list[WikiCitation],
+) -> str:
+    parts = [
+        f"# {page.title}",
+        f"Wiki slug: {page.slug}",
+        "Wiki source_type=wiki_page",
+        f"Wiki status: {page.status}",
+        f"Wiki page type: {page.page_type or 'wiki'}",
+    ]
+    if page.summary:
+        parts.extend(["", "## Summary", page.summary])
+    aliases = _wiki_index_aliases(page=page, metadata=metadata)
+    if aliases:
+        parts.extend(["", "## Search aliases", "\n".join(f"- {alias}" for alias in aliases)])
+    anchors = _metadata_strings(metadata.get("anchors"))
+    if anchors:
+        parts.extend(["", "## Test anchors", "\n".join(f"- {anchor}" for anchor in anchors)])
+    refs = _metadata_strings(metadata.get("source_refs"))
+    if refs:
+        parts.extend(["", "## Source refs", "\n".join(f"- {ref}" for ref in refs)])
+    chunk_refs = _metadata_strings(metadata.get("chunk_refs"))
+    if chunk_refs:
+        parts.extend(["", "## Chunk refs", "\n".join(f"- {ref}" for ref in chunk_refs)])
+    citation_lines = _wiki_index_citation_lines(citations)
+    if citation_lines:
+        parts.extend(["", "## Citation refs", "\n".join(citation_lines)])
+    if page.content_markdown:
+        parts.extend(["", "## Content", page.content_markdown])
+    return "\n".join(part for part in parts if part is not None).strip()
+
+
+def _wiki_index_citation_lines(citations: list[WikiCitation]) -> list[str]:
+    lines: list[str] = []
+    for citation in citations:
+        values = [
+            citation.source_type,
+            citation.evidence_id,
+            citation.external_doc_id or citation.document_id,
+            citation.chunk_id,
+            citation_metadata(citation).get("citation_title"),
+        ]
+        line = " | ".join(str(value) for value in values if value)
+        if line:
+            lines.append(f"- {line}")
+    return lines
+
+
+def _wiki_index_anchors(metadata: dict[str, Any], page: WikiPageModel) -> list[str]:
+    values: list[str] = []
+    values.extend(_metadata_strings(metadata.get("anchors")))
+    values.extend(_metadata_strings(metadata.get("anchor")))
+    values.extend(_metadata_strings(metadata.get("test_anchor")))
+    values.extend(re.findall(r"TEST-[A-Z]+-\d{3}", page.title or ""))
+    values.extend(re.findall(r"TEST-[A-Z]+-\d{3}", page.summary or ""))
+    values.extend(re.findall(r"TEST-[A-Z]+-\d{3}", page.content_markdown or ""))
+    return _dedupe_nonempty(values)
+
+
+def _metadata_strings(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item) for item in value if item not in (None, "")]
+    return [str(value)]
+
+
+def _dedupe_nonempty(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = str(value or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
 
 
 def _weknora_source_refs(
@@ -960,6 +1114,16 @@ def _wiki_vector_metadata(
     page: WikiPageModel,
     embedding: EmbeddingVector,
 ) -> dict[str, Any]:
+    metadata = page_metadata(page)
+    source_refs = _metadata_strings(metadata.get("weknora_source_refs") or metadata.get("source_refs"))
+    chunk_refs = _metadata_strings(metadata.get("weknora_chunk_refs") or metadata.get("chunk_refs"))
+    index_metadata = _wiki_index_metadata(
+        page=page,
+        citations=[],
+        metadata=metadata,
+        source_refs=source_refs,
+        chunk_refs=chunk_refs,
+    )
     return {
         "source_type": "wiki_page",
         "source": "wiki",
@@ -974,12 +1138,18 @@ def _wiki_vector_metadata(
         "source_document_ids": page_source_document_ids(page),
         "source_citation_ids": page_source_citation_ids(page),
         "tags": page_tags(page),
+        "aliases": _wiki_index_aliases(page=page, metadata=index_metadata),
+        "anchor": index_metadata.get("anchor"),
+        "anchors": index_metadata.get("anchors"),
+        "test_anchor": index_metadata.get("test_anchor"),
+        "source_refs": source_refs,
+        "chunk_refs": chunk_refs,
         "published_at": page.published_at.isoformat() if page.published_at else None,
         "embedding_provider": embedding.provider,
         "embedding_model": embedding.model,
         "embedding_dimension": embedding.dimension,
         "embedding_text_hash": embedding.text_hash,
-        "wiki_metadata": page_metadata(page),
+        "wiki_metadata": index_metadata,
     }
 
 
