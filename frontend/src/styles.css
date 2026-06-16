@@ -1563,6 +1563,67 @@ p {
   font-weight: 800;
 }
 
+.knowledge-source-switcher {
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.knowledge-source-switcher legend {
+  margin-bottom: 8px;
+  color: #5a6b77;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.scope-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.scope-option {
+  display: grid;
+  min-height: 58px;
+  align-content: center;
+  gap: 4px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #42525e;
+  cursor: pointer;
+  padding: 8px;
+  text-align: left;
+}
+
+.scope-option:hover {
+  background: #f8fafb;
+}
+
+.scope-option.active {
+  border-color: #176b87;
+  background: #edf6fa;
+  color: #0d536c;
+}
+
+.scope-option strong,
+.scope-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope-option strong {
+  font-size: 0.82rem;
+}
+
+.scope-option span {
+  color: #6b7a86;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
 .analysis-fields textarea {
   width: 100%;
   min-height: 92px;
@@ -3376,6 +3437,10 @@ p {
   }
 
   .task-switcher {
+    grid-template-columns: 1fr;
+  }
+
+  .scope-options {
     grid-template-columns: 1fr;
   }
 

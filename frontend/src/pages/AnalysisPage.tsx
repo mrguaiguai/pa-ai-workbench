@@ -19,6 +19,7 @@ import {
   Conversation,
   ConversationMessage,
   GeneratedOutput,
+  RetrievalScope,
   Task,
   WikiPage,
   apiClient,
@@ -43,6 +44,7 @@ type AnalysisForm = {
   businessArea: string;
   documentType: string;
   extraRequirements: string;
+  retrievalScope: RetrievalScope;
 };
 
 const initialForm: AnalysisForm = {
@@ -51,6 +53,7 @@ const initialForm: AnalysisForm = {
   businessArea: "",
   documentType: "",
   extraRequirements: "",
+  retrievalScope: "all",
 };
 
 const taskOptions: Array<{
@@ -76,6 +79,28 @@ const taskOptions: Array<{
     label: "案例复盘",
     description: "梳理事实、风险与建议",
     icon: FileSearch,
+  },
+];
+
+const retrievalScopeOptions: Array<{
+  id: RetrievalScope;
+  label: string;
+  note: string;
+}> = [
+  {
+    id: "all",
+    label: "全部知识",
+    note: "文档 + Wiki",
+  },
+  {
+    id: "document",
+    label: "仅文档",
+    note: "资料库文档",
+  },
+  {
+    id: "wiki",
+    label: "仅 Wiki",
+    note: "已发布 Wiki",
   },
 ];
 
@@ -294,6 +319,7 @@ export function AnalysisPage() {
         business_area: form.businessArea.trim() || null,
         document_type: form.documentType.trim() || null,
         extra_requirements: form.extraRequirements.trim() || null,
+        ...(taskType === "knowledge_qa" ? { retrieval_scope: form.retrievalScope } : {}),
       })
       .then((response) => {
         setSelectedConversation(response.conversation);
@@ -440,6 +466,34 @@ export function AnalysisPage() {
           </div>
 
           <p className="task-description">{activeTask.description}</p>
+
+          {taskType === "knowledge_qa" ? (
+            <fieldset className="knowledge-source-switcher">
+              <legend>知识来源</legend>
+              <div className="scope-options" role="radiogroup" aria-label="知识来源">
+                {retrievalScopeOptions.map((option) => (
+                  <button
+                    className={
+                      option.id === form.retrievalScope ? "scope-option active" : "scope-option"
+                    }
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={option.id === form.retrievalScope}
+                    onClick={() =>
+                      setForm((current) => ({
+                        ...current,
+                        retrievalScope: option.id,
+                      }))
+                    }
+                  >
+                    <strong>{option.label}</strong>
+                    <span>{option.note}</span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
 
           <div className="form-grid analysis-fields">
             <label>
