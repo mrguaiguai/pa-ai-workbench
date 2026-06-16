@@ -224,7 +224,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P5-D1 | 增加 `retrieval_scope` 最小接口链路 | [ ] |
+| P5-D1 | 增加 `retrieval_scope` 最小接口链路 | [x] |
 | P5-D2 | 让 `knowledge_qa` 支持当前语料范围与 source_type 策略 | [ ] |
 | P5-D3 | 修复无答案拒答与引用支撑规则 | [ ] |
 | P5-D4 | 修复干扰排除与新旧版本冲突回答策略 | [ ] |
@@ -493,7 +493,7 @@ Wiki citation 包含 `evidence_id`、`source_type=wiki_page`、`wiki_page_id`，
 验证方式：
 后端 schema / analysis smoke 覆盖默认值和三种合法值。
 
-状态：[ ]
+状态：[x]
 
 ### P5-D2：让 `knowledge_qa` 支持当前语料范围与 source_type 策略
 

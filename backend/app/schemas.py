@@ -356,6 +356,15 @@ class AnalysisRunRequest(BaseModel):
     document_type: str | None = None
     document_ids: list[str] = Field(default_factory=list)
     extra_requirements: str | None = None
+    retrieval_scope: str = "all"
+
+    @field_validator("retrieval_scope")
+    @classmethod
+    def validate_retrieval_scope(cls, value: str) -> str:
+        try:
+            return normalize_source_scope(value)
+        except ValueError as exc:
+            raise ValueError("retrieval_scope must be all, document, or wiki") from exc
 
 
 class AnalysisRunResponse(BaseModel):

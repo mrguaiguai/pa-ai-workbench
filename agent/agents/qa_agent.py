@@ -124,6 +124,7 @@ class KnowledgeQaWorkflow:
                 "citation_count": len(citations),
                 "retrieved_citation_count": len(retrieved_citations),
                 "recent_message_count": len(context.recent_messages),
+                "retrieval_scope": request.retrieval_scope,
                 "filters": self._build_filters(request),
                 "model": model_metadata,
                 "warning_codes": policy_result.warning_codes,
@@ -140,6 +141,7 @@ class KnowledgeQaWorkflow:
                         "task_id": request.task_id,
                         "task_type": request.task_type,
                         "citation_count": len(citations),
+                        "retrieval_scope": request.retrieval_scope,
                     },
                 }
             ],
@@ -163,7 +165,7 @@ class KnowledgeQaWorkflow:
         for attempt in range(3):
             retry_citations = self.retriever.retrieve(
                 query=request.query_or_topic,
-                filters={"document_ids": request.document_ids},
+                filters=self._build_filters(request),
                 top_k=self.top_k,
             )
             scoped = self._scope_citations(retry_citations, request.document_ids)
@@ -190,6 +192,7 @@ class KnowledgeQaWorkflow:
         filters: dict[str, Any] = {}
         if request.document_ids:
             filters["document_ids"] = request.document_ids
+        filters["source_scope"] = request.retrieval_scope or "all"
         if request.business_area:
             filters["business_area"] = request.business_area
         if request.document_type:
@@ -198,9 +201,16 @@ class KnowledgeQaWorkflow:
 
     @staticmethod
     def _expected_source_type(request: AgentRequest) -> str | None:
-        return request.metadata.get("expected_source_type") or request.metadata.get(
+        requested = request.metadata.get("expected_source_type") or request.metadata.get(
             "required_source_type"
         )
+        if requested:
+            return requested
+        if request.retrieval_scope == "document":
+            return "document_chunk"
+        if request.retrieval_scope == "wiki":
+            return "wiki_page"
+        return None
 
     def _generate_answer(
         self,
@@ -218,6 +228,7 @@ class KnowledgeQaWorkflow:
                     "task_id": request.task_id,
                     "task_type": request.task_type,
                     "workflow": "knowledge_qa",
+                    "retrieval_scope": request.retrieval_scope,
                     "citation_count": len(citations),
                     "source_types": sorted(
                         {citation.source_type or "unknown" for citation in citations}
@@ -229,6 +240,7 @@ class KnowledgeQaWorkflow:
             "provider": response.provider,
             "model": response.model,
             "usage": response.usage,
+            "retrieval_scope": request.retrieval_scope,
             "evidence_sources": sorted({citation.source for citation in citations}),
             "source_types": sorted(
                 {citation.source_type or "unknown" for citation in citations}

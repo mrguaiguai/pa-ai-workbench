@@ -261,6 +261,7 @@ export type DocumentIndexResponse = {
 };
 
 export type AnalysisTaskType = "knowledge_qa" | "policy_analysis" | "case_review";
+export type RetrievalScope = "all" | "document" | "wiki";
 
 export type Conversation = {
   id: string;
@@ -425,6 +426,7 @@ export type AnalysisRunRequest = {
   document_type?: string | null;
   document_ids?: string[];
   extra_requirements?: string | null;
+  retrieval_scope?: RetrievalScope;
 };
 
 export type AnalysisRunResponse = {

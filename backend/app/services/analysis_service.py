@@ -21,6 +21,7 @@ from agent.orchestrator import AgentOrchestrator
 from agent.schemas import AgentRequest
 from agent.schemas import AgentResult
 from agent.schemas import AgentStatus
+from knowledge_engine.source_scope import normalize_source_scope
 from knowledge_engine.log_context import weknora_log_context
 
 
@@ -38,7 +39,9 @@ def run_analysis(
     document_type: str | None = None,
     document_ids: list[str] | None = None,
     extra_requirements: str | None = None,
+    retrieval_scope: str = "all",
 ) -> tuple[Conversation, list[ConversationMessage], GenerationTask, GeneratedOutput, list]:
+    normalized_retrieval_scope = normalize_source_scope(retrieval_scope)
     conversation, user_message = _ensure_conversation(
         session=session,
         conversation_id=conversation_id,
@@ -53,8 +56,21 @@ def run_analysis(
             conversation=conversation,
             role="user",
             content=query_or_topic,
-            metadata_json=_json_dumps({"task_type": task_type}),
+            metadata_json=_json_dumps(
+                {
+                    "task_type": task_type,
+                    "retrieval_scope": normalized_retrieval_scope,
+                }
+            ),
         )
+    elif user_message.metadata_json is None:
+        user_message.metadata_json = _json_dumps(
+            {
+                "task_type": task_type,
+                "retrieval_scope": normalized_retrieval_scope,
+            }
+        )
+        session.add(user_message)
 
     task = create_task(
         session=session,
@@ -68,6 +84,7 @@ def run_analysis(
                 "document_type": document_type,
                 "document_ids": document_ids or [],
                 "extra_requirements": extra_requirements,
+                "retrieval_scope": normalized_retrieval_scope,
             }
         ),
         status="running",
@@ -86,6 +103,8 @@ def run_analysis(
         document_type=document_type,
         document_ids=document_ids or [],
         extra_requirements=extra_requirements,
+        retrieval_scope=normalized_retrieval_scope,
+        metadata={"retrieval_scope": normalized_retrieval_scope},
     )
     with weknora_log_context(
         correlation_id=uuid4().hex,

@@ -39,6 +39,7 @@ class AgentRequest:
     document_type: str | None = None
     document_ids: list[str] = field(default_factory=list)
     extra_requirements: str | None = None
+    retrieval_scope: str = "all"
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
