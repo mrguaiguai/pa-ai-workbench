@@ -104,7 +104,7 @@ class MockKnowledgeBackend(KnowledgeEngine):
         filtered = [
             evidence
             for evidence in self._evidence
-            if self._matches_filters(evidence.metadata, filters)
+            if self._matches_filters(evidence, filters)
         ]
         if normalized_query:
             ranked = sorted(
@@ -161,12 +161,30 @@ class MockKnowledgeBackend(KnowledgeEngine):
         return page
 
     @staticmethod
-    def _matches_filters(metadata: dict, filters: dict | None) -> bool:
+    def _matches_filters(evidence: Evidence, filters: dict | None) -> bool:
         if not filters:
             return True
-        return all(metadata.get(key) == value for key, value in filters.items())
+        for key, value in filters.items():
+            if key == "source_type":
+                if _normalize_source_type(value) != _normalize_source_type(evidence.source_type):
+                    return False
+                continue
+            if key == "source_scope":
+                continue
+            if evidence.metadata.get(key) != value:
+                return False
+        return True
 
     @staticmethod
     def _score_query_match(evidence: Evidence, normalized_query: str) -> int:
         haystack = f"{evidence.title} {evidence.text}".lower()
         return int(normalized_query in haystack)
+
+
+def _normalize_source_type(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"document", "documents", "doc", "chunk", "document_chunk"}:
+        return "document_chunk"
+    if normalized in {"wiki", "wiki_page", "wiki-page"}:
+        return "wiki_page"
+    return normalized or "unknown"

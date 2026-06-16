@@ -64,6 +64,8 @@ DEBUG_METADATA_ALLOWLIST = {
     "current_run_isolation_warnings",
     "current_run_namespace",
     "current_run_scope",
+    "source_scope",
+    "source_scope_warnings",
 }
 
 
@@ -95,7 +97,8 @@ def retrieve_rag_debug(request: RagDebugRequest) -> RagDebugResponse:
     )
     debug_trace = retrieval_debug_trace(retrieval_options)
     requested_source_type = _optional_str(
-        request.filters.get("source_type")
+        request.filters.get("source_scope")
+        or request.filters.get("source_type")
         or request.filters.get("source")
         or request.filters.get("sourceType")
     )

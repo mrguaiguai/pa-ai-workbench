@@ -10,6 +10,7 @@ from pydantic import model_validator
 from knowledge_engine.retrieval import RETRIEVAL_OPTIONS_KEY
 from knowledge_engine.retrieval import normalize_retrieval_options
 from knowledge_engine.retrieval import retrieval_debug_trace
+from knowledge_engine.source_scope import normalize_source_scope
 
 
 class DocumentRead(BaseModel):
@@ -414,6 +415,7 @@ RAG_FILTER_KEYS = {
     "knowledge_ids",
     RETRIEVAL_OPTIONS_KEY,
     "source_type",
+    "source_scope",
 }
 
 
@@ -421,8 +423,31 @@ def _validate_rag_filters(filters: dict) -> dict:
     unknown = sorted(str(key) for key in filters if str(key) not in RAG_FILTER_KEYS)
     if unknown:
         raise ValueError("Unsupported RAG filter(s): " + ", ".join(unknown))
+    source_scope = filters.get("source_scope")
     source_type = filters.get("source_type")
+    if source_scope not in (None, ""):
+        normalized_scope = normalize_source_scope(source_scope)
+        filters["source_scope"] = normalized_scope
+        if normalized_scope == "document":
+            filters["source_type"] = "document_chunk"
+        elif normalized_scope == "wiki":
+            filters["source_type"] = "wiki_page"
+        else:
+            filters.pop("source_type", None)
+        if RETRIEVAL_OPTIONS_KEY in filters:
+            filters[RETRIEVAL_OPTIONS_KEY] = normalize_retrieval_options(
+                filters.get(RETRIEVAL_OPTIONS_KEY)
+            )
+        return filters
     if source_type in (None, ""):
+        if RETRIEVAL_OPTIONS_KEY in filters:
+            filters[RETRIEVAL_OPTIONS_KEY] = normalize_retrieval_options(
+                filters.get(RETRIEVAL_OPTIONS_KEY)
+            )
+        return filters
+    if str(source_type).strip().lower() == "all":
+        filters.pop("source_type", None)
+        filters["source_scope"] = "all"
         if RETRIEVAL_OPTIONS_KEY in filters:
             filters[RETRIEVAL_OPTIONS_KEY] = normalize_retrieval_options(
                 filters.get(RETRIEVAL_OPTIONS_KEY)
@@ -432,6 +457,7 @@ def _validate_rag_filters(filters: dict) -> dict:
     if normalized not in {"document_chunk", "wiki_page"}:
         raise ValueError("source_type must be document_chunk or wiki_page")
     filters["source_type"] = normalized
+    filters["source_scope"] = "document" if normalized == "document_chunk" else "wiki"
     if RETRIEVAL_OPTIONS_KEY in filters:
         filters[RETRIEVAL_OPTIONS_KEY] = normalize_retrieval_options(
             filters.get(RETRIEVAL_OPTIONS_KEY)

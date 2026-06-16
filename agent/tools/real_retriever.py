@@ -10,6 +10,10 @@ from knowledge_engine.current_run import prepare_current_run_filters
 from knowledge_engine.evidence import normalize_evidence_results
 from knowledge_engine.factory import create_knowledge_engine
 from knowledge_engine.schemas import Evidence
+from knowledge_engine.source_scope import apply_source_scope
+from knowledge_engine.source_scope import attach_source_scope_warnings
+from knowledge_engine.source_scope import prepare_source_scope_filters
+from knowledge_engine.source_scope import source_scope_fetch_top_k
 
 
 class RealRetrieverTool:
@@ -34,16 +38,26 @@ class RealRetrieverTool:
         self.capabilities.require("rag_retrieve")
         resolved_filters = self._build_filters(filters=filters, source_type=source_type)
         resolved_top_k = max(self.default_top_k if top_k is None else top_k, 0)
-        prepared = prepare_current_run_filters(resolved_filters)
+        scoped = prepare_source_scope_filters(resolved_filters)
+        prepared = prepare_current_run_filters(scoped.filters)
+        fetch_top_k = max(
+            current_run_fetch_top_k(resolved_top_k, prepared.scope),
+            source_scope_fetch_top_k(resolved_top_k, scoped.scope),
+        )
         raw_items = self.knowledge_engine.retrieve(
             query=query,
             filters=prepared.filters,
-            top_k=current_run_fetch_top_k(resolved_top_k, prepared.scope),
+            top_k=fetch_top_k,
         )
         isolated = apply_current_run_isolation(raw_items, prepared.scope)
-        warnings = [*prepared.warnings, *isolated.warnings]
+        source_scoped = apply_source_scope(isolated.items, scoped.scope)
+        current_run_warnings = [*prepared.warnings, *isolated.warnings]
+        source_scope_warnings = list(source_scoped.warnings)
         evidence_items = normalize_evidence_results(
-            attach_current_run_warnings(isolated.items, warnings),
+            attach_source_scope_warnings(
+                attach_current_run_warnings(source_scoped.items, current_run_warnings),
+                source_scope_warnings,
+            ),
             top_k=resolved_top_k,
         )
         return [self._to_citation(evidence) for evidence in evidence_items]
