@@ -8,6 +8,8 @@ from knowledge_engine.current_run import apply_current_run_isolation
 from knowledge_engine.current_run import attach_current_run_warnings
 from knowledge_engine.current_run import current_run_fetch_top_k
 from knowledge_engine.current_run import prepare_current_run_filters
+from knowledge_engine.distractor_guard import apply_distractor_guard
+from knowledge_engine.distractor_guard import attach_distractor_guard_warnings
 from knowledge_engine.evidence import normalize_evidence_results
 from knowledge_engine.factory import create_knowledge_engine
 from knowledge_engine.schemas import Evidence
@@ -56,14 +58,19 @@ def retrieve_evidence_with_context(
     )
     isolated = apply_current_run_isolation(raw_items, prepared.scope)
     source_scoped = apply_source_scope(isolated.items, scoped.scope)
+    guarded = apply_distractor_guard(source_scoped.items, query)
     current_run_warnings = [*prepared.warnings, *isolated.warnings]
     source_scope_warnings = list(source_scoped.warnings)
-    warnings = [*current_run_warnings, *source_scope_warnings]
-    ranked = rank_answer_bearing_evidence(source_scoped.items, query)
+    distractor_warnings = list(guarded.warnings)
+    warnings = [*current_run_warnings, *source_scope_warnings, *distractor_warnings]
+    ranked = rank_answer_bearing_evidence(guarded.items, query)
     normalized = normalize_evidence_results(
-        attach_source_scope_warnings(
-            attach_current_run_warnings(ranked, current_run_warnings),
-            source_scope_warnings,
+        attach_distractor_guard_warnings(
+            attach_source_scope_warnings(
+                attach_current_run_warnings(ranked, current_run_warnings),
+                source_scope_warnings,
+            ),
+            distractor_warnings,
         ),
         top_k=normalized_top_k,
     )

@@ -208,7 +208,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 | P5-B1 | 设计并实现当前验收语料隔离策略 | [x] |
 | P5-B2 | 稳定 document / wiki / all source 范围过滤 | [x] |
 | P5-B3 | 优化 answer-bearing chunk 排名与 debug 诊断 | [x] |
-| P5-B4 | 固化 `TEST-DISTRACTOR-001` 干扰材料回归哨兵 | [ ] |
+| P5-B4 | 固化 `TEST-DISTRACTOR-001` 干扰材料回归哨兵 | [x] |
 | P5-B5 | 真实 RAG 24 问矩阵达到 PASS | [ ] |
 
 ### P5-C：Wiki 自然语言召回修复
@@ -392,7 +392,7 @@ P4Q-022 不得引用 `TEST-DISTRACTOR-001`；P4Q-023 仍能命中该材料并说
 验证方式：
 fixture smoke 和真实 RAG / QA 脚本分别覆盖 P4Q-022、P4Q-023。
 
-状态：[ ]
+状态：[x]
 
 ### P5-B5：真实 RAG 24 问矩阵达到 PASS
 

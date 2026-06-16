@@ -77,6 +77,8 @@ DEBUG_METADATA_ALLOWLIST = {
     "answer_bearing_raw_rank",
     "answer_bearing_score",
     "answer_bearing_strategy",
+    "distractor_guard_decision",
+    "distractor_guard_warnings",
 }
 
 
