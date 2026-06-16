@@ -61,7 +61,24 @@ function statusClass(value: string) {
 }
 
 function configuredLabel(label: string, configured: boolean | undefined) {
-  return `${label}: ${configured ? "configured" : "missing"}`;
+  return `${label}：${configured ? "已配置" : "缺失"}`;
+}
+
+function runtimeStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    "weknora connected": "WeKnora 已连接",
+    "missing config": "配置缺失",
+    "weknora unavailable": "WeKnora 不可用",
+    "mock fallback": "模拟模式回退",
+    "real ready": "真实能力就绪",
+    "fail closed": "失败关闭",
+    eligible: "可作为发布证据",
+    "dev only": "仅开发态",
+    configured: "已配置",
+    loading: "加载中",
+    error: "错误",
+  };
+  return labels[status] ?? status;
 }
 
 export function HomePage({ navigateTo }: HomePageProps) {
@@ -83,7 +100,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
         ? `HTTP ${error.status}`
         : error instanceof Error
           ? error.message
-          : "Unknown error";
+          : "未知错误";
 
     Promise.allSettled([apiClient.getStatus(), apiClient.getModelStatus()]).then((results) => {
       if (!isMounted) {
@@ -121,7 +138,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
   const metrics = useMemo(
     () => [
       { label: "资料", value: counts?.documents ?? 0 },
-      { label: "Chunks", value: counts?.document_chunks ?? 0 },
+      { label: "分块", value: counts?.document_chunks ?? 0 },
       { label: "任务", value: counts?.tasks ?? 0 },
       { label: "输出", value: counts?.outputs ?? 0 },
     ],
@@ -160,28 +177,28 @@ export function HomePage({ navigateTo }: HomePageProps) {
     const ragPrimary =
       backendReady && weknora?.mode === "weknora_api"
         ? "weknora_api"
-        : backend?.knowledge_backend ?? "unknown";
+        : backend?.knowledge_backend ?? "未知";
     const ragSecondary =
       backendReady && weknora?.mode === "weknora_api"
-        ? weknora.message || "WeKnora status unavailable"
+        ? weknora.message || "WeKnora 状态不可用"
         : backendReady
-          ? `${counts?.document_chunks ?? 0} chunks indexed/stored`
-          : "backend status unavailable";
+          ? `${counts?.document_chunks ?? 0} 个分块已索引或存储`
+          : "后端状态不可用";
     const ragDetails =
       backend && weknora?.mode === "weknora_api"
         ? [
-            configuredLabel("auth", weknora.service_token_configured),
-            configuredLabel("workspace", weknora.workspace_configured),
-            configuredLabel("kb", weknora.kb_configured),
-            `health: ${weknora.health_status ?? weknora.status}`,
+            configuredLabel("认证", weknora.service_token_configured),
+            configuredLabel("工作区", weknora.workspace_configured),
+            configuredLabel("知识库", weknora.kb_configured),
+            `健康状态：${weknora.health_status ?? weknora.status}`,
             ]
         : backend
           ? [
-              `backend mock: ${backend.mock_mode ? "yes" : "no"}`,
-              `model mock: ${model?.mock_mode ? "yes" : "no"}`,
-              `database: ${backend.database}`,
+              `后端模拟模式：${backend.mock_mode ? "是" : "否"}`,
+              `模型模拟模式：${model?.mock_mode ? "是" : "否"}`,
+              `数据库：${backend.database}`,
             ]
-          : [status.state === "loading" ? "loading" : status.error ?? "error"];
+          : [status.state === "loading" ? "加载中" : status.error ?? "错误"];
     const capabilityStatus = backendReady
       ? parity?.fail_closed
         ? "fail closed"
@@ -192,23 +209,23 @@ export function HomePage({ navigateTo }: HomePageProps) {
         ? "loading"
         : "error";
     const capabilitySecondary = parity
-      ? `${statusCounts.supported ?? 0} supported · ${statusCounts.partial ?? 0} partial · ${
+      ? `${statusCounts.supported ?? 0} 项支持 · ${statusCounts.partial ?? 0} 项部分支持 · ${
           statusCounts.unsupported ?? 0
-        } unsupported`
-      : "capability summary unavailable";
+        } 项不支持`
+      : "能力摘要不可用";
     const capabilityDetails = parity
       ? [
-          `facts: ${parity.data_fact_source}`,
-          `kb maps: ${kbMapping?.mapping_count ?? 0}`,
-          `citation: ${parity.citation_trace}`,
-          `wiki publish: ${parity.wiki}`,
-          `debug: ${parity.debug}`,
+          `事实来源：${parity.data_fact_source}`,
+          `知识库映射：${kbMapping?.mapping_count ?? 0}`,
+          `引用追踪：${parity.citation_trace}`,
+          `Wiki 发布：${parity.wiki}`,
+          `调试能力：${parity.debug}`,
         ]
-      : [status.state === "loading" ? "loading" : status.error ?? "error"];
+      : [status.state === "loading" ? "加载中" : status.error ?? "错误"];
     return [
       {
         id: "chat",
-        label: "Chat Model",
+        label: "对话模型",
         icon: BrainCircuit,
         state: modelStatus.state,
         status:
@@ -219,20 +236,20 @@ export function HomePage({ navigateTo }: HomePageProps) {
             : modelStatus.state === "loading"
               ? "loading"
               : "error",
-        primary: model?.chat.provider ?? "unknown",
-        secondary: model?.chat.model || "model not set",
+        primary: model?.chat.provider ?? "未知",
+        secondary: model?.chat.model || "未设置模型",
         details:
           model
             ? [
-                `mock: ${model.chat.mock ? "yes" : "no"}`,
-                `api key: ${model.chat.api_key_configured ? "set" : "not set"}`,
-                `timeout: ${model.chat.timeout_seconds}s`,
+                `模拟模式：${model.chat.mock ? "是" : "否"}`,
+                `API 密钥：${model.chat.api_key_configured ? "已设置" : "未设置"}`,
+                `超时：${model.chat.timeout_seconds}s`,
               ]
-            : [modelStatus.state === "loading" ? "loading" : modelStatus.error ?? "error"],
+            : [modelStatus.state === "loading" ? "加载中" : modelStatus.error ?? "错误"],
       },
       {
         id: "embedding",
-        label: "Embedding",
+        label: "向量模型",
         icon: Layers3,
         state: modelStatus.state,
         status:
@@ -243,20 +260,20 @@ export function HomePage({ navigateTo }: HomePageProps) {
             : modelStatus.state === "loading"
               ? "loading"
               : "error",
-        primary: model?.embedding.provider ?? "unknown",
-        secondary: model?.embedding.model || "model not set",
+        primary: model?.embedding.provider ?? "未知",
+        secondary: model?.embedding.model || "未设置模型",
         details:
           model
             ? [
-                `mock: ${model.embedding.mock ? "yes" : "no"}`,
-                `dimension: ${model.embedding.dimension ?? "not set"}`,
-                `api key: ${model.embedding.api_key_configured ? "set" : "not set"}`,
+                `模拟模式：${model.embedding.mock ? "是" : "否"}`,
+                `维度：${model.embedding.dimension ?? "未设置"}`,
+                `API 密钥：${model.embedding.api_key_configured ? "已设置" : "未设置"}`,
               ]
-            : [modelStatus.state === "loading" ? "loading" : modelStatus.error ?? "error"],
+            : [modelStatus.state === "loading" ? "加载中" : modelStatus.error ?? "错误"],
       },
       {
         id: "rag",
-        label: "RAG Pipeline",
+        label: "RAG 检索链路",
         icon: Cable,
         state: backendReady && modelReady ? "ready" : status.state,
         status: ragStatus,
@@ -266,11 +283,11 @@ export function HomePage({ navigateTo }: HomePageProps) {
       },
       {
         id: "capability",
-        label: "Capability",
+        label: "能力边界",
         icon: ShieldCheck,
         state: status.state,
         status: capabilityStatus,
-        primary: capabilities?.active_backend ?? "unknown",
+        primary: capabilities?.active_backend ?? "未知",
         secondary: capabilitySecondary,
         details: capabilityDetails,
       },
@@ -304,7 +321,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
               <div className="runtime-status-title">
                 <Icon size={18} aria-hidden="true" />
                 <span>{card.label}</span>
-                <strong>{card.status}</strong>
+                <strong>{runtimeStatusLabel(card.status)}</strong>
               </div>
               <h3>{card.primary}</h3>
               <p>{card.secondary}</p>
@@ -321,7 +338,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
       <section className="home-grid">
         <div className="home-panel workflow-panel">
           <div className="home-panel-heading">
-            <span>Agent Workflows</span>
+            <span>Agent 分析流</span>
             <strong>内置分析流</strong>
           </div>
           <div className="workflow-list">
@@ -333,7 +350,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
                 onClick={() => navigateTo(workflow.route)}
               >
                 <span>{workflow.title}</span>
-                <code>{workflow.taskType}</code>
+                <code>{workflow.title}</code>
                 <ArrowRight size={16} aria-hidden="true" />
               </button>
             ))}
@@ -342,7 +359,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
 
         <div className="home-panel quick-panel">
           <div className="home-panel-heading">
-            <span>Workspace</span>
+            <span>工作区</span>
             <strong>工作区</strong>
           </div>
           <div className="quick-grid">

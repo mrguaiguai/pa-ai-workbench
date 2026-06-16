@@ -234,7 +234,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P5-E1 | 修复核心页面残留英文术语 | [ ] |
+| P5-E1 | 修复核心页面残留英文术语 | [x] |
 | P5-E2 | 在知识问答页加入简单知识来源选择 | [ ] |
 | P5-E3 | 统一真实 / mock / fallback / partial / unavailable 状态展示 | [ ] |
 | P5-E4 | 前端构建与浏览器验收达到 PASS | [ ] |
@@ -574,7 +574,7 @@ QA fixture smoke 和真实 QA 报告覆盖 P4Q-022、P4Q-024。
 验证方式：
 `rg` 扫描残留英文关键词，并运行 frontend build。
 
-状态：[ ]
+状态：[x]
 
 ### P5-E2：在知识问答页加入简单知识来源选择
 

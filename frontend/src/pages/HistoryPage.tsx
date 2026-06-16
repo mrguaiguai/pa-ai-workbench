@@ -53,12 +53,26 @@ const baseTaskTypeOptions = ["knowledge_qa", "policy_analysis", "case_review", "
 const baseStatusOptions = ["completed", "failed", "running", "created"];
 
 const evidenceStateLabels: Record<string, string> = {
-  no_evidence: "No evidence",
-  mock_only: "Mock only",
+  no_evidence: "无证据",
+  mock_only: "仅模拟证据",
   weknora: "WeKnora",
-  mixed: "Mixed",
-  other: "Other",
-  unknown: "Unknown",
+  mixed: "混合来源",
+  other: "其他来源",
+  unknown: "未知",
+};
+
+const taskTypeLabels: Record<string, string> = {
+  knowledge_qa: "知识问答",
+  policy_analysis: "政策分析",
+  case_review: "案例复盘",
+  wiki_draft: "Wiki 草稿",
+};
+
+const statusLabels: Record<string, string> = {
+  completed: "已完成",
+  failed: "失败",
+  running: "运行中",
+  created: "已创建",
 };
 
 function formatDate(value: string) {
@@ -77,7 +91,7 @@ function errorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }
-  return "Unknown error";
+  return "未知错误";
 }
 
 function formatContent(output: GeneratedOutput | null) {
@@ -139,6 +153,14 @@ function evidenceStateLabel(output: GeneratedOutput) {
 
 function compactCountLabel(label: string, count: number | undefined) {
   return `${label} ${count ?? 0}`;
+}
+
+function taskTypeLabel(value: string) {
+  return taskTypeLabels[value] ?? value;
+}
+
+function outputStatusLabel(value: string) {
+  return statusLabels[value] ?? value;
 }
 
 export function HistoryPage() {
@@ -281,7 +303,7 @@ export function HistoryPage() {
       <aside className="history-list-panel" aria-label="生成历史列表">
         <section className="history-filter-panel">
           <div className="history-panel-heading">
-            <span>Filter</span>
+            <span>筛选</span>
             <button
               className={historyState === "loading" ? "icon-button loading" : "icon-button"}
               type="button"
@@ -319,7 +341,7 @@ export function HistoryPage() {
                 <option value="all">全部</option>
                 {taskTypeOptions.map((taskType) => (
                   <option value={taskType} key={taskType}>
-                    {taskType}
+                    {taskTypeLabel(taskType)}
                   </option>
                 ))}
               </select>
@@ -333,13 +355,13 @@ export function HistoryPage() {
                 <option value="all">全部</option>
                 {statusOptions.map((status) => (
                   <option value={status} key={status}>
-                    {status}
+                    {outputStatusLabel(status)}
                   </option>
                 ))}
               </select>
             </label>
             <label>
-              <span>Citation source</span>
+              <span>引用来源</span>
               <select
                 value={filters.citationSource}
                 onChange={(event) =>
@@ -348,13 +370,13 @@ export function HistoryPage() {
               >
                 <option value="all">全部</option>
                 <option value="weknora_api">真实 WeKnora</option>
-                <option value="mock">Mock</option>
-                <option value="none">无 evidence</option>
-                <option value="unknown">Unknown</option>
+                <option value="mock">模拟证据</option>
+                <option value="none">无证据</option>
+                <option value="unknown">未知</option>
               </select>
             </label>
             <label>
-              <span>Source type</span>
+              <span>证据类型</span>
               <select
                 value={filters.sourceType}
                 onChange={(event) =>
@@ -362,13 +384,13 @@ export function HistoryPage() {
                 }
               >
                 <option value="all">全部</option>
-                <option value="document_chunk">Document chunk</option>
-                <option value="wiki_page">Wiki page</option>
-                <option value="unknown">Unknown</option>
+                <option value="document_chunk">文档分块</option>
+                <option value="wiki_page">Wiki 页面</option>
+                <option value="unknown">未知</option>
               </select>
             </label>
             <label>
-              <span>Evidence</span>
+              <span>证据状态</span>
               <select
                 value={filters.evidenceState}
                 onChange={(event) =>
@@ -376,16 +398,16 @@ export function HistoryPage() {
                 }
               >
                 <option value="all">全部</option>
-                <option value="no_evidence">No evidence</option>
-                <option value="mock_only">Mock only</option>
+                <option value="no_evidence">无证据</option>
+                <option value="mock_only">仅模拟证据</option>
                 <option value="weknora">WeKnora</option>
-                <option value="mixed">Mixed</option>
-                <option value="other">Other</option>
-                <option value="unknown">Unknown</option>
+                <option value="mixed">混合来源</option>
+                <option value="other">其他来源</option>
+                <option value="unknown">未知</option>
               </select>
             </label>
             <label>
-              <span>Warning</span>
+              <span>警告</span>
               <select
                 value={filters.warningFilter}
                 onChange={(event) =>
@@ -393,8 +415,8 @@ export function HistoryPage() {
                 }
               >
                 <option value="all">全部</option>
-                <option value="with_warnings">有 warning</option>
-                <option value="no_warnings">无 warning</option>
+                <option value="with_warnings">有警告</option>
+                <option value="no_warnings">无警告</option>
               </select>
             </label>
           </div>
@@ -402,7 +424,7 @@ export function HistoryPage() {
 
         <section className="history-results-panel">
           <div className="history-panel-heading">
-            <span>Outputs</span>
+            <span>结果列表</span>
             <strong>{outputs.length}</strong>
           </div>
 
@@ -427,17 +449,17 @@ export function HistoryPage() {
                 >
                   <strong>{output.title}</strong>
                   <div>
-                    <span>{output.task_type}</span>
+                    <span>{taskTypeLabel(output.task_type)}</span>
                     <StatusBadge status={output.status} />
                     <span>{evidenceStateLabel(output)}</span>
                   </div>
                   <div className="history-output-metrics">
-                    <span>{compactCountLabel("Cites", output.citation_count)}</span>
+                    <span>{compactCountLabel("引用", output.citation_count)}</span>
                     <span>{compactCountLabel("WeKnora", output.weknora_citation_count)}</span>
-                    <span>{compactCountLabel("Mock", output.mock_citation_count)}</span>
-                    <span>{compactCountLabel("Doc", output.document_citation_count)}</span>
+                    <span>{compactCountLabel("模拟", output.mock_citation_count)}</span>
+                    <span>{compactCountLabel("文档", output.document_citation_count)}</span>
                     <span>{compactCountLabel("Wiki", output.wiki_citation_count)}</span>
-                    <span>{compactCountLabel("Warn", output.warning_count)}</span>
+                    <span>{compactCountLabel("警告", output.warning_count)}</span>
                   </div>
                   <time>{formatDate(output.created_at)}</time>
                 </button>
@@ -449,7 +471,7 @@ export function HistoryPage() {
 
       <section className="history-detail-panel" aria-label="历史详情">
         <div className="history-panel-heading">
-          <span>Result</span>
+          <span>结果</span>
           <strong>{selectedOutput?.title ?? "未选择结果"}</strong>
         </div>
 
@@ -458,11 +480,11 @@ export function HistoryPage() {
         ) : selectedOutput ? (
           <article className="history-output-detail">
             <div className="history-detail-meta">
-              <span>{selectedOutput.task_type}</span>
-              <span>{selectedOutput.status}</span>
+              <span>{taskTypeLabel(selectedOutput.task_type)}</span>
+              <span>{outputStatusLabel(selectedOutput.status)}</span>
               <span>{evidenceStateLabel(selectedOutput)}</span>
-              <span>{compactCountLabel("Cites", selectedOutput.citation_count)}</span>
-              <span>{compactCountLabel("Warn", selectedOutput.warning_count)}</span>
+              <span>{compactCountLabel("引用", selectedOutput.citation_count)}</span>
+              <span>{compactCountLabel("警告", selectedOutput.warning_count)}</span>
               <span>{formatDate(selectedOutput.created_at)}</span>
             </div>
             <pre>{displayContent}</pre>
@@ -475,14 +497,14 @@ export function HistoryPage() {
       <aside className="history-evidence-panel" aria-label="引用与警告">
         <section className="history-side-section">
           <div className="history-panel-heading">
-            <span>Wiki Draft</span>
-            <strong>{createdDraft?.status ?? "Ready"}</strong>
+            <span>Wiki 草稿</span>
+            <strong>{createdDraft?.status ?? "准备就绪"}</strong>
           </div>
 
           <div className="history-draft-summary">
-            <span>{`Total citations ${citationSummary.totalCount}`}</span>
+            <span>{`引用合计 ${citationSummary.totalCount}`}</span>
             <span>{`WeKnora ${citationSummary.weknoraCount}`}</span>
-            <span>{`Mock ${citationSummary.mockCount}`}</span>
+            <span>{`模拟 ${citationSummary.mockCount}`}</span>
           </div>
 
           {citationSummary.totalCount > 0 && citationSummary.weknoraCount === 0 ? (
@@ -523,7 +545,7 @@ export function HistoryPage() {
 
         <section className="history-side-section">
           <div className="history-panel-heading">
-            <span>Warnings</span>
+            <span>警告</span>
             <strong>{warnings.length}</strong>
           </div>
 
@@ -532,7 +554,7 @@ export function HistoryPage() {
 
         <section className="history-side-section">
           <div className="history-panel-heading">
-            <span>Citations</span>
+            <span>引用</span>
             <strong>{citations.length}</strong>
           </div>
 

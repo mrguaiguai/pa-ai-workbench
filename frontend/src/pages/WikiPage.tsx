@@ -72,7 +72,7 @@ function errorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }
-  return "Unknown error";
+  return "未知错误";
 }
 
 function metadataEntries(metadata: Record<string, unknown>) {
@@ -83,7 +83,7 @@ function metadataEntries(metadata: Record<string, unknown>) {
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) {
-    return "not set";
+    return "未设置";
   }
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
@@ -149,6 +149,17 @@ function statusLabel(status?: string | null) {
   return "draft";
 }
 
+function statusText(status?: string | null) {
+  const normalized = statusLabel(status);
+  if (normalized === "published") {
+    return "已发布";
+  }
+  if (normalized === "archived") {
+    return "已归档";
+  }
+  return "草稿";
+}
+
 function metadataString(metadata: Record<string, unknown> | undefined, key: string) {
   const value = metadata?.[key];
   if (value === null || value === undefined || value === "") {
@@ -187,6 +198,22 @@ function indexStatus(page: WikiPageDetail | null) {
 
 function indexStatusClass(page: WikiPageDetail | null) {
   return indexStatus(page).replace(/\s+/g, "-").toLowerCase();
+}
+
+function indexStatusText(status: string) {
+  const labels: Record<string, string> = {
+    "not loaded": "未加载",
+    "draft not searchable": "草稿不可检索",
+    "sync failed": "同步失败",
+    "indexed searchable": "已索引可检索",
+    indexing: "索引中",
+    "published not indexed": "已发布未索引",
+    "published not retrievable": "已发布但不可检索",
+    "index timeout": "索引超时",
+    "refresh failed": "刷新失败",
+    retrievable: "可检索",
+  };
+  return labels[status] ?? status.replace(/_/g, " ");
 }
 
 function ragAvailability(page: WikiPageDetail | null) {
@@ -234,15 +261,15 @@ function ragAvailability(page: WikiPageDetail | null) {
 function evidenceTypeLabel(sourceType?: string | null) {
   const normalized = String(sourceType || "").trim().toLowerCase();
   if (["document", "document_chunk", "chunk"].includes(normalized)) {
-    return "Document";
+    return "文档证据";
   }
   if (["wiki", "wiki_page", "wiki-page"].includes(normalized)) {
-    return "Wiki";
+    return "Wiki 证据";
   }
   if (normalized === "mock") {
-    return "Mock";
+    return "模拟证据";
   }
-  return normalized || "Evidence";
+  return normalized || "证据";
 }
 
 function wikiCitationScoreDisplay(citation: WikiCitation) {
@@ -251,17 +278,17 @@ function wikiCitationScoreDisplay(citation: WikiCitation) {
     return display;
   }
   if (citation.score === null || citation.score === undefined) {
-    return "Score unavailable";
+    return "评分不可用";
   }
-  return `Score ${citation.score.toFixed(2)}`;
+  return `评分 ${citation.score.toFixed(2)}`;
 }
 
 function wikiCitationScoreTitle(citation: WikiCitation) {
   return (
     optionalString(citation.metadata?.score_semantics) ||
     (citation.score === null || citation.score === undefined
-      ? "No backend score returned"
-      : "Backend retrieval score")
+      ? "后端未返回评分"
+      : "后端检索评分")
   );
 }
 
@@ -286,16 +313,16 @@ function sourceRefCount(page: WikiPageDetail | null) {
 function publishRisks(page: WikiPageDetail, availability: ReturnType<typeof ragAvailability>) {
   const risks: string[] = [];
   if (sourceRefCount(page) === 0 && (page.wiki_citations?.length ?? 0) === 0) {
-    risks.push("No source refs or citation bindings are attached.");
+    risks.push("未绑定来源引用或引用证据。");
   }
   if (!page.content.trim()) {
-    risks.push("Page content is empty.");
+    risks.push("页面内容为空。");
   }
   if (availability.className !== "searchable") {
-    risks.push("Published pages are not considered retrievable until indexing succeeds.");
+    risks.push("发布页面在索引成功前不能视为可检索。");
   }
   if (page.source === "mock") {
-    risks.push("This page is backed by mock data.");
+    risks.push("该页面来自模拟数据。");
   }
   return risks;
 }
@@ -317,15 +344,15 @@ function PublishConfirmPanel({
   return (
     <section className="wiki-publish-confirm" aria-label="发布确认">
       <div>
-        <strong>Publish confirmation</strong>
+        <strong>发布确认</strong>
         <span>{availability.label}</span>
       </div>
       <p>{availability.hint}</p>
       <div className="wiki-ref-list compact">
-        <span>{`source refs: ${sourceRefCount(page)}`}</span>
-        <span>{`bindings: ${page.wiki_citations?.length ?? 0}`}</span>
-        <span>{`citations: ${page.citations.length}`}</span>
-        <span>{`status: ${page.status ?? "draft"}`}</span>
+        <span>{`来源引用：${sourceRefCount(page)}`}</span>
+        <span>{`证据绑定：${page.wiki_citations?.length ?? 0}`}</span>
+        <span>{`引用：${page.citations.length}`}</span>
+        <span>{`状态：${statusText(page.status)}`}</span>
       </div>
       {risks.length ? (
         <div className="wiki-publish-risks">
@@ -510,7 +537,7 @@ export function WikiPage() {
 
   const startCreate = () => {
     if (!wikiWriteAvailable) {
-      setError("Wiki write actions are unavailable for the active backend.");
+      setError("当前后端不可用 Wiki 写入能力。");
       return;
     }
     setPage(null);
@@ -544,7 +571,7 @@ export function WikiPage() {
   const savePage = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!wikiWriteAvailable) {
-      setEditorError("Wiki write actions are unavailable for the active backend.");
+      setEditorError("当前后端不可用 Wiki 写入能力。");
       return;
     }
     const title = editorForm.title.trim();
@@ -587,7 +614,7 @@ export function WikiPage() {
         setEditorForm(formFromPage(response));
         setEditorMode("view");
         setSaveState("idle");
-        setEditorNotice("Draft saved.");
+        setEditorNotice("草稿已保存。");
         setPublishConfirmOpen(false);
         setIndexState("idle");
         upsertResult(response);
@@ -656,7 +683,7 @@ export function WikiPage() {
       <aside className="wiki-search-panel" aria-label="Wiki 搜索">
         <form className="wiki-search-form" onSubmit={onSubmit}>
           <div className="wiki-panel-heading">
-            <span>Search</span>
+            <span>搜索</span>
             <div className="heading-actions">
               <button
                 className="icon-button"
@@ -691,7 +718,7 @@ export function WikiPage() {
               />
             </label>
             <label>
-              <span>KB ID</span>
+              <span>知识库 ID</span>
               <input
                 value={form.kbId}
                 onChange={(event) => setForm({ ...form, kbId: event.target.value })}
@@ -716,7 +743,7 @@ export function WikiPage() {
 
         <section className="wiki-results" aria-label="Wiki 搜索结果">
           <div className="wiki-panel-heading">
-            <span>Pages</span>
+            <span>页面</span>
             <strong>{results.length}</strong>
           </div>
 
@@ -734,7 +761,7 @@ export function WikiPage() {
                   onClick={() => onSelectPage(result.slug)}
                 >
                   <strong>{result.title}</strong>
-                  <span>{statusLabel(result.status)}</span>
+                  <span>{statusText(result.status)}</span>
                   <p>{result.summary || result.page_type || result.slug}</p>
                 </button>
               ))}
@@ -745,7 +772,7 @@ export function WikiPage() {
 
       <section className="wiki-reader" aria-label="Wiki 页面内容">
         <div className="wiki-panel-heading">
-          <span>{isEditing ? "Editor" : "Reader"}</span>
+          <span>{isEditing ? "编辑器" : "阅读"}</span>
           <div className="heading-actions">
             {page && !isEditing ? (
               <>
@@ -833,7 +860,7 @@ export function WikiPage() {
                 />
               </label>
               <label>
-                <span>Slug</span>
+                <span>页面路径</span>
                 <input
                   value={editorForm.slug}
                   disabled={editorMode === "edit"}
@@ -880,7 +907,7 @@ export function WikiPage() {
                 />
               </label>
               <label className="wide">
-                <span>Markdown</span>
+                <span>Markdown 正文</span>
                 <textarea
                   rows={18}
                   value={editorForm.content}
@@ -924,7 +951,7 @@ export function WikiPage() {
             ) : null}
             <div className="wiki-article-title">
               <div className="wiki-status-pills">
-                <span>{pageStatus}</span>
+                <span>{statusText(page?.status)}</span>
                 <span className={availability.className}>{availability.label}</span>
               </div>
               <h2>{page.title}</h2>
@@ -953,9 +980,9 @@ export function WikiPage() {
       <aside className="wiki-citation-panel" aria-label="Wiki 引用与索引状态">
         <section className="wiki-side-section" aria-label="索引状态">
           <div className="wiki-panel-heading">
-            <span>Index</span>
+            <span>索引</span>
             <div className="heading-actions">
-              <strong>{indexStatus(page)}</strong>
+              <strong>{indexStatusText(indexStatus(page))}</strong>
               <button
                 className={indexState === "loading" ? "icon-button loading" : "icon-button"}
                 type="button"
@@ -986,15 +1013,15 @@ export function WikiPage() {
               </div>
               <p className="wiki-index-hint">{availability.hint}</p>
               <div className="wiki-ref-list">
-                <span>{`status: ${page.status ?? "draft"}`}</span>
-                <span>{`published: ${formatDateTime(page.published_at)}`}</span>
-                <span>{`indexed: ${formatDateTime(page.indexed_at)}`}</span>
-                <span>{`embedding: ${page.embedding_status ?? "not set"}`}</span>
-                <span>{`vector: ${page.vector_id ?? "not set"}`}</span>
-                <span>{`weknora sync: ${metadataString(page.metadata, "weknora_sync_status") ?? "not set"}`}</span>
-                <span>{`weknora index: ${metadataString(page.metadata, "weknora_index_status") ?? "not set"}`}</span>
-                <span>{`retrievable: ${page.wiki_retrievable ? "yes" : "no"}`}</span>
-                <span>{`timeout: ${page.wiki_index_timed_out ? "yes" : "no"}`}</span>
+                <span>{`状态：${statusText(page.status)}`}</span>
+                <span>{`发布时间：${formatDateTime(page.published_at)}`}</span>
+                <span>{`索引时间：${formatDateTime(page.indexed_at)}`}</span>
+                <span>{`向量状态：${page.embedding_status ?? "未设置"}`}</span>
+                <span>{`向量 ID：${page.vector_id ?? "未设置"}`}</span>
+                <span>{`WeKnora 同步：${metadataString(page.metadata, "weknora_sync_status") ?? "未设置"}`}</span>
+                <span>{`WeKnora 索引：${metadataString(page.metadata, "weknora_index_status") ?? "未设置"}`}</span>
+                <span>{`可检索：${page.wiki_retrievable ? "是" : "否"}`}</span>
+                <span>{`超时：${page.wiki_index_timed_out ? "是" : "否"}`}</span>
               </div>
               {metadataString(page.metadata, "weknora_sync_error") ||
               metadataString(page.metadata, "weknora_index_error") ? (
@@ -1011,20 +1038,20 @@ export function WikiPage() {
 
         <section className="wiki-side-section" aria-label="来源引用">
           <div className="wiki-panel-heading">
-            <span>Sources</span>
+            <span>来源</span>
             <strong>{sourceRefCount(page)}</strong>
           </div>
 
           {page ? (
             <div className="wiki-ref-list">
-              {page.source_output_id ? <span>{`output: ${page.source_output_id}`}</span> : null}
+              {page.source_output_id ? <span>{`输出：${page.source_output_id}`}</span> : null}
               {(page.source_document_ids ?? []).map((documentId) => (
-                <span key={`document-${documentId}`}>{`document: ${documentId}`}</span>
+                <span key={`document-${documentId}`}>{`文档：${documentId}`}</span>
               ))}
               {(page.source_citation_ids ?? []).map((citationId) => (
-                <span key={`citation-${citationId}`}>{`citation: ${citationId}`}</span>
+                <span key={`citation-${citationId}`}>{`引用：${citationId}`}</span>
               ))}
-              {sourceRefCount(page) === 0 ? <span>no source refs</span> : null}
+              {sourceRefCount(page) === 0 ? <span>暂无来源引用</span> : null}
             </div>
           ) : (
             <EmptyState text="暂无来源" compact />
@@ -1033,7 +1060,7 @@ export function WikiPage() {
 
         <section className="wiki-side-section" aria-label="Wiki Citation 绑定">
           <div className="wiki-panel-heading">
-            <span>Bindings</span>
+            <span>证据绑定</span>
             <strong>{page?.wiki_citations?.length ?? 0}</strong>
           </div>
 
@@ -1049,13 +1076,13 @@ export function WikiPage() {
                   </div>
                   <p>{citation.excerpt}</p>
                   <div className="wiki-ref-list compact">
-                    {citation.document_id ? <span>{`document: ${citation.document_id}`}</span> : null}
-                    {citation.chunk_id ? <span>{`chunk: ${citation.chunk_id}`}</span> : null}
-                    {citation.output_id ? <span>{`output: ${citation.output_id}`}</span> : null}
-                    {citation.citation_id ? <span>{`citation: ${citation.citation_id}`}</span> : null}
-                    {citation.evidence_id ? <span>{`evidence: ${citation.evidence_id}`}</span> : null}
+                    {citation.document_id ? <span>{`文档：${citation.document_id}`}</span> : null}
+                    {citation.chunk_id ? <span>{`分块：${citation.chunk_id}`}</span> : null}
+                    {citation.output_id ? <span>{`输出：${citation.output_id}`}</span> : null}
+                    {citation.citation_id ? <span>{`引用：${citation.citation_id}`}</span> : null}
+                    {citation.evidence_id ? <span>{`证据：${citation.evidence_id}`}</span> : null}
                     {citation.external_doc_id ? (
-                      <span>{`external: ${citation.external_doc_id}`}</span>
+                      <span>{`外部文档：${citation.external_doc_id}`}</span>
                     ) : null}
                   </div>
                 </article>
@@ -1066,9 +1093,9 @@ export function WikiPage() {
           )}
         </section>
 
-        <section className="wiki-side-section" aria-label="Evidence">
+        <section className="wiki-side-section" aria-label="证据">
           <div className="wiki-panel-heading">
-            <span>Evidence</span>
+            <span>证据</span>
             <strong>{page?.citations.length ?? 0}</strong>
           </div>
 

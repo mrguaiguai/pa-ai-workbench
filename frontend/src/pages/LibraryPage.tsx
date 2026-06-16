@@ -43,7 +43,7 @@ const initialForm: LibraryForm = {
   title: "",
   businessArea: "",
   documentType: "",
-  source: "manual",
+  source: "手动上传",
 };
 
 const initialFilters: LibraryFilters = {
@@ -85,7 +85,7 @@ function errorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }
-  return "Unknown error";
+  return "未知错误";
 }
 
 function stageClass(state: string) {
@@ -122,25 +122,25 @@ function chunkStatus(document: Document) {
     return "分块中";
   }
   if (document.chunk_count > 0) {
-    return `${document.chunk_count} chunks`;
+    return `${document.chunk_count} 个分块`;
   }
   return "待分块";
 }
 
 function embeddingStatus(document: Document) {
   if (document.embedding_status === "indexed") {
-    return `${document.indexed_chunk_count}/${document.chunk_count} embedded`;
+    return `${document.indexed_chunk_count}/${document.chunk_count} 已向量化`;
   }
   if (document.embedding_status === "partial") {
-    return `${document.indexed_chunk_count}/${document.chunk_count} embedding`;
+    return `${document.indexed_chunk_count}/${document.chunk_count} 向量化中`;
   }
   if (document.embedding_status === "failed") {
-    return "embedding 失败";
+    return "向量化失败";
   }
   if (document.status === "indexing" || document.embedding_status === "pending") {
-    return "embedding 中";
+    return "向量化中";
   }
-  return "待 embedding";
+  return "待向量化";
 }
 
 function indexStatus(document: Document) {
@@ -154,10 +154,10 @@ function indexStatus(document: Document) {
     return "索引失败";
   }
   if (document.status === "failed" && document.failed_step === "embedding") {
-    return "embedding 失败";
+    return "向量化失败";
   }
   if (document.status === "embedding") {
-    return "embedding 中";
+    return "向量化中";
   }
   return "待索引";
 }
@@ -205,14 +205,14 @@ function statusHint(document: Document) {
   }
   if (document.status === "indexed") {
     return document.chunk_count > 0
-      ? `${document.chunk_count} chunks ready`
-      : "索引完成，等待 chunk preview";
+      ? `${document.chunk_count} 个分块可用`
+      : "索引完成，等待分块预览";
   }
   if (document.status === "indexing") {
     return "索引完成后可提问";
   }
   if (document.status === "embedding") {
-    return "embedding 完成后进入索引";
+    return "向量化完成后进入索引";
   }
   if (document.status === "chunking") {
     return "分块完成后进入索引";
@@ -245,7 +245,7 @@ function stepLabel(step: string | null) {
   }
   if (normalized === "index" || normalized === "indexing" || normalized === "embedding") {
     if (normalized === "embedding") {
-      return "Embedding";
+      return "向量化";
     }
     return "索引";
   }
@@ -256,7 +256,7 @@ function stepLabel(step: string | null) {
     return "WeKnora 状态刷新";
   }
   if (normalized === "weknora_chunks") {
-    return "WeKnora chunks";
+    return "WeKnora 分块";
   }
   return step || "流程";
 }
@@ -271,27 +271,27 @@ function chunkExcerpt(text: string, maxChars = 360) {
   if (normalized.length <= maxChars) {
     return normalized;
   }
-  return `${normalized.slice(0, maxChars)}[truncated]`;
+  return `${normalized.slice(0, maxChars)}[已截断]`;
 }
 
 function chunkLocation(chunk: DocumentChunk) {
   const parts = [
-    chunk.page_number === null ? null : `p.${chunk.page_number}`,
+    chunk.page_number === null ? null : `第 ${chunk.page_number} 页`,
     chunk.start_char === null || chunk.end_char === null
       ? null
       : `${chunk.start_char}-${chunk.end_char}`,
   ].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "no offsets";
+  return parts.length ? parts.join(" · ") : "无位置偏移";
 }
 
 function chunkEmptyText(document: Document) {
   if (document.status === "failed") {
-    return "处理失败，暂无 chunks";
+    return "处理失败，暂无分块";
   }
   if (document.status !== "indexed") {
-    return "索引完成后显示 chunks";
+    return "索引完成后显示分块";
   }
-  return "暂无 chunks";
+  return "暂无分块";
 }
 
 function libraryHashTarget() {
@@ -551,7 +551,7 @@ export function LibraryPage() {
       <section className="library-grid">
         <form className="upload-panel" onSubmit={onSubmit}>
           <div className="library-panel-heading">
-            <span>Upload</span>
+            <span>上传</span>
             <strong>上传资料</strong>
           </div>
 
@@ -604,7 +604,7 @@ export function LibraryPage() {
 
         <section className="documents-panel" aria-label="资料列表">
           <div className="library-panel-heading">
-            <span>Documents</span>
+            <span>资料列表</span>
             <div className="library-heading-actions">
               <button
                 className="icon-button"
@@ -640,11 +640,11 @@ export function LibraryPage() {
                 }
               >
                 <option value="all">全部</option>
-                <option value="uploaded">uploaded</option>
-                <option value="processing">processing</option>
-                <option value="indexed">indexed</option>
-                <option value="failed">failed</option>
-                <option value="unavailable">unavailable</option>
+                <option value="uploaded">已上传</option>
+                <option value="processing">处理中</option>
+                <option value="indexed">已索引</option>
+                <option value="failed">失败</option>
+                <option value="unavailable">不可用</option>
               </select>
             </label>
             <label>
@@ -660,8 +660,8 @@ export function LibraryPage() {
               >
                 <option value="all">全部</option>
                 <option value="weknora_api">WeKnora</option>
-                <option value="mock">mock</option>
-                <option value="extracted">extracted</option>
+                <option value="mock">模拟模式</option>
+                <option value="extracted">本地抽取</option>
               </select>
             </label>
             <label className="library-filter-toggle">
@@ -734,7 +734,7 @@ export function LibraryPage() {
                       className="icon-button"
                       type="button"
                       onClick={() => loadPreview(document.id)}
-                      title="预览 chunks"
+                      title="预览分块"
                     >
                       <Eye size={16} aria-hidden="true" />
                     </button>
@@ -761,7 +761,7 @@ export function LibraryPage() {
             <section className="chunk-preview-panel" aria-label="Chunk 预览">
               <div className="chunk-preview-heading">
                 <div>
-                  <span>Chunks</span>
+                  <span>分块</span>
                   <strong>{previewDocument.title}</strong>
                   <small>{`${readinessStatus(previewDocument)} · ${backendLabel(previewDocument)}`}</small>
                 </div>
@@ -769,7 +769,7 @@ export function LibraryPage() {
                   className="icon-button"
                   type="button"
                   onClick={() => loadPreview(previewDocument.id, targetChunkId)}
-                  title="刷新 chunks"
+                  title="刷新分块"
                 >
                   <RefreshCw size={16} aria-hidden="true" />
                 </button>
@@ -781,14 +781,14 @@ export function LibraryPage() {
                 <span className={readinessClass(previewDocument)}>
                   {statusHint(previewDocument)}
                 </span>
-                <span>{`chunks: ${previewDocument.chunk_count}`}</span>
-                <span>{`indexed: ${previewDocument.indexed_chunk_count}`}</span>
-                <span>{`pending: ${previewDocument.pending_chunk_count}`}</span>
-                <span>{`failed: ${previewDocument.failed_chunk_count}`}</span>
+                <span>{`分块：${previewDocument.chunk_count}`}</span>
+                <span>{`已索引：${previewDocument.indexed_chunk_count}`}</span>
+                <span>{`待处理：${previewDocument.pending_chunk_count}`}</span>
+                <span>{`失败：${previewDocument.failed_chunk_count}`}</span>
               </div>
 
               {chunkLoadState === "loading" ? (
-                <EmptyState text="加载 chunks" loading compact />
+                <EmptyState text="加载分块" loading compact />
               ) : chunks.length === 0 ? (
                 <EmptyState text={chunkEmptyText(previewDocument)} compact />
               ) : (
@@ -811,8 +811,8 @@ export function LibraryPage() {
                       <p>{chunkExcerpt(chunk.content)}</p>
                       <div className="chunk-preview-meta">
                         <span>{chunkLocation(chunk)}</span>
-                        <span>{chunk.token_count} tokens</span>
-                        <span>{chunk.char_count} chars</span>
+                        <span>{chunk.token_count} 个词元</span>
+                        <span>{chunk.char_count} 个字符</span>
                         {chunk.external_doc_id ? <span>{chunk.external_doc_id}</span> : null}
                       </div>
                     </article>
@@ -822,14 +822,14 @@ export function LibraryPage() {
 
               <section className="document-event-panel" aria-label="处理事件">
                 <div className="document-event-heading">
-                  <span>Events</span>
+                  <span>事件</span>
                   <strong>最近处理事件</strong>
                 </div>
                 {eventError ? <ErrorState message={eventError} /> : null}
                 {eventLoadState === "loading" ? (
-                  <EmptyState text="加载 events" loading compact />
+                  <EmptyState text="加载事件" loading compact />
                 ) : events.length === 0 ? (
-                  <EmptyState text="暂无 events" compact />
+                  <EmptyState text="暂无事件" compact />
                 ) : (
                   <div className="document-event-list">
                     {events.map((event) => (

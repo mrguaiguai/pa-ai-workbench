@@ -72,7 +72,7 @@ export function RagDebugPage() {
   const runDebug = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canDebug) {
-      setError("RAG debug is unavailable for the active backend.");
+      setError("当前后端不可用 RAG 调试能力。");
       return;
     }
     setLoading(true);
@@ -96,7 +96,7 @@ export function RagDebugPage() {
     <div className="rag-debug-page">
       <form className="rag-debug-controls" onSubmit={runDebug}>
         <label className="field-group wide">
-          <span>Query</span>
+          <span>检索问题</span>
           <textarea
             value={form.query}
             onChange={(event) => setFormField(setForm, "query", event.target.value)}
@@ -106,7 +106,7 @@ export function RagDebugPage() {
 
         <div className="rag-debug-grid">
           <label className="field-group">
-            <span>Top K</span>
+            <span>返回数量（Top K）</span>
             <input
               type="number"
               min={1}
@@ -117,7 +117,7 @@ export function RagDebugPage() {
           </label>
 
           <label className="field-group">
-            <span>Source</span>
+            <span>检索来源</span>
             <select
               value={form.sourceType}
               onChange={(event) =>
@@ -128,14 +128,14 @@ export function RagDebugPage() {
                 )
               }
             >
-              <option value="all">All</option>
-              <option value="document_chunk">Document</option>
+              <option value="all">全部</option>
+              <option value="document_chunk">文档</option>
               <option value="wiki_page">Wiki</option>
             </select>
           </label>
 
           <label className="field-group">
-            <span>Document IDs</span>
+            <span>文档 ID</span>
             <input
               value={form.documentIds}
               onChange={(event) => setFormField(setForm, "documentIds", event.target.value)}
@@ -143,7 +143,7 @@ export function RagDebugPage() {
           </label>
 
           <label className="field-group">
-            <span>KB ID</span>
+            <span>知识库 ID</span>
             <input
               value={form.kbId}
               onChange={(event) => setFormField(setForm, "kbId", event.target.value)}
@@ -151,7 +151,7 @@ export function RagDebugPage() {
           </label>
 
           <label className="field-group">
-            <span>Business</span>
+            <span>业务域</span>
             <input
               value={form.businessArea}
               onChange={(event) => setFormField(setForm, "businessArea", event.target.value)}
@@ -159,7 +159,7 @@ export function RagDebugPage() {
           </label>
 
           <label className="field-group">
-            <span>Document Type</span>
+            <span>资料类型</span>
             <input
               value={form.documentType}
               onChange={(event) => setFormField(setForm, "documentType", event.target.value)}
@@ -174,7 +174,7 @@ export function RagDebugPage() {
             disabled={!canSubmit || loading}
           >
             {loading ? <Loader2 size={16} aria-hidden="true" /> : <Search size={16} aria-hidden="true" />}
-            <span>Run</span>
+            <span>运行</span>
           </button>
           <button
             className="secondary-action"
@@ -186,22 +186,22 @@ export function RagDebugPage() {
             }}
           >
             <RotateCcw size={16} aria-hidden="true" />
-            <span>Reset</span>
+            <span>重置</span>
           </button>
         </div>
       </form>
 
-      <section className="rag-debug-output" aria-label="RAG debug result">
+      <section className="rag-debug-output" aria-label="RAG 调试结果">
         {!canDebug ? (
-          <EmptyState icon={FileSearch} text="Debug unavailable" />
+          <EmptyState icon={FileSearch} text="调试能力不可用" />
         ) : loading ? (
-          <EmptyState icon={Loader2} text="Running" loading />
+          <EmptyState icon={Loader2} text="运行中" loading />
         ) : error ? (
           <ErrorState message={error} />
         ) : result ? (
           <DebugResult result={result} />
         ) : (
-          <EmptyState icon={FileSearch} text="No trace" />
+          <EmptyState icon={FileSearch} text="暂无调试轨迹" />
         )}
       </section>
     </div>
@@ -214,7 +214,7 @@ function DebugResult({ result }: { result: RagDebugResponse }) {
       <div className="rag-debug-trace">
         <span>{result.status}</span>
         <strong>{result.trace_id}</strong>
-        <span>{`${result.total} hits`}</span>
+        <span>{`${result.total} 条命中`}</span>
       </div>
 
       {result.error ? (
@@ -235,7 +235,7 @@ function DebugResult({ result }: { result: RagDebugResponse }) {
 
       <div className="rag-debug-list">
         {result.items.length === 0 ? (
-          <EmptyState icon={Database} text="No evidence" compact />
+          <EmptyState icon={Database} text="暂无证据" compact />
         ) : (
           result.items.map((item) => <DebugItem item={item} key={debugItemKey(item)} />)
         )}
@@ -254,7 +254,7 @@ function DebugItem({ item }: { item: RagDebugEvidence }) {
       </div>
       <p>{item.summary}</p>
       <div className="rag-debug-meta">
-        <span>{item.source_type || "unknown"}</span>
+        <span>{item.source_type || "未知类型"}</span>
         <span>{item.source}</span>
         {item.evidence_id ? <span>{item.evidence_id}</span> : null}
         {item.chunk_id ? <span>{`chunk:${item.chunk_id}`}</span> : null}
@@ -316,7 +316,7 @@ function errorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }
-  return "Unknown error";
+  return "未知错误";
 }
 
 function readableApiError(error: ApiError) {
@@ -345,8 +345,8 @@ function scoreDisplay(item: RagDebugEvidence) {
     return display;
   }
   return item.score === null || item.score === undefined
-    ? "Score unavailable"
-    : `Score ${item.score.toFixed(2)}`;
+    ? "评分不可用"
+    : `评分 ${item.score.toFixed(2)}`;
 }
 
 function debugItemKey(item: RagDebugEvidence) {

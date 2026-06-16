@@ -238,7 +238,7 @@ export function CitationList({
                 {citationSourceLabel(citation)}
               </span>
               <span className={traceable ? "citation-locatable" : "citation-not-locatable"}>
-                {traceable ? "locatable" : "not locatable"}
+                {traceable ? "可定位" : "不可定位"}
               </span>
               <span>{citation.source}</span>
               {citationEvidenceId(citation) ? <span>{citationEvidenceId(citation)}</span> : null}
@@ -259,7 +259,7 @@ export function CitationList({
               </div>
             ) : null}
             {expanded && metadataEntries.length > 0 ? (
-              <div className="citation-detail-grid" aria-label="Citation metadata">
+              <div className="citation-detail-grid" aria-label="引用调试元数据">
                 {metadataEntries.map(([label, value]) => (
                   <span key={label}>{`${label}: ${value}`}</span>
                 ))}
@@ -284,7 +284,7 @@ export function ResultPanel({
   return (
     <section className="result-panel" aria-label="结果">
       <div className="component-panel-heading">
-        <span>Result</span>
+        <span>结果</span>
         <strong>{title}</strong>
       </div>
       <pre>{content || emptyText}</pre>
@@ -298,14 +298,14 @@ export function TaskProgress({ task }: { task: Pick<Task, "status" | "progress" 
   return (
     <section className="task-progress" aria-label="任务进度">
       <div className="component-panel-heading">
-        <span>Progress</span>
-        <strong>{task.status}</strong>
+        <span>进度</span>
+        <strong>{taskStatusLabel(task.status)}</strong>
       </div>
       <div className="task-progress-track" aria-hidden="true">
         <span style={{ width: `${progress}%` }} />
       </div>
       <div className="task-progress-meta">
-        <span>{task.current_step || "ready"}</span>
+        <span>{task.current_step || "准备就绪"}</span>
         <strong>{progress}%</strong>
       </div>
     </section>
@@ -339,7 +339,7 @@ export function BackendStatusBadge({
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  return <span className={`status-badge ${status}`}>{status}</span>;
+  return <span className={`status-badge ${status}`}>{taskStatusLabel(status)}</span>;
 }
 
 export function parseWarningsJson(warningsJson: string | null | undefined) {
@@ -367,21 +367,21 @@ function citationKey(citation: CitationListItem, index: number) {
 function citationSourceLabel(citation: CitationListItem) {
   const normalized = citationSourceType(citation);
   if (normalized === "wiki_page" && citation.source === "weknora_api") {
-    return "WeKnora Wiki";
+    return "WeKnora Wiki 证据";
   }
   if (normalized === "document_chunk" && citation.source === "weknora_api") {
-    return "WeKnora Document";
+    return "WeKnora 文档证据";
   }
   if (normalized === "wiki_page") {
-    return "Wiki";
+    return "Wiki 证据";
   }
   if (normalized === "document_chunk") {
-    return "Document";
+    return "文档证据";
   }
   if (citation.source === "mock") {
-    return "Mock";
+    return "模拟证据";
   }
-  return normalized || "Evidence";
+  return normalized || "证据";
 }
 
 function citationSourceClass(citation: CitationListItem) {
@@ -450,9 +450,9 @@ function citationScoreDisplay(citation: CitationListItem) {
     return display;
   }
   if (citation.score === null || citation.score === undefined) {
-    return "Score unavailable";
+    return "评分不可用";
   }
-  return `Score ${citation.score.toFixed(2)}`;
+  return `评分 ${citation.score.toFixed(2)}`;
 }
 
 function citationScoreTitle(citation: CitationListItem) {
@@ -462,8 +462,8 @@ function citationScoreTitle(citation: CitationListItem) {
     return semantics;
   }
   return citation.score === null || citation.score === undefined
-    ? "No backend score returned"
-    : "Backend retrieval score";
+    ? "后端未返回评分"
+    : "后端检索评分";
 }
 
 function citationExcerpt(text: string, expanded: boolean) {
@@ -543,7 +543,7 @@ function documentStatusLabel(status: string) {
     return "索引中";
   }
   if (status === "embedding") {
-    return "Embedding";
+    return "向量化中";
   }
   if (status === "chunking") {
     return "分块中";
@@ -557,5 +557,25 @@ function documentStatusLabel(status: string) {
   if (status === "failed") {
     return "失败";
   }
-  return status || "unknown";
+  return taskStatusLabel(status || "unknown");
+}
+
+function taskStatusLabel(status: string) {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "completed" || normalized === "succeeded" || normalized === "ready") {
+    return "已完成";
+  }
+  if (normalized === "failed" || normalized === "error") {
+    return "失败";
+  }
+  if (normalized === "running") {
+    return "运行中";
+  }
+  if (normalized === "created" || normalized === "pending") {
+    return "已创建";
+  }
+  if (normalized === "unknown") {
+    return "未知";
+  }
+  return status || "未知";
 }

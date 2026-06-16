@@ -37,12 +37,12 @@ const navItems: NavItem[] = [
 ];
 
 const pageMeta: Record<RouteId, { title: string; eyebrow: string; icon: typeof Home }> = {
-  "/": { title: "工作台首页", eyebrow: "Overview", icon: BarChart3 },
-  "/library": { title: "资料库", eyebrow: "Library", icon: Database },
-  "/analysis": { title: "智能分析台", eyebrow: "Analysis", icon: MessageSquareText },
-  "/rag-debug": { title: "RAG 检索调试", eyebrow: "Retrieve Debug", icon: Search },
+  "/": { title: "工作台首页", eyebrow: "总览", icon: BarChart3 },
+  "/library": { title: "资料库", eyebrow: "资料管理", icon: Database },
+  "/analysis": { title: "智能分析台", eyebrow: "分析", icon: MessageSquareText },
+  "/rag-debug": { title: "RAG 检索调试", eyebrow: "检索调试", icon: Search },
   "/wiki": { title: "Wiki 知识库", eyebrow: "Wiki", icon: Search },
-  "/history": { title: "生成历史", eyebrow: "History", icon: FileClock },
+  "/history": { title: "生成历史", eyebrow: "历史", icon: FileClock },
 };
 
 function getHashRoute(): RouteId {
@@ -161,12 +161,12 @@ export function App() {
               <div className="workspace-panel side-panel">
                 <div className="panel-header">
                   <span>状态</span>
-                  <strong>Ready</strong>
+                  <strong>准备就绪</strong>
                 </div>
                 <div className="status-stack">
-                  <span>API Client</span>
-                  <span>Hash Navigation</span>
-                  <span>App Shell</span>
+                  <span>API 客户端</span>
+                  <span>哈希导航</span>
+                  <span>应用外壳</span>
                 </div>
               </div>
             </div>

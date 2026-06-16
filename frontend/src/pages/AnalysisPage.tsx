@@ -95,17 +95,17 @@ function errorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }
-  return "Unknown error";
+  return "未知错误";
 }
 
 function roleLabel(role: ConversationMessage["role"]) {
   if (role === "assistant") {
-    return "Assistant";
+    return "助手";
   }
   if (role === "system_status") {
-    return "Status";
+    return "状态";
   }
-  return "You";
+  return "你";
 }
 
 function citationSourceType(citation: Citation) {
@@ -151,15 +151,15 @@ function isWeKnoraCitation(citation: Citation) {
 
 function ragMode(citations: Citation[]) {
   if (citations.length === 0) {
-    return "No evidence";
+    return "无可用证据";
   }
   if (citations.some(isWeKnoraCitation)) {
-    return "Real WeKnora RAG";
+    return "真实 WeKnora RAG";
   }
   if (citations.some((citation) => citation.source !== "mock")) {
-    return "Real RAG";
+    return "真实 RAG";
   }
-  return "Mock fallback";
+  return "模拟模式回退";
 }
 
 function hasInsufficientEvidenceWarning(warnings: string[]) {
@@ -348,7 +348,7 @@ export function AnalysisPage() {
     <div className="analysis-page">
       <aside className="analysis-conversations" aria-label="会话列表">
         <div className="analysis-panel-heading">
-          <span>Conversations</span>
+          <span>会话</span>
           <div className="heading-actions">
             <button className="icon-button" type="button" onClick={startNewConversation} title="新会话">
               <Plus size={16} aria-hidden="true" />
@@ -386,7 +386,7 @@ export function AnalysisPage() {
 
       <section className="analysis-workspace" aria-label="当前会话">
         <div className="analysis-panel-heading">
-          <span>Messages</span>
+          <span>消息</span>
           <strong>{selectedConversation?.title ?? "新分析"}</strong>
         </div>
 
@@ -418,7 +418,7 @@ export function AnalysisPage() {
       <aside className="analysis-tools" aria-label="分析参数">
         <form className="analysis-form" onSubmit={onSubmit}>
           <div className="analysis-panel-heading">
-            <span>Workflow</span>
+            <span>分析流</span>
             <strong>{activeTask.label}</strong>
           </div>
 
@@ -493,8 +493,8 @@ export function AnalysisPage() {
 
         <section className="wiki-draft-action" aria-label="Wiki 草稿">
           <div className="analysis-panel-heading">
-            <span>Wiki Draft</span>
-            <strong>{createdDraft?.status ?? "Ready"}</strong>
+            <span>Wiki 草稿</span>
+            <strong>{createdDraft?.status ?? "准备就绪"}</strong>
           </div>
 
           <button
@@ -529,28 +529,28 @@ export function AnalysisPage() {
 
         <section className="citation-panel" aria-label="引用与警告">
           <div className="analysis-panel-heading">
-            <span>Evidence</span>
+            <span>证据</span>
             <strong>{latestCitations.length}</strong>
           </div>
 
           <div className="rag-summary">
             <div
               className={`rag-mode ${
-                evidenceSummary.mode.includes("Real") ? "real" : ""
+                evidenceSummary.mode.includes("真实") ? "real" : ""
               } ${evidenceSummary.mode.includes("WeKnora") ? "weknora" : ""}`}
             >
               <span>RAG</span>
               <strong>{evidenceSummary.mode}</strong>
             </div>
             <div className="rag-source-counts">
-              <span>Document {evidenceSummary.documentCount}</span>
+              <span>文档 {evidenceSummary.documentCount}</span>
               <span>Wiki {evidenceSummary.wikiCount}</span>
               <span>WeKnora {evidenceSummary.weknoraCount}</span>
             </div>
             <div className="rag-source-counts compact">
-              <span>Total {evidenceSummary.totalCount}</span>
+              <span>合计 {evidenceSummary.totalCount}</span>
               <span>{latestTask?.task_type ?? taskType}</span>
-              <span>{latestTask?.status ?? "ready"}</span>
+              <span>{latestTask?.status ?? "准备就绪"}</span>
             </div>
             {evidenceSummary.insufficient ? (
               <div className="evidence-warning">依据不足或引用需要复核</div>
