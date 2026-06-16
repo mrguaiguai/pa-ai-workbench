@@ -207,7 +207,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 | --- | --- | --- |
 | P5-B1 | 设计并实现当前验收语料隔离策略 | [x] |
 | P5-B2 | 稳定 document / wiki / all source 范围过滤 | [x] |
-| P5-B3 | 优化 answer-bearing chunk 排名与 debug 诊断 | [ ] |
+| P5-B3 | 优化 answer-bearing chunk 排名与 debug 诊断 | [x] |
 | P5-B4 | 固化 `TEST-DISTRACTOR-001` 干扰材料回归哨兵 | [ ] |
 | P5-B5 | 真实 RAG 24 问矩阵达到 PASS | [ ] |
 
@@ -376,7 +376,7 @@ P4Q-001 到 P4Q-012 的 expected anchors 在合理 rank 范围内，并且 debug
 验证方式：
 RAG debug smoke 和真实 RAG 矩阵报告记录 rank、score、source_type、trace_id。
 
-状态：[ ]
+状态：[x]
 
 ### P5-B4：固化 `TEST-DISTRACTOR-001` 干扰材料回归哨兵
 

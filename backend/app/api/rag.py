@@ -57,6 +57,10 @@ DEBUG_METADATA_ALLOWLIST = {
     "page_type",
     "retrieval_debug_trace",
     "retrieval_options",
+    "retrieval_rank",
+    "raw_retrieval_rank",
+    "score_display",
+    "score_display_mode",
     "weknora_retrieval_options_forwarded",
     "current_run_corpus_id",
     "current_run_id",
@@ -66,6 +70,13 @@ DEBUG_METADATA_ALLOWLIST = {
     "current_run_scope",
     "source_scope",
     "source_scope_warnings",
+    "answer_bearing_matched_metadata",
+    "answer_bearing_matched_terms",
+    "answer_bearing_rank",
+    "answer_bearing_rank_delta",
+    "answer_bearing_raw_rank",
+    "answer_bearing_score",
+    "answer_bearing_strategy",
 }
 
 

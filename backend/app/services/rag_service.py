@@ -3,6 +3,7 @@ from app import pathing as _pathing  # noqa: F401
 from dataclasses import dataclass
 from typing import Any
 
+from knowledge_engine.answer_ranking import rank_answer_bearing_evidence
 from knowledge_engine.current_run import apply_current_run_isolation
 from knowledge_engine.current_run import attach_current_run_warnings
 from knowledge_engine.current_run import current_run_fetch_top_k
@@ -58,9 +59,10 @@ def retrieve_evidence_with_context(
     current_run_warnings = [*prepared.warnings, *isolated.warnings]
     source_scope_warnings = list(source_scoped.warnings)
     warnings = [*current_run_warnings, *source_scope_warnings]
+    ranked = rank_answer_bearing_evidence(source_scoped.items, query)
     normalized = normalize_evidence_results(
         attach_source_scope_warnings(
-            attach_current_run_warnings(source_scoped.items, current_run_warnings),
+            attach_current_run_warnings(ranked, current_run_warnings),
             source_scope_warnings,
         ),
         top_k=normalized_top_k,

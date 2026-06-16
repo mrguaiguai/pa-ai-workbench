@@ -3,6 +3,7 @@ from typing import Any
 from agent.schemas import Citation
 from agent.tools.capability_guard import AgentCapabilityGuard
 from knowledge_engine.base import KnowledgeEngine
+from knowledge_engine.answer_ranking import rank_answer_bearing_evidence
 from knowledge_engine.current_run import apply_current_run_isolation
 from knowledge_engine.current_run import attach_current_run_warnings
 from knowledge_engine.current_run import current_run_fetch_top_k
@@ -53,9 +54,10 @@ class RealRetrieverTool:
         source_scoped = apply_source_scope(isolated.items, scoped.scope)
         current_run_warnings = [*prepared.warnings, *isolated.warnings]
         source_scope_warnings = list(source_scoped.warnings)
+        ranked = rank_answer_bearing_evidence(source_scoped.items, query)
         evidence_items = normalize_evidence_results(
             attach_source_scope_warnings(
-                attach_current_run_warnings(source_scoped.items, current_run_warnings),
+                attach_current_run_warnings(ranked, current_run_warnings),
                 source_scope_warnings,
             ),
             top_k=resolved_top_k,
