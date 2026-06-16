@@ -357,6 +357,8 @@ class AnalysisRunRequest(BaseModel):
     document_ids: list[str] = Field(default_factory=list)
     extra_requirements: str | None = None
     retrieval_scope: str = "all"
+    current_run: dict[str, Any] = Field(default_factory=dict)
+    expected_source_types: list[str] = Field(default_factory=list)
 
     @field_validator("retrieval_scope")
     @classmethod
@@ -365,6 +367,20 @@ class AnalysisRunRequest(BaseModel):
             return normalize_source_scope(value)
         except ValueError as exc:
             raise ValueError("retrieval_scope must be all, document, or wiki") from exc
+
+    @field_validator("expected_source_types")
+    @classmethod
+    def validate_expected_source_types(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            source_type = _normalize_source_type(value)
+            if source_type not in {"document_chunk", "wiki_page"}:
+                raise ValueError(
+                    "expected_source_types must contain document_chunk or wiki_page"
+                )
+            if source_type not in normalized:
+                normalized.append(source_type)
+        return normalized
 
 
 class AnalysisRunResponse(BaseModel):

@@ -40,8 +40,14 @@ def run_analysis(
     document_ids: list[str] | None = None,
     extra_requirements: str | None = None,
     retrieval_scope: str = "all",
+    current_run: dict[str, Any] | None = None,
+    expected_source_types: list[str] | None = None,
 ) -> tuple[Conversation, list[ConversationMessage], GenerationTask, GeneratedOutput, list]:
     normalized_retrieval_scope = normalize_source_scope(retrieval_scope)
+    normalized_expected_source_types = _normalize_expected_source_types(
+        expected_source_types or []
+    )
+    current_run_scope = dict(current_run or {})
     conversation, user_message = _ensure_conversation(
         session=session,
         conversation_id=conversation_id,
@@ -60,6 +66,8 @@ def run_analysis(
                 {
                     "task_type": task_type,
                     "retrieval_scope": normalized_retrieval_scope,
+                    "current_run": current_run_scope,
+                    "expected_source_types": normalized_expected_source_types,
                 }
             ),
         )
@@ -68,6 +76,8 @@ def run_analysis(
             {
                 "task_type": task_type,
                 "retrieval_scope": normalized_retrieval_scope,
+                "current_run": current_run_scope,
+                "expected_source_types": normalized_expected_source_types,
             }
         )
         session.add(user_message)
@@ -85,6 +95,8 @@ def run_analysis(
                 "document_ids": document_ids or [],
                 "extra_requirements": extra_requirements,
                 "retrieval_scope": normalized_retrieval_scope,
+                "current_run": current_run_scope,
+                "expected_source_types": normalized_expected_source_types,
             }
         ),
         status="running",
@@ -104,7 +116,13 @@ def run_analysis(
         document_ids=document_ids or [],
         extra_requirements=extra_requirements,
         retrieval_scope=normalized_retrieval_scope,
-        metadata={"retrieval_scope": normalized_retrieval_scope},
+        current_run=current_run_scope,
+        expected_source_types=normalized_expected_source_types,
+        metadata={
+            "retrieval_scope": normalized_retrieval_scope,
+            "current_run": current_run_scope,
+            "expected_source_types": normalized_expected_source_types,
+        },
     )
     with weknora_log_context(
         correlation_id=uuid4().hex,
@@ -230,6 +248,26 @@ def _persist_result(
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _normalize_expected_source_types(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        source_type = _normalize_source_type(value)
+        if source_type not in {"document_chunk", "wiki_page"}:
+            continue
+        if source_type not in normalized:
+            normalized.append(source_type)
+    return normalized
+
+
+def _normalize_source_type(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"document", "document_chunk", "chunk"}:
+        return "document_chunk"
+    if normalized in {"wiki", "wiki_page", "wiki-page"}:
+        return "wiki_page"
+    return normalized
 
 
 def _citation_metadata(citation) -> dict:

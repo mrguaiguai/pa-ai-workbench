@@ -50,7 +50,10 @@ class KnowledgeQaWorkflow:
         policy_result = self.evidence_policy.evaluate(
             retrieved_citations,
             workflow="knowledge question",
-            expected_source_type=self._expected_source_type(request),
+            expected_source_types=self._expected_source_types(request),
+            require_all_expected_source_types=bool(
+                request.expected_source_types and request.retrieval_scope == "all"
+            ),
         )
         citations = policy_result.citations
         events.append(
@@ -125,6 +128,7 @@ class KnowledgeQaWorkflow:
                 "retrieved_citation_count": len(retrieved_citations),
                 "recent_message_count": len(context.recent_messages),
                 "retrieval_scope": request.retrieval_scope,
+                "expected_source_types": self._expected_source_types(request),
                 "filters": self._build_filters(request),
                 "model": model_metadata,
                 "warning_codes": policy_result.warning_codes,
@@ -154,9 +158,9 @@ class KnowledgeQaWorkflow:
             filters=self._build_filters(request),
             top_k=self.top_k,
         )
-        if not request.document_ids:
+        if not self._has_request_scope(request):
             return citations
-        scoped = self._scope_citations(citations, request.document_ids)
+        scoped = self._scope_citations(citations, request)
         if scoped:
             return scoped
         return self._retrieve_scoped_retry(request)
@@ -168,23 +172,66 @@ class KnowledgeQaWorkflow:
                 filters=self._build_filters(request),
                 top_k=self.top_k,
             )
-            scoped = self._scope_citations(retry_citations, request.document_ids)
+            scoped = self._scope_citations(retry_citations, request)
             if scoped or attempt == 2:
                 return scoped
             time.sleep(2)
         return []
 
     @staticmethod
+    def _has_request_scope(request: AgentRequest) -> bool:
+        return bool(request.document_ids or request.current_run)
+
+    @staticmethod
     def _scope_citations(
         citations: list[Citation],
-        document_ids: list[str],
+        request: AgentRequest,
     ) -> list[Citation]:
-        scoped_document_ids = set(document_ids)
+        current_run = request.current_run or {}
+        document_ids = _value_set(
+            [
+                *request.document_ids,
+                *(_list_filter(current_run.get("document_ids"))),
+                *(_list_filter(current_run.get("pa_document_ids"))),
+            ]
+        )
+        external_doc_ids = _value_set(
+            [
+                *(_list_filter(current_run.get("external_doc_ids"))),
+                *(_list_filter(current_run.get("external_doc_id"))),
+                *(_list_filter(current_run.get("knowledge_ids"))),
+                *(_list_filter(current_run.get("weknora_knowledge_ids"))),
+            ]
+        )
+        wiki_page_ids = _value_set(
+            [
+                *(_list_filter(current_run.get("wiki_page_ids"))),
+                *(_list_filter(current_run.get("wiki_page_id"))),
+                *(_list_filter(current_run.get("weknora_wiki_page_ids"))),
+            ]
+        )
+        metadata_terms = _value_set(
+            [
+                *(_list_filter(current_run.get("run_id"))),
+                *(_list_filter(current_run.get("id"))),
+                *(_list_filter(current_run.get("corpus_id"))),
+                *(_list_filter(current_run.get("namespace"))),
+            ]
+        )
+        anchors = _value_set(_list_filter(current_run.get("anchors")))
+        if not any((document_ids, external_doc_ids, wiki_page_ids, metadata_terms, anchors)):
+            return citations
         return [
             citation
             for citation in citations
-            if citation.document_id in scoped_document_ids
-            or citation.external_doc_id in scoped_document_ids
+            if _citation_matches_scope(
+                citation,
+                document_ids=document_ids,
+                external_doc_ids=external_doc_ids,
+                wiki_page_ids=wiki_page_ids,
+                metadata_terms=metadata_terms,
+                anchors=anchors,
+            )
         ]
 
     @staticmethod
@@ -193,6 +240,8 @@ class KnowledgeQaWorkflow:
         if request.document_ids:
             filters["document_ids"] = request.document_ids
         filters["source_scope"] = request.retrieval_scope or "all"
+        if request.current_run:
+            filters["current_run"] = request.current_run
         if request.business_area:
             filters["business_area"] = request.business_area
         if request.document_type:
@@ -200,17 +249,21 @@ class KnowledgeQaWorkflow:
         return filters
 
     @staticmethod
-    def _expected_source_type(request: AgentRequest) -> str | None:
-        requested = request.metadata.get("expected_source_type") or request.metadata.get(
-            "required_source_type"
+    def _expected_source_types(request: AgentRequest) -> list[str]:
+        requested = (
+            request.expected_source_types
+            or request.metadata.get("expected_source_types")
+            or request.metadata.get("expected_source_type")
+            or request.metadata.get("required_source_type")
         )
-        if requested:
-            return requested
+        expected = _normalize_source_types(_list_filter(requested))
+        if expected:
+            return expected
         if request.retrieval_scope == "document":
-            return "document_chunk"
+            return ["document_chunk"]
         if request.retrieval_scope == "wiki":
-            return "wiki_page"
-        return None
+            return ["wiki_page"]
+        return []
 
     def _generate_answer(
         self,
@@ -229,6 +282,7 @@ class KnowledgeQaWorkflow:
                     "task_type": request.task_type,
                     "workflow": "knowledge_qa",
                     "retrieval_scope": request.retrieval_scope,
+                    "expected_source_types": self._expected_source_types(request),
                     "citation_count": len(citations),
                     "source_types": sorted(
                         {citation.source_type or "unknown" for citation in citations}
@@ -241,6 +295,7 @@ class KnowledgeQaWorkflow:
             "model": response.model,
             "usage": response.usage,
             "retrieval_scope": request.retrieval_scope,
+            "expected_source_types": self._expected_source_types(request),
             "evidence_sources": sorted({citation.source for citation in citations}),
             "source_types": sorted(
                 {citation.source_type or "unknown" for citation in citations}
@@ -431,3 +486,146 @@ class KnowledgeQaWorkflow:
         if all(citation.source == "weknora_api" for citation in citations):
             return "weknora_api"
         return "mixed"
+
+
+def _citation_matches_scope(
+    citation: Citation,
+    *,
+    document_ids: set[str],
+    external_doc_ids: set[str],
+    wiki_page_ids: set[str],
+    metadata_terms: set[str],
+    anchors: set[str],
+) -> bool:
+    identifiers = _citation_identifiers(citation)
+    has_document_scope = bool(document_ids or external_doc_ids)
+    if document_ids and identifiers["document_ids"] & document_ids:
+        return True
+    if external_doc_ids and identifiers["external_doc_ids"] & external_doc_ids:
+        return True
+    if wiki_page_ids and identifiers["wiki_page_ids"] & wiki_page_ids:
+        return True
+    if citation.source_type == "wiki_page" and wiki_page_ids:
+        return False
+    if metadata_terms and identifiers["metadata_terms"] & metadata_terms:
+        return True
+    if has_document_scope:
+        return bool(
+            citation.source_type == "wiki_page"
+            and anchors
+            and identifiers["anchors"] & anchors
+        )
+    if anchors and identifiers["anchors"] & anchors:
+        return True
+    return False
+
+
+def _citation_identifiers(citation: Citation) -> dict[str, set[str]]:
+    metadata = citation.metadata if isinstance(citation.metadata, dict) else {}
+    binding = metadata.get("citation_binding")
+    binding = binding if isinstance(binding, dict) else {}
+    binding_metadata = binding.get("metadata")
+    binding_metadata = binding_metadata if isinstance(binding_metadata, dict) else {}
+    return {
+        "document_ids": _value_set(
+            [
+                citation.document_id,
+                metadata.get("document_id"),
+                metadata.get("pa_document_id"),
+                binding.get("document_id"),
+                binding_metadata.get("document_id"),
+            ]
+        ),
+        "external_doc_ids": _value_set(
+            [
+                citation.external_doc_id,
+                metadata.get("external_doc_id"),
+                metadata.get("knowledge_id"),
+                metadata.get("weknora_knowledge_id"),
+                binding.get("external_doc_id"),
+                binding.get("knowledge_id"),
+                binding_metadata.get("external_doc_id"),
+                binding_metadata.get("knowledge_id"),
+            ]
+        ),
+        "wiki_page_ids": _value_set(
+            [
+                citation.wiki_page_id,
+                metadata.get("wiki_page_id"),
+                metadata.get("wiki_page_ids"),
+                metadata.get("weknora_wiki_page_id"),
+                metadata.get("weknora_wiki_page_ids"),
+                metadata.get("slug"),
+                metadata.get("id"),
+                binding.get("wiki_page_id"),
+                binding_metadata.get("wiki_page_id"),
+                binding_metadata.get("slug"),
+                binding_metadata.get("id"),
+            ]
+        ),
+        "metadata_terms": _value_set(
+            [
+                metadata.get("current_run_id"),
+                metadata.get("phase5_run_id"),
+                metadata.get("corpus_id"),
+                metadata.get("current_run_corpus_id"),
+                metadata.get("namespace"),
+                metadata.get("current_run_namespace"),
+                binding_metadata.get("current_run_id"),
+                binding_metadata.get("corpus_id"),
+                binding_metadata.get("namespace"),
+            ]
+        ),
+        "anchors": _value_set(
+            [
+                metadata.get("anchor"),
+                metadata.get("anchors"),
+                metadata.get("test_anchor"),
+                metadata.get("expected_anchor"),
+                binding_metadata.get("anchor"),
+                binding_metadata.get("anchors"),
+            ]
+        ),
+    }
+
+
+def _normalize_source_types(values: list[object]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        source_type = _normalize_source_type(value)
+        if not source_type or source_type in normalized:
+            continue
+        normalized.append(source_type)
+    return normalized
+
+
+def _normalize_source_type(value: object) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"document", "document_chunk", "chunk"}:
+        return "document_chunk"
+    if normalized in {"wiki", "wiki_page", "wiki-page"}:
+        return "wiki_page"
+    return normalized or None
+
+
+def _list_filter(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, set)):
+        values = list(value)
+    else:
+        values = [value]
+    return [item for item in (_optional_str(item) for item in values) if item]
+
+
+def _value_set(values: Any) -> set[str]:
+    return set(_list_filter(values))
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

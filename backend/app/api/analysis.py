@@ -40,6 +40,8 @@ def run_analysis_task(
             document_ids=payload.document_ids,
             extra_requirements=payload.extra_requirements,
             retrieval_scope=payload.retrieval_scope,
+            current_run=payload.current_run,
+            expected_source_types=payload.expected_source_types,
         )
     except AnalysisRunError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

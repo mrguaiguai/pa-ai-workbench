@@ -427,6 +427,8 @@ export type AnalysisRunRequest = {
   document_ids?: string[];
   extra_requirements?: string | null;
   retrieval_scope?: RetrievalScope;
+  current_run?: Record<string, unknown>;
+  expected_source_types?: Array<"document_chunk" | "wiki_page">;
 };
 
 export type AnalysisRunResponse = {

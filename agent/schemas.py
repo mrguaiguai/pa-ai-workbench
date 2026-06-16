@@ -40,6 +40,8 @@ class AgentRequest:
     document_ids: list[str] = field(default_factory=list)
     extra_requirements: str | None = None
     retrieval_scope: str = "all"
+    current_run: dict[str, Any] = field(default_factory=dict)
+    expected_source_types: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

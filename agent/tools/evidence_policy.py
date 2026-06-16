@@ -34,6 +34,8 @@ class EvidencePolicy:
         *,
         workflow: str,
         expected_source_type: str | None = None,
+        expected_source_types: list[str] | tuple[str, ...] | None = None,
+        require_all_expected_source_types: bool = False,
     ) -> EvidencePolicyResult:
         warnings: list[str] = []
         warning_codes: list[str] = []
@@ -41,10 +43,12 @@ class EvidencePolicy:
         dropped_count = 0
         mismatch_count = 0
 
-        normalized_expected = _normalize_source_type(expected_source_type)
+        normalized_expected_types = _normalize_source_types(
+            [*(expected_source_types or []), *([expected_source_type] if expected_source_type else [])]
+        )
         for citation in citations:
             source_type = _citation_source_type(citation)
-            if normalized_expected and source_type != normalized_expected:
+            if normalized_expected_types and source_type not in normalized_expected_types:
                 mismatch_count += 1
                 dropped_count += 1
                 continue
@@ -61,9 +65,23 @@ class EvidencePolicy:
         if mismatch_count:
             warnings.append(
                 "SOURCE_TYPE_MISMATCH: Retrieved evidence did not match the required "
-                f"source_type={normalized_expected}."
+                f"source_type={','.join(normalized_expected_types)}."
             )
             _append_code(warning_codes, "SOURCE_TYPE_MISMATCH")
+
+        if require_all_expected_source_types and normalized_expected_types:
+            accepted_types = {_citation_source_type(citation) for citation in accepted}
+            missing_types = [
+                source_type
+                for source_type in normalized_expected_types
+                if source_type not in accepted_types
+            ]
+            if missing_types:
+                warnings.append(
+                    "MISSING_SOURCE_TYPE: Required evidence source_type missing from "
+                    f"citations: {','.join(missing_types)}."
+                )
+                _append_code(warning_codes, "MISSING_SOURCE_TYPE")
 
         if not accepted:
             warnings.append(f"NO_EVIDENCE: No evidence was found for {workflow}.")
@@ -108,6 +126,16 @@ def _normalize_source_type(value: object) -> str | None:
     if normalized in {"wiki", "wiki_page", "wiki-page"}:
         return "wiki_page"
     return normalized or None
+
+
+def _normalize_source_types(values: list[object]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        source_type = _normalize_source_type(value)
+        if not source_type or source_type in normalized:
+            continue
+        normalized.append(source_type)
+    return normalized
 
 
 def _binding_value(metadata: dict[str, Any], key: str) -> Any:

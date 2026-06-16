@@ -225,7 +225,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | P5-D1 | 增加 `retrieval_scope` 最小接口链路 | [x] |
-| P5-D2 | 让 `knowledge_qa` 支持当前语料范围与 source_type 策略 | [ ] |
+| P5-D2 | 让 `knowledge_qa` 支持当前语料范围与 source_type 策略 | [x] |
 | P5-D3 | 修复无答案拒答与引用支撑规则 | [ ] |
 | P5-D4 | 修复干扰排除与新旧版本冲突回答策略 | [ ] |
 | P5-D5 | 真实 `knowledge_qa` 24 问达到 PASS | [ ] |
@@ -509,7 +509,7 @@ document-only、wiki-only 和 all-source 问题的 citations 与问题集 expect
 验证方式：
 fixture smoke 与真实 QA 脚本覆盖 P4Q-001、P4Q-013、P4Q-017、P4Q-019。
 
-状态：[ ]
+状态：[x]
 
 ### P5-D3：修复无答案拒答与引用支撑规则
 
