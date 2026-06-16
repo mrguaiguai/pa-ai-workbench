@@ -252,7 +252,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P5-G1 | 真实环境与配置 PASS 预检 | [ ] |
+| P5-G1 | 真实环境与配置 PASS 预检 | [x] |
 | P5-G2 | fresh / current-run 上传 P4 语料并确认可检索 | [ ] |
 | P5-G3 | RAG debug 24 问真实 PASS 报告 | [ ] |
 | P5-G4 | Wiki 创建、发布、索引、检索、引用真实 PASS 报告 | [ ] |
@@ -705,7 +705,7 @@ checker 扫描 Phase 5 报告中的密钥、私有地址、上传目录、数据
 `test -f docs/PHASE5_REAL_ENV_PASS_REPORT.md`；
 `rg -n "MOCK_MODE=false|KNOWLEDGE_BACKEND=weknora_api|PASS|PHASE5_REAL" docs/PHASE5_REAL_ENV_PASS_REPORT.md`。
 
-状态：[ ]
+状态：[x]
 
 ### P5-G2：fresh / current-run 上传 P4 语料并确认可检索
 
