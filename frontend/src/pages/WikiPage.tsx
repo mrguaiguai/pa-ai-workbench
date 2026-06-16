@@ -75,12 +75,6 @@ function errorMessage(error: unknown) {
   return "未知错误";
 }
 
-function metadataEntries(metadata: Record<string, unknown>) {
-  return Object.entries(metadata)
-    .filter(([, value]) => value !== null && value !== undefined && value !== "")
-    .map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value)]);
-}
-
 function formatDateTime(value: string | null | undefined) {
   if (!value) {
     return "未设置";
@@ -160,12 +154,80 @@ function statusText(status?: string | null) {
   return "草稿";
 }
 
+function sourceText(source?: string | null) {
+  if (source === "weknora_api") {
+    return "WeKnora";
+  }
+  if (source === "generated_output") {
+    return "生成结果";
+  }
+  if (source === "wiki") {
+    return "Wiki";
+  }
+  if (source === "mock") {
+    return "模拟数据";
+  }
+  return source || "未设置";
+}
+
+function pageTypeText(pageType?: string | null) {
+  const normalized = String(pageType || "").trim().toLowerCase();
+  const labels: Record<string, string> = {
+    wiki: "Wiki",
+    knowledge_qa: "知识问答",
+    policy_analysis: "政策分析",
+    case_review: "案例复盘",
+  };
+  return labels[normalized] ?? (pageType || "Wiki");
+}
+
+function stageText(value?: string | null) {
+  const normalized = String(value || "").trim().toLowerCase();
+  const labels: Record<string, string> = {
+    draft: "草稿",
+    published: "已发布",
+    archived: "已归档",
+    pending: "待处理",
+    indexing: "索引中",
+    indexed: "已索引",
+    partial: "部分完成",
+    failed: "失败",
+    synced: "已同步",
+    not_started: "未开始",
+    timeout: "超时",
+  };
+  return labels[normalized] ?? (value || "未设置");
+}
+
 function metadataString(metadata: Record<string, unknown> | undefined, key: string) {
   const value = metadata?.[key];
   if (value === null || value === undefined || value === "") {
     return null;
   }
   return String(value);
+}
+
+function wikiArticleMetaItems(page: WikiPageDetail) {
+  const items = [
+    `类型：${pageTypeText(page.page_type)}`,
+    `Slug：${page.slug}`,
+    `来源：${sourceText(page.source)}`,
+  ];
+  if (page.business_area) {
+    items.push(`业务域：${page.business_area}`);
+  }
+  const syncStatus = metadataString(page.metadata, "weknora_sync_status");
+  if (syncStatus) {
+    items.push(`WeKnora 同步：${stageText(syncStatus)}`);
+  }
+  const indexStatus = metadataString(page.metadata, "weknora_index_status");
+  if (indexStatus) {
+    items.push(`WeKnora 索引：${stageText(indexStatus)}`);
+  }
+  for (const tag of page.tags ?? []) {
+    items.push(`标签：${tag}`);
+  }
+  return items;
 }
 
 function indexStatus(page: WikiPageDetail | null) {
@@ -959,14 +1021,8 @@ export function WikiPage() {
             </div>
 
             <div className="wiki-meta-row">
-              <span>{page.page_type ?? "wiki"}</span>
-              <span>{page.slug}</span>
-              {page.business_area ? <span>{page.business_area}</span> : null}
-              {(page.tags ?? []).map((tag) => (
-                <span key={tag}>{tag}</span>
-              ))}
-              {metadataEntries(page.metadata).map(([key, value]) => (
-                <span key={key}>{`${key}: ${value}`}</span>
+              {wikiArticleMetaItems(page).map((item) => (
+                <span key={item}>{item}</span>
               ))}
             </div>
 
@@ -1016,10 +1072,10 @@ export function WikiPage() {
                 <span>{`状态：${statusText(page.status)}`}</span>
                 <span>{`发布时间：${formatDateTime(page.published_at)}`}</span>
                 <span>{`索引时间：${formatDateTime(page.indexed_at)}`}</span>
-                <span>{`向量状态：${page.embedding_status ?? "未设置"}`}</span>
+                <span>{`向量状态：${stageText(page.embedding_status)}`}</span>
                 <span>{`向量 ID：${page.vector_id ?? "未设置"}`}</span>
-                <span>{`WeKnora 同步：${metadataString(page.metadata, "weknora_sync_status") ?? "未设置"}`}</span>
-                <span>{`WeKnora 索引：${metadataString(page.metadata, "weknora_index_status") ?? "未设置"}`}</span>
+                <span>{`WeKnora 同步：${stageText(metadataString(page.metadata, "weknora_sync_status"))}`}</span>
+                <span>{`WeKnora 索引：${stageText(metadataString(page.metadata, "weknora_index_status"))}`}</span>
                 <span>{`可检索：${page.wiki_retrievable ? "是" : "否"}`}</span>
                 <span>{`超时：${page.wiki_index_timed_out ? "是" : "否"}`}</span>
               </div>

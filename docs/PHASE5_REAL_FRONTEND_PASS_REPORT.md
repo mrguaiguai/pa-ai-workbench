@@ -1,82 +1,81 @@
-# Phase 5 Real Frontend PASS Report
+# Phase 5 Real Frontend P5-G6 PASS Report
 
 ## Test Metadata
 
 | Field | Value |
 | --- | --- |
-| Task | P5-E4 frontend build and browser acceptance |
+| Task | P5-G6 frontend Chinese terminology and real status browser gate |
 | Report id | PHASE5_REAL_FRONTEND_PASS_REPORT |
-| Test date | 2026-06-16 CST |
-| Environment | Local PA backend on `127.0.0.1:8000`; Vite frontend on `127.0.0.1:5173`; Codex in-app Browser |
+| Report marker | PHASE5_REAL |
+| Test time | 2026-06-16 17:00:43 CST |
+| Runtime | Local PA backend on `127.0.0.1:8000`; Vite frontend on `127.0.0.1:5173`; isolated headless Chrome |
 | Backend mode | `KNOWLEDGE_BACKEND=weknora_api`; `MOCK_MODE=false` |
 | Result | PASS |
 
-## Validation Summary
-
-| Check | Result | Evidence |
-| --- | --- | --- |
-| TypeScript | PASS | Bundled Node equivalent of `tsc --noEmit` completed successfully. |
-| Frontend build | PASS | Bundled Node equivalent of `vite build` completed successfully and generated `frontend/dist`. |
-| Backend compile | PASS | `backend/.venv/bin/python -m compileall backend/app` completed successfully. |
-| Backend status smoke | PASS | HTTP `/api/status` returned `knowledge_backend=weknora_api`, `mock_mode=false`, `weknora.status=connected`, `health_status=ok`. |
-| Real status display | PASS | Browser showed WeKnora as connected, chat model as real, embedding model as mock, and RAG as fallback because embedding is mock. |
-| Browser acceptance | PASS | In-app Browser opened all six required pages and found required visible text with no blocking console errors. |
-| English residual scan | PASS | Browser scan found no blocking residuals such as `Chat Model`, `RAG Pipeline`, `Mock fallback`, `Real WeKnora RAG`, `Score unavailable`, or the old document readiness sentence. |
-
 ## Runtime Status Evidence
 
-| Signal | Observed value | Frontend implication |
-| --- | --- | --- |
-| Knowledge backend | `weknora_api` | Frontend must show WeKnora-backed mode. |
-| Mock mode | `False` | Frontend must not label backend as mock. |
-| WeKnora health | `connected`; `health_status=ok` | Frontend can show WeKnora-backed capability as connected. |
-| Model status | chat provider real; embedding provider `mock`; model mock mode `False` | Frontend must show mixed model status and avoid treating embedding as real. |
-| Capability counts | `supported=11`, `partial=0`, `unsupported=0` | Capability card can show real available state for this smoke. |
+| Check | source | source_type | evidence_id | trace_id | Result | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| PA backend reachable | `weknora_api` | `status_endpoint` | `frontend_status:backend` | `PHASE5_REAL-P5-G6-backend-status` | PASS | `/api/status` returned `status=ok`, `knowledge_backend=weknora_api`, `mock_mode=false`. |
+| WeKnora connection | `weknora_api` | `status_endpoint` | `frontend_status:weknora` | `PHASE5_REAL-P5-G6-weknora-status` | PASS | `/api/status` returned `weknora.status=connected`, `connected=true`, `health_status=ok`. |
+| Chat model status | `weknora_api` | `model_status_endpoint` | `frontend_status:chat_model` | `PHASE5_REAL-P5-G6-model-status` | PASS | `/api/model/status` returned `chat_provider=openai_compatible`, `chat.mock=false`, `mock_mode=false`. |
+| Embedding model status | `weknora_api` | `model_status_endpoint` | `frontend_status:embedding_model` | `PHASE5_REAL-P5-G6-model-status` | PASS | `/api/model/status` returned `embedding_provider=openai_compatible`, `embedding.mock=false`, `dimension=1024`. |
+| Frontend root page | `weknora_api` | `frontend_page` | `frontend_page:root` | `PHASE5_REAL-P5-G6-frontend-root` | PASS | `http://127.0.0.1:5173/` returned the PA workbench HTML with `lang=zh-CN`. |
+
+## Build And Browser Validation
+
+| Check | source | source_type | evidence_id | trace_id | Result | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| TypeScript check | `weknora_api` | `frontend_build` | `frontend_build:tsc` | `PHASE5_REAL-P5-G6-build-tsc` | PASS | Local TypeScript `--noEmit` completed successfully. |
+| Frontend build | `weknora_api` | `frontend_build` | `frontend_build:vite` | `PHASE5_REAL-P5-G6-build-vite` | PASS | Local Vite production build completed successfully. |
+| Browser DOM collection | `weknora_api` | `browser_dom` | `frontend_browser:chrome` | `PHASE5_REAL-P5-G6-browser-dom` | PASS | Isolated headless Chrome visited all required routes. Every route returned `lang=zh-CN`, `issueCount=0`, and no blocking residual matches. |
 
 ## Browser Page Matrix
 
-| Page | Route | Required visible evidence | Result |
+| Page | Route | source | source_type | evidence_id | trace_id | Required visible evidence | Blocking residuals | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 首页 | `#/` | `weknora_api` | `frontend_page` | `frontend_page:home` | `PHASE5_REAL-P5-G6-home` | `工作台首页`; `资料库`; `RAG 调试`; `对话模型`; `向量模型`; `WeKnora`; `real 真实可用`; `模拟模式：否` | 0 | PASS |
+| 资料库 | `#/library` | `weknora_api` | `frontend_page` | `frontend_page:library` | `PHASE5_REAL-P5-G6-library` | `资料库`; `上传`; `资料列表`; `分块`; `WeKnora`; `文档已索引，可用于有依据回答。` | 0 | PASS |
+| RAG 调试 | `#/rag-debug` | `weknora_api` | `frontend_page` | `frontend_page:rag_debug` | `PHASE5_REAL-P5-G6-rag-debug` | `RAG 检索调试`; `检索问题`; `返回数量（TOP K）`; `检索来源`; `运行`; `暂无调试轨迹` | 0 | PASS |
+| Wiki | `#/wiki` | `weknora_api` | `frontend_page` | `frontend_page:wiki` | `PHASE5_REAL-P5-G6-wiki` | `Wiki 知识库`; `搜索`; `页面`; `索引`; `类型：知识问答`; `草稿不可检索`; `WeKnora 同步：已同步`; `可检索：否` | 0 | PASS |
+| 知识问答 | `#/analysis` | `weknora_api` | `frontend_page` | `frontend_page:analysis` | `PHASE5_REAL-P5-G6-analysis` | `智能分析台`; `知识问答`; `知识来源`; `全部知识`; `仅文档`; `仅 Wiki`; `证据` | 0 | PASS |
+| 历史 | `#/history` | `weknora_api` | `frontend_page` | `frontend_page:history` | `PHASE5_REAL-P5-G6-history` | `生成历史`; `筛选`; `引用来源`; `真实 WeKnora`; `证据状态`; `结果列表` | 0 | PASS |
+
+## Frontend Fix Applied
+
+The browser check found that the Wiki article header previously expanded full internal metadata into normal page text. That created a visible block of raw field names and serialized values. The frontend now renders a curated Chinese summary instead:
+
+| Area | Before | After | Result |
 | --- | --- | --- | --- |
-| 首页 | `#/` | `工作台首页`, `资料库`, `RAG 调试`, `对话模型`, `RAG 检索链路`, `能力边界` | PASS |
-| 资料库 | `#/library` | `资料库`, `上传`, `资料列表`, `分块`, `文档已索引，可用于有依据回答。` | PASS |
-| RAG 调试 | `#/rag-debug` | `RAG 检索调试`, `检索问题`, `返回数量（Top K）`, `检索来源`, `运行` | PASS |
-| Wiki | `#/wiki` | `Wiki 知识库`, `搜索`, `页面`, `索引`, `可检索` | PASS |
-| 知识问答 | `#/analysis` | `智能分析台`, `知识问答`, `知识来源`, `全部知识`, `仅文档`, `仅 Wiki`, `证据` | PASS |
-| 历史 | `#/history` | `生成历史`, `筛选`, `结果列表`, `引用来源`, `证据状态` | PASS |
+| Wiki article metadata | Full internal metadata expansion in the normal article header | Chinese summary for type, slug, source, business area, tags, and WeKnora sync/index state | PASS |
+| Wiki page type | Raw workflow token such as `knowledge_qa` in page metadata | Chinese workflow label such as `知识问答` | PASS |
+| Wiki status labels | Raw stage tokens such as `pending` or `synced` in status rows | Chinese labels such as `待处理` and `已同步` | PASS |
+| Wiki source label | Lowercase source token for Wiki content | `Wiki` terminology label | PASS |
+
+## English And Terminology Assessment
+
+| Category | Result | Notes |
+| --- | --- | --- |
+| Blocking English residuals | PASS | Chrome text scan found zero matches for old blocker phrases and raw metadata markers. |
+| Accepted technical terms | PASS | `RAG`, `Wiki`, `Top K`, `PA`, `WeKnora`, `openai_compatible`, `weknora_api`, and evidence-field identifiers are retained as technical terms. |
+| Runtime status truthfulness | PASS | Home page shows chat and embedding as `real 真实可用`, `模拟模式：否`, with WeKnora-backed RAG and capability state from live status APIs. |
+| Browser acceptability | PASS | All six required pages rendered in Chrome with `lang=zh-CN`, required visible text, and `issueCount=0`. |
 
 ## Screenshot Evidence
 
-Screenshots were captured in the local temporary directory for this acceptance run:
+Screenshots were captured as local runtime artifacts for visual review only and are not committed:
 
 | Page | Screenshot |
 | --- | --- |
-| 首页 | `/private/tmp/p5-e4-frontend-screens/home.png` |
-| 资料库 | `/private/tmp/p5-e4-frontend-screens/library.png` |
-| RAG 调试 | `/private/tmp/p5-e4-frontend-screens/rag-debug.png` |
-| Wiki | `/private/tmp/p5-e4-frontend-screens/wiki.png` |
-| 知识问答 | `/private/tmp/p5-e4-frontend-screens/analysis.png` |
-| 历史 | `/private/tmp/p5-e4-frontend-screens/history.png` |
-
-The screenshots are not committed because they are generated runtime artifacts and the visible local data may include environment-specific record titles. This report records only sanitized page-level evidence.
-
-## Fix Applied During P5-E4
-
-The browser pass found one blocking English residual in the document readiness display:
-
-```text
-Document is indexed and ready for grounded answers.
-```
-
-The frontend display layer now maps that backend message to:
-
-```text
-文档已索引，可用于有依据回答。
-```
-
-The raw API value remains unchanged; only the user-facing display is localized.
+| 首页 | `/private/tmp/p5-g6-frontend-screens/home.png` |
+| 资料库 | `/private/tmp/p5-g6-frontend-screens/library.png` |
+| RAG 调试 | `/private/tmp/p5-g6-frontend-screens/rag-debug.png` |
+| Wiki | `/private/tmp/p5-g6-frontend-screens/wiki.png` |
+| 知识问答 | `/private/tmp/p5-g6-frontend-screens/analysis.png` |
+| 历史 | `/private/tmp/p5-g6-frontend-screens/history.png` |
 
 ## Final Result
 
-P5-E4 PASS.
+P5-G6 PASS.
 
-The frontend builds successfully, all required core pages render in a real local browser session, no blocking English residual from the Phase 4 frontend report remains in the checked views, and runtime status display does not hide mock embedding behind a fully real ready label.
+The frontend builds successfully, all required pages pass real browser acceptance, the status surface reflects live WeKnora and model provider state, and the checked views have no blocking English residuals or misleading mock/fallback status.

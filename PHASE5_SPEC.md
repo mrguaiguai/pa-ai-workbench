@@ -257,7 +257,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 | P5-G3 | RAG debug 24 问真实 PASS 报告 | [x] |
 | P5-G4 | Wiki 创建、发布、索引、检索、引用真实 PASS 报告 | [x] |
 | P5-G5 | `knowledge_qa` 24 问真实 PASS 报告 | [x] |
-| P5-G6 | 前端中文化与真实状态浏览器 PASS 报告 | [ ] |
+| P5-G6 | 前端中文化与真实状态浏览器 PASS 报告 | [x] |
 | P5-G7 | Phase 5 最终真实 PASS 总结报告 | [ ] |
 
 ## 5. 任务详情
@@ -786,7 +786,7 @@ checker 扫描 Phase 5 报告中的密钥、私有地址、上传目录、数据
 验证方式：
 同 P5-E4。
 
-状态：[ ]
+状态：[x]
 
 ### P5-G7：Phase 5 最终真实 PASS 总结报告
 
