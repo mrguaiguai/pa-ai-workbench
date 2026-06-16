@@ -245,7 +245,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 | --- | --- | --- |
 | P5-F1 | 增加真实 RAG 24 问矩阵脚本 | [x] |
 | P5-F2 | 增加真实 `knowledge_qa` 24 问脚本 | [x] |
-| P5-F3 | 增加 Phase 5 报告敏感信息与证据字段检查 | [ ] |
+| P5-F3 | 增加 Phase 5 报告敏感信息与证据字段检查 | [x] |
 | P5-F4 | 增加 Phase 5 本地真实测试运行说明 | [ ] |
 
 ### P5-G：最终真实 PASS 门禁
@@ -671,7 +671,7 @@ checker 扫描 Phase 5 报告中的密钥、私有地址、上传目录、数据
 验证方式：
 运行 checker 覆盖已存在或 fixture 生成的报告样例。
 
-状态：[ ]
+状态：[x]
 
 ### P5-F4：增加 Phase 5 本地真实测试运行说明
 
