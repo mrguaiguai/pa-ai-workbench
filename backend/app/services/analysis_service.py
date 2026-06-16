@@ -43,11 +43,15 @@ def run_analysis(
     current_run: dict[str, Any] | None = None,
     expected_source_types: list[str] | None = None,
     should_answer_insufficient: bool = False,
+    forbidden_anchors: list[str] | None = None,
+    question_type: str | None = None,
 ) -> tuple[Conversation, list[ConversationMessage], GenerationTask, GeneratedOutput, list]:
     normalized_retrieval_scope = normalize_source_scope(retrieval_scope)
     normalized_expected_source_types = _normalize_expected_source_types(
         expected_source_types or []
     )
+    normalized_forbidden_anchors = _normalize_str_list(forbidden_anchors or [])
+    normalized_question_type = _optional_str(question_type)
     current_run_scope = dict(current_run or {})
     conversation, user_message = _ensure_conversation(
         session=session,
@@ -70,6 +74,8 @@ def run_analysis(
                     "current_run": current_run_scope,
                     "expected_source_types": normalized_expected_source_types,
                     "should_answer_insufficient": should_answer_insufficient,
+                    "forbidden_anchors": normalized_forbidden_anchors,
+                    "question_type": normalized_question_type,
                 }
             ),
         )
@@ -81,6 +87,8 @@ def run_analysis(
                 "current_run": current_run_scope,
                 "expected_source_types": normalized_expected_source_types,
                 "should_answer_insufficient": should_answer_insufficient,
+                "forbidden_anchors": normalized_forbidden_anchors,
+                "question_type": normalized_question_type,
             }
         )
         session.add(user_message)
@@ -101,6 +109,8 @@ def run_analysis(
                 "current_run": current_run_scope,
                 "expected_source_types": normalized_expected_source_types,
                 "should_answer_insufficient": should_answer_insufficient,
+                "forbidden_anchors": normalized_forbidden_anchors,
+                "question_type": normalized_question_type,
             }
         ),
         status="running",
@@ -123,11 +133,15 @@ def run_analysis(
         current_run=current_run_scope,
         expected_source_types=normalized_expected_source_types,
         should_answer_insufficient=should_answer_insufficient,
+        forbidden_anchors=normalized_forbidden_anchors,
+        question_type=normalized_question_type,
         metadata={
             "retrieval_scope": normalized_retrieval_scope,
             "current_run": current_run_scope,
             "expected_source_types": normalized_expected_source_types,
             "should_answer_insufficient": should_answer_insufficient,
+            "forbidden_anchors": normalized_forbidden_anchors,
+            "question_type": normalized_question_type,
         },
     )
     with weknora_log_context(
@@ -274,6 +288,22 @@ def _normalize_source_type(value: object) -> str:
     if normalized in {"wiki", "wiki_page", "wiki-page"}:
         return "wiki_page"
     return normalized
+
+
+def _normalize_str_list(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        text = _optional_str(value)
+        if text and text not in normalized:
+            normalized.append(text)
+    return normalized
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _citation_metadata(citation) -> dict:

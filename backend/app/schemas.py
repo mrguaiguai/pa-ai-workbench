@@ -360,6 +360,8 @@ class AnalysisRunRequest(BaseModel):
     current_run: dict[str, Any] = Field(default_factory=dict)
     expected_source_types: list[str] = Field(default_factory=list)
     should_answer_insufficient: bool = False
+    forbidden_anchors: list[str] = Field(default_factory=list)
+    question_type: str | None = None
 
     @field_validator("retrieval_scope")
     @classmethod
@@ -381,6 +383,16 @@ class AnalysisRunRequest(BaseModel):
                 )
             if source_type not in normalized:
                 normalized.append(source_type)
+        return normalized
+
+    @field_validator("forbidden_anchors")
+    @classmethod
+    def validate_forbidden_anchors(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            anchor = str(value or "").strip()
+            if anchor and anchor not in normalized:
+                normalized.append(anchor)
         return normalized
 
 

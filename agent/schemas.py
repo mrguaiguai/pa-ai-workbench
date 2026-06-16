@@ -43,6 +43,8 @@ class AgentRequest:
     current_run: dict[str, Any] = field(default_factory=dict)
     expected_source_types: list[str] = field(default_factory=list)
     should_answer_insufficient: bool = False
+    forbidden_anchors: list[str] = field(default_factory=list)
+    question_type: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

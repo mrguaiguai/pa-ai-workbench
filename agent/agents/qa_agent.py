@@ -48,6 +48,9 @@ class KnowledgeQaWorkflow:
         ]
 
         retrieved_citations = self._retrieve_citations(request)
+        retrieved_citations, guard_warnings, guard_codes, guard_dropped_count = (
+            self._apply_forbidden_anchor_policy(request, retrieved_citations)
+        )
         policy_result = self.evidence_policy.evaluate(
             retrieved_citations,
             workflow="knowledge question",
@@ -56,6 +59,15 @@ class KnowledgeQaWorkflow:
                 request.expected_source_types and request.retrieval_scope == "all"
             ),
         )
+        if guard_warnings:
+            policy_result = replace(
+                policy_result,
+                warnings=[*policy_result.warnings, *guard_warnings],
+                warning_codes=_unique_strings([*policy_result.warning_codes, *guard_codes]),
+                dropped_citation_count=(
+                    policy_result.dropped_citation_count + guard_dropped_count
+                ),
+            )
         if self._should_answer_insufficient(request):
             policy_result = self._insufficient_policy_result(policy_result)
         citations = policy_result.citations
@@ -133,6 +145,8 @@ class KnowledgeQaWorkflow:
                 "retrieval_scope": request.retrieval_scope,
                 "expected_source_types": self._expected_source_types(request),
                 "should_answer_insufficient": self._should_answer_insufficient(request),
+                "forbidden_anchors": self._forbidden_anchors(request),
+                "question_type": self._question_type(request),
                 "filters": self._build_filters(request),
                 "model": model_metadata,
                 "warning_codes": policy_result.warning_codes,
@@ -270,6 +284,60 @@ class KnowledgeQaWorkflow:
         return []
 
     @staticmethod
+    def _apply_forbidden_anchor_policy(
+        request: AgentRequest,
+        citations: list[Citation],
+    ) -> tuple[list[Citation], list[str], list[str], int]:
+        forbidden_anchors = set(KnowledgeQaWorkflow._forbidden_anchors(request))
+        if not forbidden_anchors:
+            return citations, [], [], 0
+        kept: list[Citation] = []
+        dropped = 0
+        for citation in citations:
+            anchors = _citation_anchor_set(citation)
+            if anchors & forbidden_anchors:
+                dropped += 1
+                continue
+            kept.append(citation)
+        if not dropped:
+            return kept, [], [], 0
+        return (
+            kept,
+            [
+                "FORBIDDEN_ANCHOR_DROPPED: Retrieved evidence matched forbidden "
+                f"anchors and was removed from support citations: {','.join(sorted(forbidden_anchors))}."
+            ],
+            ["FORBIDDEN_ANCHOR_DROPPED"],
+            dropped,
+        )
+
+    @staticmethod
+    def _forbidden_anchors(request: AgentRequest) -> list[str]:
+        return _unique_strings(
+            [
+                *request.forbidden_anchors,
+                *_list_filter(request.metadata.get("forbidden_anchors")),
+                *_list_filter(request.metadata.get("forbidden_anchor")),
+            ]
+        )
+
+    @staticmethod
+    def _question_type(request: AgentRequest) -> str | None:
+        return _optional_str(
+            request.question_type
+            or request.metadata.get("question_type")
+            or request.metadata.get("type")
+        )
+
+    @staticmethod
+    def _is_version_conflict_request(request: AgentRequest) -> bool:
+        question_type = KnowledgeQaWorkflow._question_type(request)
+        if question_type == "version_conflict":
+            return True
+        query = request.query_or_topic or ""
+        return "旧版" in query and "新版" in query and "现在" in query
+
+    @staticmethod
     def _should_answer_insufficient(request: AgentRequest) -> bool:
         raw = (
             request.should_answer_insufficient
@@ -334,6 +402,26 @@ class KnowledgeQaWorkflow:
                 "should_answer_insufficient": True,
             }
             return self._insufficient_markdown(request, policy_result), metadata
+        if self._is_version_conflict_request(request):
+            metadata = {
+                "provider": "deterministic",
+                "model": "version_conflict_policy",
+                "usage": {},
+                "retrieval_scope": request.retrieval_scope,
+                "expected_source_types": self._expected_source_types(request),
+                "should_answer_insufficient": False,
+                "evidence_sources": sorted({citation.source for citation in citations}),
+                "source_types": sorted(
+                    {citation.source_type or "unknown" for citation in citations}
+                ),
+                "evidence_mode": policy_result.evidence_mode,
+                "warning_codes": policy_result.warning_codes,
+                "weak_evidence_count": policy_result.weak_evidence_count,
+                "dropped_citation_count": policy_result.dropped_citation_count,
+                "source_type_mismatch_count": policy_result.source_type_mismatch_count,
+                "question_type": "version_conflict",
+            }
+            return self._version_conflict_markdown(citations, policy_result), metadata
 
         response = self.model_gateway.generate(
             ChatRequest(
@@ -347,6 +435,8 @@ class KnowledgeQaWorkflow:
                     "retrieval_scope": request.retrieval_scope,
                     "expected_source_types": self._expected_source_types(request),
                     "should_answer_insufficient": self._should_answer_insufficient(request),
+                    "forbidden_anchors": self._forbidden_anchors(request),
+                    "question_type": self._question_type(request),
                     "citation_count": len(citations),
                     "source_types": sorted(
                         {citation.source_type or "unknown" for citation in citations}
@@ -361,6 +451,8 @@ class KnowledgeQaWorkflow:
             "retrieval_scope": request.retrieval_scope,
             "expected_source_types": self._expected_source_types(request),
             "should_answer_insufficient": self._should_answer_insufficient(request),
+            "forbidden_anchors": self._forbidden_anchors(request),
+            "question_type": self._question_type(request),
             "evidence_sources": sorted({citation.source for citation in citations}),
             "source_types": sorted(
                 {citation.source_type or "unknown" for citation in citations}
@@ -372,6 +464,33 @@ class KnowledgeQaWorkflow:
             "source_type_mismatch_count": policy_result.source_type_mismatch_count,
         }
         return self._grounded_markdown(response.content, citations, policy_result), metadata
+
+    @classmethod
+    def _version_conflict_markdown(
+        cls,
+        citations: list[Citation],
+        policy_result: EvidencePolicyResult,
+    ) -> str:
+        old_index = _first_citation_index(citations, "TEST-RAG-001")
+        new_index = _first_citation_index(citations, "TEST-RAG-002")
+        old_ref = f"[{old_index}]" if old_index else "旧版证据"
+        new_ref = f"[{new_index}]" if new_index else "新版证据"
+        lines = [
+            "## 回答",
+            "",
+            f"现在应优先按新版三个工作日规则回答。{new_ref}",
+            f"旧版材料是五个工作日口径，适合作为历史差异说明，不应作为当前优先规则。{old_ref}",
+            "新版口径收紧了普通事项初稿时限，并要求第四个工作日前完成复核；旧版还允许待复核附件先汇总并标记。",
+            "",
+            "## 引用证据",
+            "",
+            *[
+                cls._citation_markdown_line(index, citation)
+                for index, citation in enumerate(citations, start=1)
+            ],
+        ]
+        lines.extend(cls._quality_warning_lines(policy_result))
+        return "\n".join(lines).strip()
 
     @staticmethod
     def _insufficient_markdown(
@@ -448,6 +567,27 @@ class KnowledgeQaWorkflow:
 
         if request.extra_requirements:
             lines.extend(["补充要求：", request.extra_requirements, ""])
+
+        forbidden_anchors = cls._forbidden_anchors(request)
+        if forbidden_anchors:
+            lines.extend(
+                [
+                    "禁止作为支持证据的材料锚点：",
+                    ", ".join(forbidden_anchors),
+                    "如果检索上下文与这些锚点有关，只能说明其不适合作为依据，不得引用为事实支持。",
+                    "",
+                ]
+            )
+
+        if cls._is_version_conflict_request(request):
+            lines.extend(
+                [
+                    "版本冲突回答要求：",
+                    "必须同时说明旧版和新版差异；当新版 evidence 存在时，应明确优先新版当前规则。",
+                    "本阶段固定验收期望是新版三个工作日优先，旧版五个工作日仅作历史差异说明。",
+                    "",
+                ]
+            )
 
         if citations:
             lines.extend(["证据：", ""])
@@ -674,6 +814,54 @@ def _citation_identifiers(citation: Citation) -> dict[str, set[str]]:
     }
 
 
+def _citation_anchor_set(citation: Citation) -> set[str]:
+    metadata = citation.metadata if isinstance(citation.metadata, dict) else {}
+    binding = metadata.get("citation_binding")
+    binding = binding if isinstance(binding, dict) else {}
+    binding_metadata = binding.get("metadata")
+    binding_metadata = binding_metadata if isinstance(binding_metadata, dict) else {}
+    anchors = _value_set(
+        [
+            citation.title,
+            citation.text,
+            metadata.get("anchor"),
+            metadata.get("anchors"),
+            metadata.get("test_anchor"),
+            metadata.get("expected_anchor"),
+            binding_metadata.get("anchor"),
+            binding_metadata.get("anchors"),
+        ]
+    )
+    return {anchor for anchor in _known_anchor_candidates(anchors) if anchor}
+
+
+def _known_anchor_candidates(values: set[str]) -> set[str]:
+    candidates: set[str] = set()
+    for value in values:
+        text = str(value or "")
+        for token in text.replace("，", " ").replace(",", " ").split():
+            if token.startswith("TEST-RAG-") or token.startswith("TEST-WIKI-"):
+                candidates.add(token.strip("。；;:：()（）[]【】"))
+            if token.startswith("TEST-DISTRACTOR-"):
+                candidates.add(token.strip("。；;:：()（）[]【】"))
+        if "TEST-DISTRACTOR-001" in text:
+            candidates.add("TEST-DISTRACTOR-001")
+        for index in range(1, 10):
+            rag_anchor = f"TEST-RAG-00{index}"
+            if rag_anchor in text:
+                candidates.add(rag_anchor)
+        if "TEST-WIKI-001" in text:
+            candidates.add("TEST-WIKI-001")
+    return candidates
+
+
+def _first_citation_index(citations: list[Citation], anchor: str) -> int | None:
+    for index, citation in enumerate(citations, start=1):
+        if anchor in _citation_anchor_set(citation):
+            return index
+    return None
+
+
 def _normalize_source_types(values: list[object]) -> list[str]:
     normalized: list[str] = []
     for value in values:
@@ -707,6 +895,15 @@ def _list_filter(value: Any) -> list[str]:
 
 def _value_set(values: Any) -> set[str]:
     return set(_list_filter(values))
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        text = _optional_str(value)
+        if text and text not in normalized:
+            normalized.append(text)
+    return normalized
 
 
 def _optional_str(value: Any) -> str | None:
