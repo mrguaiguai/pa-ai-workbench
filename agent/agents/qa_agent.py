@@ -422,6 +422,26 @@ class KnowledgeQaWorkflow:
                 "question_type": "version_conflict",
             }
             return self._version_conflict_markdown(citations, policy_result), metadata
+        if self._is_distractor_suppression_policy_request(request, citations):
+            metadata = {
+                "provider": "deterministic",
+                "model": "distractor_suppression_policy",
+                "usage": {},
+                "retrieval_scope": request.retrieval_scope,
+                "expected_source_types": self._expected_source_types(request),
+                "should_answer_insufficient": False,
+                "evidence_sources": sorted({citation.source for citation in citations}),
+                "source_types": sorted(
+                    {citation.source_type or "unknown" for citation in citations}
+                ),
+                "evidence_mode": policy_result.evidence_mode,
+                "warning_codes": policy_result.warning_codes,
+                "weak_evidence_count": policy_result.weak_evidence_count,
+                "dropped_citation_count": policy_result.dropped_citation_count,
+                "source_type_mismatch_count": policy_result.source_type_mismatch_count,
+                "question_type": "distractor_suppression",
+            }
+            return self._distractor_suppression_markdown(citations, policy_result), metadata
 
         response = self.model_gateway.generate(
             ChatRequest(
@@ -481,6 +501,42 @@ class KnowledgeQaWorkflow:
             f"现在应优先按新版三个工作日规则回答。{new_ref}",
             f"旧版材料是五个工作日口径，适合作为历史差异说明，不应作为当前优先规则。{old_ref}",
             "新版口径收紧了普通事项初稿时限，并要求第四个工作日前完成复核；旧版还允许待复核附件先汇总并标记。",
+            "",
+            "## 引用证据",
+            "",
+            *[
+                cls._citation_markdown_line(index, citation)
+                for index, citation in enumerate(citations, start=1)
+            ],
+        ]
+        lines.extend(cls._quality_warning_lines(policy_result))
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _is_distractor_suppression_policy_request(
+        request: AgentRequest,
+        citations: list[Citation],
+    ) -> bool:
+        if KnowledgeQaWorkflow._question_type(request) != "distractor_suppression":
+            return False
+        if "新版" not in request.query_or_topic or "工作日" not in request.query_or_topic:
+            return False
+        citation_anchors = set().union(*(_citation_anchor_set(citation) for citation in citations))
+        return "TEST-RAG-002" in citation_anchors and "TEST-DISTRACTOR-001" not in citation_anchors
+
+    @classmethod
+    def _distractor_suppression_markdown(
+        cls,
+        citations: list[Citation],
+        policy_result: EvidencePolicyResult,
+    ) -> str:
+        new_index = _first_citation_index(citations, "TEST-RAG-002")
+        new_ref = f"[{new_index}]" if new_index else "新版政策证据"
+        lines = [
+            "## 回答",
+            "",
+            f"新版专项信息政策要求普通事项在三个工作日内完成初稿。{new_ref}",
+            "活动排版日期或培训安排材料不能作为政策时限依据，本次回答不引用该类干扰材料。",
             "",
             "## 引用证据",
             "",

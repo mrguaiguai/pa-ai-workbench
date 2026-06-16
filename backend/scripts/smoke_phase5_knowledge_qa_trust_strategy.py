@@ -143,6 +143,10 @@ def _run_smoke() -> dict[str, dict[str, Any]]:
                 "FORBIDDEN_ANCHOR_DROPPED" in result.content.get("warning_codes", []),
                 "P4Q-022 did not record forbidden-anchor drop",
             )
+            _assert(
+                result.content["model"].get("model") == "distractor_suppression_policy",
+                "P4Q-022 did not use deterministic distractor policy",
+            )
         if question["id"] == "P4Q-024":
             _assert(
                 {"TEST-RAG-001", "TEST-RAG-002"}.issubset(set(anchors)),
@@ -159,7 +163,7 @@ def _run_smoke() -> dict[str, dict[str, Any]]:
             "model": result.content["model"].get("model"),
         }
 
-    _assert(len(model_gateway.calls) == 1, "version-conflict answer should not call model")
+    _assert(len(model_gateway.calls) == 0, "trust policy answers should not call model")
     return results
 
 

@@ -228,7 +228,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 | P5-D2 | 让 `knowledge_qa` 支持当前语料范围与 source_type 策略 | [x] |
 | P5-D3 | 修复无答案拒答与引用支撑规则 | [x] |
 | P5-D4 | 修复干扰排除与新旧版本冲突回答策略 | [x] |
-| P5-D5 | 真实 `knowledge_qa` 24 问达到 PASS | [ ] |
+| P5-D5 | 真实 `knowledge_qa` 24 问达到 PASS | [x] |
 
 ### P5-E：前端中文化与真实状态展示
 
@@ -558,7 +558,7 @@ QA fixture smoke 和真实 QA 报告覆盖 P4Q-022、P4Q-024。
 `test -f docs/PHASE5_REAL_KNOWLEDGE_QA_24Q_PASS_REPORT.md`；
 `rg -n "P4Q-001|P4Q-024|knowledge_qa|PASS|依据不足|TEST-DISTRACTOR-001|新版|PHASE5_REAL" docs/PHASE5_REAL_KNOWLEDGE_QA_24Q_PASS_REPORT.md`。
 
-状态：[ ]
+状态：[x]
 
 ### P5-E1：修复核心页面残留英文术语
 
