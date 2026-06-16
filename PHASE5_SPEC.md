@@ -217,7 +217,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 | --- | --- | --- |
 | P5-C1 | 完善 published Wiki 索引字段覆盖 | [x] |
 | P5-C2 | 修复 P4Q-017 到 P4Q-019 Wiki-only 自然语言召回 | [x] |
-| P5-C3 | 稳定 Wiki evidence 与 citation traceability | [ ] |
+| P5-C3 | 稳定 Wiki evidence 与 citation traceability | [x] |
 | P5-C4 | 真实 Wiki 闭环复测达到 PASS | [ ] |
 
 ### P5-D：`knowledge_qa` 24 问质量修复
@@ -460,7 +460,7 @@ Wiki citation 包含 `evidence_id`、`source_type=wiki_page`、`wiki_page_id`，
 验证方式：
 后端 citation smoke 和前端引用定位检查。
 
-状态：[ ]
+状态：[x]
 
 ### P5-C4：真实 Wiki 闭环复测达到 PASS
 

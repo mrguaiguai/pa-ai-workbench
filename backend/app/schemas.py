@@ -239,20 +239,26 @@ class CitationRead(BaseModel):
         metadata = _metadata_from_json(self.metadata_json)
         binding = metadata.get("citation_binding")
         binding = binding if isinstance(binding, dict) else {}
+        binding_metadata = binding.get("metadata")
+        binding_metadata = binding_metadata if isinstance(binding_metadata, dict) else {}
         if self.evidence_id is None:
+            wiki_page_id = _wiki_page_id_from_metadata(binding, metadata, binding_metadata)
             self.evidence_id = _optional_str(
                 binding.get("evidence_id") or metadata.get("evidence_id")
+                or (f"wiki_page:{wiki_page_id}" if wiki_page_id else None)
             )
         if self.source_type is None:
             self.source_type = _normalize_source_type(
                 binding.get("source_type")
                 or metadata.get("citation_source_type")
                 or metadata.get("source_type")
+                or binding_metadata.get("source_type")
+                or ("wiki_page" if _wiki_page_id_from_metadata(binding, metadata, binding_metadata) else None)
                 or ("document_chunk" if self.chunk_id else None)
             )
         if self.wiki_page_id is None:
             self.wiki_page_id = _optional_str(
-                binding.get("wiki_page_id") or metadata.get("wiki_page_id")
+                _wiki_page_id_from_metadata(binding, metadata, binding_metadata)
             )
         return self
 
@@ -308,6 +314,32 @@ def _optional_str(value: object) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _wiki_page_id_from_metadata(
+    binding: dict[str, Any],
+    metadata: dict[str, Any],
+    binding_metadata: dict[str, Any],
+) -> str | None:
+    return _first_optional_str(
+        binding.get("wiki_page_id"),
+        metadata.get("wiki_page_id"),
+        metadata.get("weknora_wiki_page_id"),
+        metadata.get("pa_wiki_page_id"),
+        metadata.get("id"),
+        binding_metadata.get("wiki_page_id"),
+        binding_metadata.get("weknora_wiki_page_id"),
+        binding_metadata.get("pa_wiki_page_id"),
+        binding_metadata.get("id"),
+    )
+
+
+def _first_optional_str(*values: object) -> str | None:
+    for value in values:
+        normalized = _optional_str(value)
+        if normalized:
+            return normalized
+    return None
 
 
 class OutputDetailResponse(BaseModel):

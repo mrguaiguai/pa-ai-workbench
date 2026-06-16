@@ -46,14 +46,14 @@ class CitationBuilder:
         source_type = self._source_type(evidence)
         evidence_id = self._evidence_id(evidence, source_type)
         self._validate_traceability(evidence, source_type, evidence_id)
+        wiki_page_id = self._wiki_page_id(evidence)
         return CitationBinding(
             evidence_id=evidence_id,
             source_type=source_type,
             document_id=evidence.document_id,
             external_doc_id=evidence.external_doc_id,
             chunk_id=evidence.chunk_id,
-            wiki_page_id=evidence.wiki_page_id
-            or self._optional_str(evidence.metadata.get("wiki_page_id")),
+            wiki_page_id=wiki_page_id,
             title=evidence.title,
             text=evidence.text,
             score=evidence.score,
@@ -84,9 +84,7 @@ class CitationBuilder:
         if source_type == "document_chunk" and evidence.chunk_id:
             return f"document_chunk:{evidence.chunk_id}"
         if source_type == "wiki_page":
-            wiki_page_id = evidence.wiki_page_id or cls._optional_str(
-                evidence.metadata.get("wiki_page_id")
-            )
+            wiki_page_id = cls._wiki_page_id(evidence)
             if wiki_page_id:
                 return f"wiki_page:{wiki_page_id}"
         raise CitationBindingError("Evidence has no stable citation id.")
@@ -113,15 +111,17 @@ class CitationBuilder:
                 )
             return
         if source_type == "wiki_page":
-            if not evidence.wiki_page_id and not evidence.metadata.get("wiki_page_id"):
+            if not cls._wiki_page_id(evidence):
                 raise CitationBindingError("Wiki citation must include wiki_page_id.")
             return
         raise CitationBindingError(f"Unsupported citation source_type: {source_type}")
 
-    @staticmethod
-    def _binding_metadata(evidence: Evidence) -> dict[str, Any]:
+    @classmethod
+    def _binding_metadata(cls, evidence: Evidence) -> dict[str, Any]:
         return {
             "source": evidence.source,
+            "evidence_id": evidence.evidence_id,
+            "source_type": evidence.source_type,
             "chunk_index": evidence.metadata.get("chunk_index"),
             "page_number": evidence.metadata.get("page_number"),
             "section_path": evidence.metadata.get("section_path"),
@@ -129,7 +129,43 @@ class CitationBuilder:
             "end_char": evidence.metadata.get("end_char"),
             "business_area": evidence.metadata.get("business_area"),
             "document_type": evidence.metadata.get("document_type"),
+            "wiki_page_id": cls._wiki_page_id(evidence),
+            "wiki_slug": cls._wiki_slug(evidence),
+            "weknora_wiki_page_id": cls._optional_str(
+                evidence.metadata.get("weknora_wiki_page_id")
+            ),
+            "weknora_wiki_page_slug": cls._optional_str(
+                evidence.metadata.get("weknora_wiki_page_slug")
+            ),
         }
+
+    @classmethod
+    def _wiki_page_id(cls, evidence: Evidence) -> str | None:
+        return cls._first_optional_str(
+            evidence.wiki_page_id,
+            evidence.metadata.get("wiki_page_id"),
+            evidence.metadata.get("weknora_wiki_page_id"),
+            evidence.metadata.get("pa_wiki_page_id"),
+            evidence.metadata.get("id"),
+        )
+
+    @classmethod
+    def _wiki_slug(cls, evidence: Evidence) -> str | None:
+        return cls._first_optional_str(
+            evidence.metadata.get("wiki_slug"),
+            evidence.metadata.get("weknora_wiki_page_slug"),
+            evidence.metadata.get("weknora_slug"),
+            evidence.metadata.get("slug"),
+            evidence.metadata.get("page_slug"),
+        )
+
+    @classmethod
+    def _first_optional_str(cls, *values: Any) -> str | None:
+        for value in values:
+            normalized = cls._optional_str(value)
+            if normalized:
+                return normalized
+        return None
 
     @staticmethod
     def _optional_str(value: Any) -> str | None:

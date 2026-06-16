@@ -80,22 +80,41 @@ def _hydrate_payload(payload: dict[str, Any]) -> dict[str, Any]:
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     binding = metadata.get("citation_binding")
     binding = binding if isinstance(binding, dict) else {}
+    binding_metadata = binding.get("metadata")
+    binding_metadata = binding_metadata if isinstance(binding_metadata, dict) else {}
     payload["wiki_slug"] = _first_string(
         metadata.get("slug"),
         metadata.get("weknora_slug"),
         metadata.get("weknora_wiki_page_slug"),
         metadata.get("wiki_page_slug"),
         metadata.get("page_slug"),
+        binding.get("wiki_slug"),
+        binding_metadata.get("wiki_slug"),
+        binding_metadata.get("weknora_wiki_page_slug"),
+        binding_metadata.get("weknora_slug"),
+        binding_metadata.get("slug"),
+        binding_metadata.get("page_slug"),
     )
     for key in (
         "evidence_id",
         "source_type",
-        "wiki_page_id",
         "document_id",
         "external_doc_id",
         "chunk_id",
     ):
         payload[key] = _first_string(payload.get(key), binding.get(key), metadata.get(key))
+    payload["wiki_page_id"] = _first_string(
+        payload.get("wiki_page_id"),
+        binding.get("wiki_page_id"),
+        metadata.get("wiki_page_id"),
+        metadata.get("weknora_wiki_page_id"),
+        metadata.get("pa_wiki_page_id"),
+        metadata.get("id"),
+        binding_metadata.get("wiki_page_id"),
+        binding_metadata.get("weknora_wiki_page_id"),
+        binding_metadata.get("pa_wiki_page_id"),
+        binding_metadata.get("id"),
+    )
     payload["source_type"] = _source_type(payload)
     return payload
 
