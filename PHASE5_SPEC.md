@@ -216,7 +216,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
 | P5-C1 | 完善 published Wiki 索引字段覆盖 | [x] |
-| P5-C2 | 修复 P4Q-017 到 P4Q-019 Wiki-only 自然语言召回 | [ ] |
+| P5-C2 | 修复 P4Q-017 到 P4Q-019 Wiki-only 自然语言召回 | [x] |
 | P5-C3 | 稳定 Wiki evidence 与 citation traceability | [ ] |
 | P5-C4 | 真实 Wiki 闭环复测达到 PASS | [ ] |
 
@@ -428,7 +428,7 @@ fixture smoke 和真实 RAG / QA 脚本分别覆盖 P4Q-022、P4Q-023。
 验证方式：
 Wiki smoke 覆盖 publish、index / retrievable、search、read、retrieve。
 
-状态：[ ]
+状态：[x]
 
 ### P5-C2：修复 P4Q-017 到 P4Q-019 Wiki-only 自然语言召回
 
@@ -444,7 +444,7 @@ P4Q-017、P4Q-018、P4Q-019 均返回 `source=weknora_api`、`source_type=wiki_p
 验证方式：
 真实 Wiki-only 检索脚本或报告覆盖三个问题。
 
-状态：[ ]
+状态：[x]
 
 ### P5-C3：稳定 Wiki evidence 与 citation traceability
 

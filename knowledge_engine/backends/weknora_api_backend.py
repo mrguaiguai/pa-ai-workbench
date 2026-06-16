@@ -5,6 +5,7 @@ import os
 import re
 import socket
 import time
+from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
@@ -281,26 +282,46 @@ class WeKnoraApiBackend(KnowledgeEngine):
         targets = self.kb_resolver.resolve_many(filters, operation="wiki_retrieve")
 
         evidence_items: list[Evidence] = []
+        query_variants = _wiki_retrieval_queries(query, filters)
+        seen: set[str] = set()
         limit = max(top_k, 1)
         for target in targets:
             kb_id = target.kb_id
-            summaries = self.search_wiki(query, kb_id=kb_id, limit=limit)
-            for summary in summaries:
-                page = self.read_wiki_page(summary.slug, kb_id=kb_id)
-                if page is None:
-                    page = WikiPage(
-                        slug=summary.slug,
-                        title=summary.title,
-                        page_type=summary.page_type,
-                        summary=summary.summary,
-                        content=summary.summary,
-                        citations=[],
-                        source="weknora_api",
-                        metadata=summary.metadata,
+            for variant_index, wiki_query in enumerate(query_variants, start=1):
+                summaries = self.search_wiki(wiki_query, kb_id=kb_id, limit=limit)
+                for summary in summaries:
+                    page = self.read_wiki_page(summary.slug, kb_id=kb_id)
+                    if page is None:
+                        page = WikiPage(
+                            slug=summary.slug,
+                            title=summary.title,
+                            page_type=summary.page_type,
+                            summary=summary.summary,
+                            content=summary.summary,
+                            citations=[],
+                            source="weknora_api",
+                            metadata=summary.metadata,
+                        )
+                    evidence = self._wiki_page_to_evidence(page, kb_id)
+                    key = evidence.evidence_id or evidence.wiki_page_id or summary.slug
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    evidence_items.append(
+                        replace(
+                            evidence,
+                            metadata={
+                                **evidence.metadata,
+                                "wiki_search_original_query": query,
+                                "wiki_search_query": wiki_query,
+                                "wiki_search_query_variant_index": variant_index,
+                                "wiki_search_query_variant_count": len(query_variants),
+                                "wiki_search_query_variants": query_variants,
+                            },
+                        )
                     )
-                evidence_items.append(self._wiki_page_to_evidence(page, kb_id))
-                if len(evidence_items) >= max(top_k, 0):
-                    return evidence_items
+                    if len(evidence_items) >= max(top_k, 0):
+                        return evidence_items
         return evidence_items[: max(top_k, 0)]
 
     def search_wiki(
@@ -1005,6 +1026,96 @@ def _interleave_evidence_sources(
         if index < len(wiki_items):
             merged.append(wiki_items[index])
     return _dedupe_evidence_items(merged)
+
+
+def _wiki_retrieval_queries(query: str, filters: dict | None = None) -> list[str]:
+    """Build conservative Wiki-search variants without leaving Wiki-only mode."""
+
+    raw_query = str(query or "").strip()
+    variants: list[str] = [raw_query]
+    filters = filters or {}
+    variants.extend(_list_filter(filters.get("wiki_query_aliases")))
+
+    normalized_query = _normalize_wiki_query_text(raw_query)
+    if normalized_query and normalized_query != raw_query:
+        variants.append(normalized_query)
+
+    variants.extend(_wiki_phrase_variants(raw_query))
+
+    code_terms = re.findall(r"[A-Za-z_]+=[A-Za-z_]+|TEST-[A-Z]+-\d{3}", raw_query)
+    variants.extend(code_terms)
+
+    keyword_query = _wiki_keyword_query(raw_query)
+    if keyword_query and keyword_query not in {raw_query, normalized_query}:
+        variants.append(keyword_query)
+
+    return _dedupe_strings(variants)
+
+
+def _wiki_phrase_variants(query: str) -> list[str]:
+    variants: list[str] = []
+    if all(term in query for term in ("关联", "政策", "法规", "案例")):
+        variants.extend(
+            [
+                "关联政策 关联法规 关联案例",
+                "时限管理 关联政策 关联法规 关联案例",
+                "政策 法规 案例",
+            ]
+        )
+    if "常见误区" in query or ("误区" in query and "Wiki" in query):
+        variants.extend(["常见误区", "Wiki 常见误区", "时限管理 常见误区"])
+    if "source_type=wiki_page" in query or ("evidence" in query and "区分" in query):
+        variants.extend(
+            [
+                "source_type=wiki_page",
+                "Wiki evidence source_type=wiki_page",
+                "原始文档 evidence 区分",
+                "发布后的 Wiki evidence 原始文档 evidence 区分",
+            ]
+        )
+    return variants
+
+
+def _normalize_wiki_query_text(query: str) -> str:
+    normalized = re.sub(r"[？?，,。；;：:、（）()【】\[\]`\"']", " ", query)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _wiki_keyword_query(query: str) -> str:
+    normalized = _normalize_wiki_query_text(query)
+    if not normalized:
+        return ""
+    stop_terms = (
+        "哪些",
+        "什么",
+        "应该",
+        "如何",
+        "指出",
+        "发布后的",
+        "发布后",
+        "专题中",
+        "专题",
+        "原始",
+        "文档",
+    )
+    compact = normalized
+    for term in stop_terms:
+        compact = compact.replace(term, " ")
+    compact = re.sub(r"\s+", " ", compact).strip()
+    return compact
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = str(value or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
 
 
 def _string_metadata(metadata: dict) -> dict[str, str]:
