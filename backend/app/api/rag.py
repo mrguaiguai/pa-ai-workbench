@@ -11,7 +11,7 @@ from app.schemas import RagDebugRequest
 from app.schemas import RagDebugResponse
 from app.schemas import RagRetrieveRequest
 from app.schemas import RagRetrieveResponse
-from app.services.rag_service import retrieve_evidence
+from app.services.rag_service import retrieve_evidence_with_context
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.errors import WeKnoraUnavailableError
 from knowledge_engine.log_context import weknora_log_context
@@ -58,23 +58,30 @@ DEBUG_METADATA_ALLOWLIST = {
     "retrieval_debug_trace",
     "retrieval_options",
     "weknora_retrieval_options_forwarded",
+    "current_run_corpus_id",
+    "current_run_id",
+    "current_run_isolated",
+    "current_run_isolation_warnings",
+    "current_run_namespace",
+    "current_run_scope",
 }
 
 
 @router.post("/retrieve", response_model=RagRetrieveResponse)
 def retrieve_rag_evidence(request: RagRetrieveRequest) -> RagRetrieveResponse:
     with weknora_log_context(correlation_id=uuid4().hex):
-        evidence_items = retrieve_evidence(
+        result = retrieve_evidence_with_context(
             query=request.query,
             filters=request.filters,
             top_k=request.top_k,
         )
     return RagRetrieveResponse(
-        items=[_to_read_model(evidence) for evidence in evidence_items],
-        total=len(evidence_items),
+        items=[_to_read_model(evidence) for evidence in result.items],
+        total=len(result.items),
         query=request.query,
-        filters=request.filters,
+        filters=result.filters,
         top_k=request.top_k,
+        warnings=result.warnings,
     )
 
 
@@ -94,11 +101,13 @@ def retrieve_rag_debug(request: RagDebugRequest) -> RagDebugResponse:
     )
     try:
         with weknora_log_context(correlation_id=trace_id):
-            evidence_items = retrieve_evidence(
+            result = retrieve_evidence_with_context(
                 query=request.query,
                 filters=request.filters,
                 top_k=request.top_k,
             )
+            evidence_items = result.items
+            filters = _sanitize_mapping(result.filters)
     except WeKnoraUnavailableError as exc:
         return RagDebugResponse(
             trace_id=trace_id,
@@ -134,7 +143,7 @@ def retrieve_rag_debug(request: RagDebugRequest) -> RagDebugResponse:
             ),
         )
 
-    warnings: list[str] = []
+    warnings: list[str] = list(result.warnings)
     sources = {item.source for item in evidence_items}
     if sources and sources != {"weknora_api"}:
         warnings.append(

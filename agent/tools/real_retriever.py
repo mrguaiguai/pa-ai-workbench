@@ -3,6 +3,10 @@ from typing import Any
 from agent.schemas import Citation
 from agent.tools.capability_guard import AgentCapabilityGuard
 from knowledge_engine.base import KnowledgeEngine
+from knowledge_engine.current_run import apply_current_run_isolation
+from knowledge_engine.current_run import attach_current_run_warnings
+from knowledge_engine.current_run import current_run_fetch_top_k
+from knowledge_engine.current_run import prepare_current_run_filters
 from knowledge_engine.evidence import normalize_evidence_results
 from knowledge_engine.factory import create_knowledge_engine
 from knowledge_engine.schemas import Evidence
@@ -30,12 +34,16 @@ class RealRetrieverTool:
         self.capabilities.require("rag_retrieve")
         resolved_filters = self._build_filters(filters=filters, source_type=source_type)
         resolved_top_k = max(self.default_top_k if top_k is None else top_k, 0)
+        prepared = prepare_current_run_filters(resolved_filters)
+        raw_items = self.knowledge_engine.retrieve(
+            query=query,
+            filters=prepared.filters,
+            top_k=current_run_fetch_top_k(resolved_top_k, prepared.scope),
+        )
+        isolated = apply_current_run_isolation(raw_items, prepared.scope)
+        warnings = [*prepared.warnings, *isolated.warnings]
         evidence_items = normalize_evidence_results(
-            self.knowledge_engine.retrieve(
-                query=query,
-                filters=resolved_filters,
-                top_k=max(resolved_top_k * 2, resolved_top_k),
-            ),
+            attach_current_run_warnings(isolated.items, warnings),
             top_k=resolved_top_k,
         )
         return [self._to_citation(evidence) for evidence in evidence_items]

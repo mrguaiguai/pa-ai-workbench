@@ -402,6 +402,7 @@ class EvidenceRead(BaseModel):
 
 RAG_FILTER_KEYS = {
     "business_area",
+    "current_run",
     "document_ids",
     "document_type",
     "external_doc_id",
@@ -455,6 +456,7 @@ class RagRetrieveResponse(BaseModel):
     query: str
     filters: dict
     top_k: int
+    warnings: list[str] = Field(default_factory=list)
 
 
 class RagDebugRequest(BaseModel):

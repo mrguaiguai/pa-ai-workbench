@@ -18,6 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.api import rag as rag_api  # noqa: E402
 from app.schemas import RagDebugRequest  # noqa: E402
+from app.services.rag_service import RetrievalContext  # noqa: E402
 from knowledge_engine.schemas import Evidence  # noqa: E402
 
 
@@ -26,9 +27,9 @@ class SmokeError(RuntimeError):
 
 
 def main() -> int:
-    original_retrieve = rag_api.retrieve_evidence
+    original_retrieve = rag_api.retrieve_evidence_with_context
     calls: list[dict[str, Any]] = []
-    rag_api.retrieve_evidence = lambda query, filters=None, top_k=8: _fixture_retrieve(
+    rag_api.retrieve_evidence_with_context = lambda query, filters=None, top_k=8: _fixture_retrieve(
         calls,
         query,
         filters,
@@ -40,7 +41,7 @@ def main() -> int:
         print(f"RAG debug parameter smoke failed: {exc}", file=sys.stderr)
         return 1
     finally:
-        rag_api.retrieve_evidence = original_retrieve
+        rag_api.retrieve_evidence_with_context = original_retrieve
 
     print("RAG debug parameter smoke passed (fixture)")
     print(f"- trace id: {result['trace_id']}")
@@ -98,23 +99,27 @@ def _fixture_retrieve(
     query: str,
     filters: dict | None,
     top_k: int,
-) -> list[Evidence]:
+) -> RetrievalContext:
     calls.append({"query": query, "filters": filters or {}, "top_k": top_k})
-    return [
-        Evidence(
-            document_id=None,
-            external_doc_id=None,
-            chunk_id=None,
-            wiki_page_id="wiki-fixture-001",
-            title="Fixture Wiki",
-            text="Synthetic wiki evidence.",
-            score=None,
-            source="weknora_api",
-            evidence_id="wiki_page:wiki-fixture-001",
-            source_type="wiki_page",
-            metadata={"wiki_page_id": "wiki-fixture-001"},
-        )
-    ]
+    return RetrievalContext(
+        items=[
+            Evidence(
+                document_id=None,
+                external_doc_id=None,
+                chunk_id=None,
+                wiki_page_id="wiki-fixture-001",
+                title="Fixture Wiki",
+                text="Synthetic wiki evidence.",
+                score=None,
+                source="weknora_api",
+                evidence_id="wiki_page:wiki-fixture-001",
+                source_type="wiki_page",
+                metadata={"wiki_page_id": "wiki-fixture-001"},
+            )
+        ],
+        filters=filters or {},
+        warnings=[],
+    )
 
 
 def _assert(condition: bool, message: str) -> None:
