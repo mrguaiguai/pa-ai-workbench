@@ -42,6 +42,7 @@ def run_analysis(
     retrieval_scope: str = "all",
     current_run: dict[str, Any] | None = None,
     expected_source_types: list[str] | None = None,
+    should_answer_insufficient: bool = False,
 ) -> tuple[Conversation, list[ConversationMessage], GenerationTask, GeneratedOutput, list]:
     normalized_retrieval_scope = normalize_source_scope(retrieval_scope)
     normalized_expected_source_types = _normalize_expected_source_types(
@@ -68,6 +69,7 @@ def run_analysis(
                     "retrieval_scope": normalized_retrieval_scope,
                     "current_run": current_run_scope,
                     "expected_source_types": normalized_expected_source_types,
+                    "should_answer_insufficient": should_answer_insufficient,
                 }
             ),
         )
@@ -78,6 +80,7 @@ def run_analysis(
                 "retrieval_scope": normalized_retrieval_scope,
                 "current_run": current_run_scope,
                 "expected_source_types": normalized_expected_source_types,
+                "should_answer_insufficient": should_answer_insufficient,
             }
         )
         session.add(user_message)
@@ -97,6 +100,7 @@ def run_analysis(
                 "retrieval_scope": normalized_retrieval_scope,
                 "current_run": current_run_scope,
                 "expected_source_types": normalized_expected_source_types,
+                "should_answer_insufficient": should_answer_insufficient,
             }
         ),
         status="running",
@@ -118,10 +122,12 @@ def run_analysis(
         retrieval_scope=normalized_retrieval_scope,
         current_run=current_run_scope,
         expected_source_types=normalized_expected_source_types,
+        should_answer_insufficient=should_answer_insufficient,
         metadata={
             "retrieval_scope": normalized_retrieval_scope,
             "current_run": current_run_scope,
             "expected_source_types": normalized_expected_source_types,
+            "should_answer_insufficient": should_answer_insufficient,
         },
     )
     with weknora_log_context(

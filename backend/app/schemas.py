@@ -359,6 +359,7 @@ class AnalysisRunRequest(BaseModel):
     retrieval_scope: str = "all"
     current_run: dict[str, Any] = Field(default_factory=dict)
     expected_source_types: list[str] = Field(default_factory=list)
+    should_answer_insufficient: bool = False
 
     @field_validator("retrieval_scope")
     @classmethod

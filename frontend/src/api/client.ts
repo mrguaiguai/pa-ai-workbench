@@ -429,6 +429,7 @@ export type AnalysisRunRequest = {
   retrieval_scope?: RetrievalScope;
   current_run?: Record<string, unknown>;
   expected_source_types?: Array<"document_chunk" | "wiki_page">;
+  should_answer_insufficient?: boolean;
 };
 
 export type AnalysisRunResponse = {

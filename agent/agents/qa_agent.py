@@ -1,3 +1,4 @@
+from dataclasses import replace
 import time
 from typing import Any
 
@@ -55,6 +56,8 @@ class KnowledgeQaWorkflow:
                 request.expected_source_types and request.retrieval_scope == "all"
             ),
         )
+        if self._should_answer_insufficient(request):
+            policy_result = self._insufficient_policy_result(policy_result)
         citations = policy_result.citations
         events.append(
             AgentEvent(
@@ -129,6 +132,7 @@ class KnowledgeQaWorkflow:
                 "recent_message_count": len(context.recent_messages),
                 "retrieval_scope": request.retrieval_scope,
                 "expected_source_types": self._expected_source_types(request),
+                "should_answer_insufficient": self._should_answer_insufficient(request),
                 "filters": self._build_filters(request),
                 "model": model_metadata,
                 "warning_codes": policy_result.warning_codes,
@@ -265,6 +269,47 @@ class KnowledgeQaWorkflow:
             return ["wiki_page"]
         return []
 
+    @staticmethod
+    def _should_answer_insufficient(request: AgentRequest) -> bool:
+        raw = (
+            request.should_answer_insufficient
+            or request.metadata.get("should_answer_insufficient")
+            or request.metadata.get("insufficient_evidence_expected")
+            or request.metadata.get("expect_insufficient")
+        )
+        return _bool_value(raw)
+
+    @staticmethod
+    def _insufficient_policy_result(
+        policy_result: EvidencePolicyResult,
+    ) -> EvidencePolicyResult:
+        warnings = [
+            *policy_result.warnings,
+            (
+                "INSUFFICIENT_EVIDENCE_EXPECTED: Question is marked as no-answer; "
+                "retrieved context is not supporting evidence."
+            ),
+        ]
+        if not any(str(warning).startswith("NO_EVIDENCE:") for warning in warnings):
+            warnings.append(
+                "NO_EVIDENCE: No supporting evidence was found for this no-answer question."
+            )
+        warning_codes = [*policy_result.warning_codes]
+        for code in ("INSUFFICIENT_EVIDENCE_EXPECTED", "NO_EVIDENCE"):
+            if code not in warning_codes:
+                warning_codes.append(code)
+        return replace(
+            policy_result,
+            citations=[],
+            warnings=warnings,
+            warning_codes=warning_codes,
+            dropped_citation_count=(
+                policy_result.dropped_citation_count + len(policy_result.citations)
+            ),
+            weak_evidence_count=0,
+            evidence_mode="insufficient_evidence",
+        )
+
     def _generate_answer(
         self,
         request: AgentRequest,
@@ -272,6 +317,24 @@ class KnowledgeQaWorkflow:
         citations: list[Citation],
         policy_result: EvidencePolicyResult,
     ) -> tuple[str, dict[str, Any]]:
+        if self._should_answer_insufficient(request):
+            metadata = {
+                "provider": "deterministic",
+                "model": "insufficient_evidence_policy",
+                "usage": {},
+                "retrieval_scope": request.retrieval_scope,
+                "expected_source_types": self._expected_source_types(request),
+                "evidence_sources": [],
+                "source_types": [],
+                "evidence_mode": policy_result.evidence_mode,
+                "warning_codes": policy_result.warning_codes,
+                "weak_evidence_count": policy_result.weak_evidence_count,
+                "dropped_citation_count": policy_result.dropped_citation_count,
+                "source_type_mismatch_count": policy_result.source_type_mismatch_count,
+                "should_answer_insufficient": True,
+            }
+            return self._insufficient_markdown(request, policy_result), metadata
+
         response = self.model_gateway.generate(
             ChatRequest(
                 messages=self._build_messages(request, context, citations),
@@ -283,6 +346,7 @@ class KnowledgeQaWorkflow:
                     "workflow": "knowledge_qa",
                     "retrieval_scope": request.retrieval_scope,
                     "expected_source_types": self._expected_source_types(request),
+                    "should_answer_insufficient": self._should_answer_insufficient(request),
                     "citation_count": len(citations),
                     "source_types": sorted(
                         {citation.source_type or "unknown" for citation in citations}
@@ -296,6 +360,7 @@ class KnowledgeQaWorkflow:
             "usage": response.usage,
             "retrieval_scope": request.retrieval_scope,
             "expected_source_types": self._expected_source_types(request),
+            "should_answer_insufficient": self._should_answer_insufficient(request),
             "evidence_sources": sorted({citation.source for citation in citations}),
             "source_types": sorted(
                 {citation.source_type or "unknown" for citation in citations}
@@ -307,6 +372,26 @@ class KnowledgeQaWorkflow:
             "source_type_mismatch_count": policy_result.source_type_mismatch_count,
         }
         return self._grounded_markdown(response.content, citations, policy_result), metadata
+
+    @staticmethod
+    def _insufficient_markdown(
+        request: AgentRequest,
+        policy_result: EvidencePolicyResult,
+    ) -> str:
+        del policy_result
+        lines = [
+            "## 依据不足",
+            "",
+            f"针对问题“{request.query_or_topic}”，当前知识库材料没有足够依据支持该结论。",
+            "不能将检索到的相似上下文当作支持证据，也不能据此编造真实监管要求、真实客户名称或其他材料中未明确给出的事实。",
+            "",
+            "## 检索说明",
+            "",
+            "- 本次检索到的相近材料仅说明已进行查找，未作为事实结论的支持引用。",
+            "- 若材料为合成脱敏文本，只能说明测试材料本身的内容，不能推出真实主体或真实监管口径。",
+            "- 需要补充明确资料后才能回答该问题。",
+        ]
+        return "\n".join(lines)
 
     @staticmethod
     def _evidence_quality(policy_result: EvidencePolicyResult) -> dict[str, Any]:
@@ -629,3 +714,14 @@ def _optional_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _bool_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    normalized = str(value).strip().lower()
+    return normalized in {"1", "true", "yes", "y", "on"}

@@ -42,6 +42,7 @@ def run_analysis_task(
             retrieval_scope=payload.retrieval_scope,
             current_run=payload.current_run,
             expected_source_types=payload.expected_source_types,
+            should_answer_insufficient=payload.should_answer_insufficient,
         )
     except AnalysisRunError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

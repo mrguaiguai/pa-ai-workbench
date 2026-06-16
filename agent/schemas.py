@@ -42,6 +42,7 @@ class AgentRequest:
     retrieval_scope: str = "all"
     current_run: dict[str, Any] = field(default_factory=dict)
     expected_source_types: list[str] = field(default_factory=list)
+    should_answer_insufficient: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
