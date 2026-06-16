@@ -243,7 +243,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 
 | 任务 | 名称 | 状态 |
 | --- | --- | --- |
-| P5-F1 | 增加真实 RAG 24 问矩阵脚本 | [ ] |
+| P5-F1 | 增加真实 RAG 24 问矩阵脚本 | [x] |
 | P5-F2 | 增加真实 `knowledge_qa` 24 问脚本 | [ ] |
 | P5-F3 | 增加 Phase 5 报告敏感信息与证据字段检查 | [ ] |
 | P5-F4 | 增加 Phase 5 本地真实测试运行说明 | [ ] |
@@ -639,7 +639,7 @@ frontend build；浏览器检查 payload 或后端记录。
 验证方式：
 运行脚本的 dry / fixture-safe 模式和真实模式说明。
 
-状态：[ ]
+状态：[x]
 
 ### P5-F2：增加真实 `knowledge_qa` 24 问脚本
 
