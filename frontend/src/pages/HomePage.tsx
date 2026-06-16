@@ -28,6 +28,30 @@ type ModelStatusState =
   | { state: "ready"; data: ModelStatusResponse; error: null }
   | { state: "error"; data: null; error: string };
 
+type RuntimeStatusKey =
+  | "real"
+  | "mock"
+  | "fallback"
+  | "partial"
+  | "unavailable"
+  | "missing_config"
+  | "indexing"
+  | "retrievable"
+  | "fail_closed"
+  | "loading"
+  | "error";
+
+type RuntimeStatusCard = {
+  id: string;
+  label: string;
+  icon: typeof BrainCircuit;
+  state: StatusState["state"] | ModelStatusState["state"];
+  status: RuntimeStatusKey;
+  primary: string;
+  secondary: string;
+  details: string[];
+};
+
 const workflows = [
   {
     title: "知识问答",
@@ -57,28 +81,48 @@ const quickLinks = [
 ];
 
 function statusClass(value: string) {
-  return value.replace(/\s+/g, "-").toLowerCase();
+  return value.replace(/[\s_]+/g, "-").toLowerCase();
 }
 
 function configuredLabel(label: string, configured: boolean | undefined) {
   return `${label}：${configured ? "已配置" : "缺失"}`;
 }
 
-function runtimeStatusLabel(status: string) {
-  const labels: Record<string, string> = {
-    "weknora connected": "WeKnora 已连接",
-    "missing config": "配置缺失",
-    "weknora unavailable": "WeKnora 不可用",
-    "mock fallback": "模拟模式回退",
-    "real ready": "真实能力就绪",
-    "fail closed": "失败关闭",
-    eligible: "可作为发布证据",
-    "dev only": "仅开发态",
-    configured: "已配置",
+function runtimeStatusLabel(status: RuntimeStatusKey) {
+  const labels: Record<RuntimeStatusKey, string> = {
+    real: "real 真实可用",
+    mock: "mock 模式",
+    fallback: "fallback 回退",
+    partial: "partial 部分可用",
+    unavailable: "unavailable 不可用",
+    missing_config: "配置缺失",
+    indexing: "索引中",
+    retrievable: "可检索",
+    fail_closed: "失败关闭",
     loading: "加载中",
     error: "错误",
   };
-  return labels[status] ?? status;
+  return labels[status];
+}
+
+function modelProviderRuntimeStatus(
+  state: ModelStatusState["state"],
+  provider: { configured: boolean; mock: boolean } | null,
+): RuntimeStatusKey {
+  if (state === "loading") {
+    return "loading";
+  }
+  if (state === "error" || !provider) {
+    return "error";
+  }
+  if (provider.mock) {
+    return "mock";
+  }
+  return provider.configured ? "real" : "missing_config";
+}
+
+function countStatus(statusCounts: Record<string, number>, key: string) {
+  return Number(statusCounts[key] ?? 0);
 }
 
 export function HomePage({ navigateTo }: HomePageProps) {
@@ -150,7 +194,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
       : status.state === "loading"
         ? "连接中"
         : status.error;
-  const statusCards = useMemo(() => {
+  const statusCards = useMemo<RuntimeStatusCard[]>(() => {
     const modelReady = modelStatus.state === "ready";
     const backendReady = status.state === "ready";
     const model = modelReady ? modelStatus.data : null;
@@ -160,17 +204,26 @@ export function HomePage({ navigateTo }: HomePageProps) {
     const parity = capabilities?.parity_summary;
     const kbMapping = capabilities?.kb_mapping;
     const statusCounts = parity?.status_counts ?? {};
-    const ragStatus =
+    const partialCapabilityCount =
+      countStatus(statusCounts, "partial") + (parity?.partial_capabilities.length ?? 0);
+    const unsupportedCapabilityCount =
+      countStatus(statusCounts, "unsupported") + (parity?.unsupported_capabilities.length ?? 0);
+    const devOnlyCapabilityCount =
+      countStatus(statusCounts, "dev-only") + (parity?.dev_only_capabilities.length ?? 0);
+    const modelMock = Boolean(model?.mock_mode || model?.chat.mock || model?.embedding.mock);
+    const ragStatus: RuntimeStatusKey =
       backendReady && weknora?.mode === "weknora_api"
-        ? weknora.connected && !backend?.mock_mode
-          ? "weknora connected"
-          : weknora.status === "missing_config"
-            ? "missing config"
-            : "weknora unavailable"
+        ? backend?.mock_mode || modelMock
+          ? "fallback"
+          : weknora.connected
+            ? "real"
+            : weknora.status === "missing_config"
+              ? "missing_config"
+              : "unavailable"
         : backendReady
-          ? backend?.mock_mode || model?.mock_mode
-            ? "mock fallback"
-            : "real ready"
+          ? backend?.mock_mode || backend?.knowledge_backend === "mock"
+            ? "mock"
+            : "fallback"
           : status.state === "loading"
             ? "loading"
             : "error";
@@ -201,10 +254,16 @@ export function HomePage({ navigateTo }: HomePageProps) {
           : [status.state === "loading" ? "加载中" : status.error ?? "错误"];
     const capabilityStatus = backendReady
       ? parity?.fail_closed
-        ? "fail closed"
-        : parity?.release_evidence
-          ? "eligible"
-          : "dev only"
+        ? "fail_closed"
+        : partialCapabilityCount > 0
+          ? "partial"
+          : unsupportedCapabilityCount > 0 && !parity?.release_evidence
+            ? "unavailable"
+            : parity?.release_evidence
+              ? "real"
+              : devOnlyCapabilityCount > 0
+                ? "fallback"
+                : "unavailable"
       : status.state === "loading"
         ? "loading"
         : "error";
@@ -228,14 +287,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
         label: "对话模型",
         icon: BrainCircuit,
         state: modelStatus.state,
-        status:
-          modelReady
-            ? model?.chat.configured
-              ? "configured"
-              : "missing config"
-            : modelStatus.state === "loading"
-              ? "loading"
-              : "error",
+        status: modelProviderRuntimeStatus(modelStatus.state, model?.chat ?? null),
         primary: model?.chat.provider ?? "未知",
         secondary: model?.chat.model || "未设置模型",
         details:
@@ -252,14 +304,7 @@ export function HomePage({ navigateTo }: HomePageProps) {
         label: "向量模型",
         icon: Layers3,
         state: modelStatus.state,
-        status:
-          modelReady
-            ? model?.embedding.configured
-              ? "configured"
-              : "missing config"
-            : modelStatus.state === "loading"
-              ? "loading"
-              : "error",
+        status: modelProviderRuntimeStatus(modelStatus.state, model?.embedding ?? null),
         primary: model?.embedding.provider ?? "未知",
         secondary: model?.embedding.model || "未设置模型",
         details:
