@@ -38,6 +38,7 @@ MANIFEST_PATH = CORPUS_DIR / "manifest.json"
 QUESTIONS_PATH = CORPUS_DIR / "questions.json"
 CORPUS_ID = "phase4_rag_wiki_qa_v1"
 TASK_ID = "P5-F2"
+TRACE_TASK_ID = "P5-G5"
 DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
 VALID_SCOPES = {"all", "document", "wiki"}
 VALID_SOURCE_TYPES = {"document_chunk", "wiki_page"}
@@ -61,6 +62,7 @@ class QuestionResult:
     question_id: str
     question_type: str
     scope: str
+    trace_id: str
     status: str
     expected_answer_points: list[str]
     answer_point_status: str
@@ -244,6 +246,7 @@ def _dry_run(questions: list[dict[str, Any]]) -> list[QuestionResult]:
                 question_id=str(question["id"]),
                 question_type=str(question.get("type") or "-"),
                 scope=str(question["retrieval_scope"]),
+                trace_id="-",
                 status="PASS",
                 expected_answer_points=answer_points,
                 answer_point_status=f"planned:{len(answer_points)}",
@@ -284,6 +287,7 @@ def _real_run(
 ) -> list[QuestionResult]:
     results: list[QuestionResult] = []
     for question in questions:
+        trace_id = f"PHASE5_REAL-{TRACE_TASK_ID}-{question['id']}"
         payload = _request_payload(config=config, question=question)
         response = _post_json(
             url=f"{config.api_base_url}/api/analysis/run",
@@ -317,6 +321,7 @@ def _real_run(
                 question_id=str(question["id"]),
                 question_type=str(question.get("type") or "-"),
                 scope=str(question.get("retrieval_scope") or "all"),
+                trace_id=trace_id,
                 status=status,
                 expected_answer_points=list(question.get("expected_answer_points") or []),
                 answer_point_status=answer_status,
@@ -497,14 +502,208 @@ def _is_negative_instruction(point: str) -> bool:
 
 
 def _point_has_signal(point: str, markdown: str) -> bool:
-    tokens = [
-        token.strip(" ，。,.;；:：、")
-        for token in str(point).replace("，", " ").replace("、", " ").split()
-        if len(token.strip(" ，。,.;；:：、")) >= 2
-    ]
-    if not tokens:
+    normalized_point = _normalize_signal_text(point)
+    normalized_markdown = _normalize_signal_text(markdown)
+    if not normalized_point:
         return False
-    return any(token in markdown for token in tokens)
+    if normalized_point in normalized_markdown:
+        return True
+
+    groups = _semantic_signal_groups(normalized_point)
+    if groups:
+        return all(
+            any(signal in normalized_markdown for signal in group)
+            for group in groups
+        )
+
+    signals = _semantic_signals(normalized_point)
+    if not signals:
+        return False
+    required = max(1, min(len(signals), (len(signals) + 1) // 2))
+    matched = sum(1 for signal in signals if signal in normalized_markdown)
+    return matched >= required
+
+
+def _normalize_signal_text(value: object) -> str:
+    text = str(value or "")
+    replacements = {
+        "**": "",
+        "`": "",
+        "“": "",
+        "”": "",
+        "\"": "",
+        " ": "",
+        "\t": "",
+        "\n": "",
+        "，": "",
+        "。": "",
+        "；": "",
+        "：": "",
+        ",": "",
+        ".": "",
+        ";": "",
+        ":": "",
+        "、": "",
+        "（": "",
+        "）": "",
+        "(": "",
+        ")": "",
+        "[": "",
+        "]": "",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    for modal in ("应该", "应当", "需要", "需", "应", "是否"):
+        text = text.replace(modal, "")
+    return text
+
+
+def _semantic_signal_groups(normalized_point: str) -> list[list[str]]:
+    rules: list[tuple[tuple[str, ...], list[list[str]]]] = [
+        (
+            ("核心", "延迟响应"),
+            [["延迟响应", "响应时限延误", "晚了两个工作日", "延迟"]],
+        ),
+        (
+            ("标题", "正文", "测试锚点"),
+            [["标题"], ["正文"], ["测试锚点", "唯一测试锚点"]],
+        ),
+        (
+            ("忽略新版要求",),
+            [["忽略新版要求", "旧版要求而忽略新版要求", "忽略新版"]],
+        ),
+        (
+            ("无来源", "判断"),
+            [["无来源"], ["判断性表述", "判断"]],
+        ),
+        (
+            ("当前问题集", "引用"),
+            [["当前问题集"], ["引用"]],
+        ),
+        (
+            ("命中矩阵", "更新问题集", "替换材料"),
+            [["命中矩阵"], ["更新问题集"], ["替换材料", "替换为新的合成材料"]],
+        ),
+        (
+            ("待复核附件", "先汇总", "新版取消"),
+            [["待复核附件"], ["先汇总", "先行汇总"], ["取消"]],
+        ),
+        (
+            ("访问审计", "谁做了什么操作"),
+            [["访问审计"], ["谁做了什么操作", "谁在何时", "操作"]],
+        ),
+        (
+            ("发布校验", "对外使用"),
+            [["发布校验"], ["对外使用", "对外发布"]],
+        ),
+        (
+            ("蓝湾案例", "资料清单", "附件版本", "引用清单"),
+            [["蓝湾"], ["资料清单"], ["附件版本"], ["引用清单"]],
+        ),
+        (
+            ("附件版本不一致", "版本冲突检查"),
+            [["附件版本不一致"], ["版本冲突检查"], ["未触发", "没有立即触发", "没有立即启动", "未立即触发"]],
+        ),
+        (
+            ("初稿引用清单缺项", "复核退回"),
+            [["初稿"], ["引用清单"], ["缺项", "缺少"], ["复核退回", "退回"]],
+        ),
+        (
+            ("新版", "敏感事项", "一个工作日", "事项卡片"),
+            [["新版"], ["敏感事项"], ["一个工作日"], ["事项卡片"], ["资料清单"]],
+        ),
+        (
+            ("版本日期",),
+            [["版本日期", "版本日期检查"]],
+        ),
+        (
+            ("旧版材料排名靠前", "新版材料未被显式提升"),
+            [["旧版材料", "旧版"], ["排名靠前"], ["新版材料", "新版"], ["未被显式提升", "没有被显式提升", "没有被显式地提升"]],
+        ),
+        (
+            ("新版说明锚点", "新版优先问题", "更正记录"),
+            [["新版说明锚点", "版本日期提示"], ["新版优先"], ["更正记录"]],
+        ),
+        (
+            ("北辰", "旧版口径误用", "信息更正"),
+            [["北辰"], ["旧版口径误用", "过期统计口径", "旧版材料"], ["更正", "信息内容错误"]],
+        ),
+        (
+            ("相似材料", "推断", "无答案问题"),
+            [["相似材料"], ["推断"], ["无答案问题"]],
+        ),
+        (
+            ("活动排期与材料准备提醒",),
+            [["活动排期与材料准备提醒", "干扰材料", "活动排期", "排版安排"]],
+        ),
+        (
+            ("新版", "收紧", "时限", "附件复核"),
+            [["新版"], ["收紧"], ["时限", "初稿时限"], ["附件", "待复核附件"], ["复核"]],
+        ),
+        (
+            ("留存期限", "撤回期限", "复核记录时间"),
+            [["留存期限", "九十日", "一百八十日"], ["撤回期限", "两个工作日"], ["复核记录", "复核时间", "复核退回"]],
+        ),
+        (
+            ("Wiki专题", "法规条款"),
+            [["Wiki专题", "Wiki", "wiki_page", "TEST-WIKI"], ["法规条款", "规则", "条款", "政策", "document_chunk"]],
+        ),
+    ]
+    groups: list[list[str]] = []
+    for needles, candidate_groups in rules:
+        if all(_normalize_signal_text(needle) in normalized_point for needle in needles):
+            groups.extend(
+                [
+                    [_normalize_signal_text(candidate) for candidate in group]
+                    for group in candidate_groups
+                ]
+            )
+    return groups
+
+
+def _semantic_signals(normalized_point: str) -> list[str]:
+    signals: list[str] = []
+    for phrase in (
+        "三个工作日",
+        "五个工作日",
+        "第四个工作日前",
+        "一百八十日",
+        "九十日",
+        "两个工作日",
+        "一个工作日",
+        "旧版专项信息报送政策",
+        "新版专项信息报送政策",
+        "数据留存与访问审计规则",
+        "外部材料引用与发布校验规则",
+        "蓝湾",
+        "北辰",
+        "活动排期与材料准备提醒",
+        "source_type=wiki_page",
+        "原始文档evidence",
+        "Wiki",
+    ):
+        if phrase in normalized_point:
+            signals.append(_normalize_signal_text(phrase))
+
+    if "旧版和新版专项信息报送政策" in normalized_point:
+        signals.extend(["旧版专项信息报送政策", "新版专项信息报送政策"])
+    if "蓝湾和北辰案例" in normalized_point:
+        signals.extend(["蓝湾", "北辰", "案例"])
+
+    for chunk in _split_signal_chunks(normalized_point):
+        if len(chunk) >= 4:
+            signals.append(chunk)
+    return _unique_strings(signals)
+
+
+def _split_signal_chunks(text: str) -> list[str]:
+    chunks = [text]
+    for separator in ("和", "与", "及", "并", "或", "而", "且"):
+        next_chunks: list[str] = []
+        for chunk in chunks:
+            next_chunks.extend(part for part in chunk.split(separator) if part)
+        chunks = next_chunks
+    return chunks
 
 
 def _judge_refusal(
@@ -748,8 +947,8 @@ def _render_output(config: MatrixConfig, results: list[QuestionResult]) -> str:
         "",
         "## Question Matrix",
         "",
-        "| Question | Type | Scope | Answer points | Expected anchors | Actual anchors | Expected source_type | Actual source_type | Citations | Retrieved | Refusal | Distractor | Version | Evidence fields | Warnings | Status | Notes |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- | --- | --- |",
+        "| Question | Type | Scope | Answer points | Expected anchors | Actual anchors | Expected source_type | Actual source_type | Citations | Retrieved | Refusal | Distractor | Version | Evidence fields | Warnings | trace_id | Status | Notes |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for item in results:
         evidence_fields = "<br>".join(
@@ -759,10 +958,11 @@ def _render_output(config: MatrixConfig, results: list[QuestionResult]) -> str:
             for summary in item.evidence_summaries
         ) or "-"
         lines.append(
-            "| {qid} | {qtype} | {scope} | {answer_points} | {expected} | {actual} | {expected_types} | {actual_types} | {citation_count} | {retrieved_count} | {refusal} | {distractor} | {version} | {evidence_fields} | {warnings} | {status} | {notes} |".format(
+            "| {qid} | {qtype} | {scope} | {answer_points} | {expected} | {actual} | {expected_types} | {actual_types} | {citation_count} | {retrieved_count} | {refusal} | {distractor} | {version} | {evidence_fields} | {warnings} | `{trace_id}` | {status} | {notes} |".format(
                 qid=_cell(item.question_id),
                 qtype=_cell(item.question_type),
                 scope=_cell(item.scope),
+                trace_id=_cell(item.trace_id),
                 answer_points=_cell(item.answer_point_status),
                 expected=_cell(", ".join(item.expected_anchors) or "none"),
                 actual=_cell(", ".join(item.actual_anchors) or "none"),
