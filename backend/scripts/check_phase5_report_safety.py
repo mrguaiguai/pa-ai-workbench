@@ -147,7 +147,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 def _resolve_report_paths(paths: list[Path]) -> list[Path]:
     if paths:
         return sorted(path.resolve() for path in paths)
-    return sorted((PROJECT_ROOT / "docs").glob(DEFAULT_REPORT_GLOB))
+    return sorted(
+        path
+        for path in (PROJECT_ROOT / "docs").glob(DEFAULT_REPORT_GLOB)
+        if "RUNBOOK" not in path.name.upper()
+    )
 
 
 def _check_report(path: Path) -> list[Issue]:
