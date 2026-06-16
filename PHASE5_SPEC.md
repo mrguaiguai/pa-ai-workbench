@@ -209,7 +209,7 @@ Phase 5 可以通过 document ids、external doc ids、knowledge ids、metadata 
 | P5-B2 | 稳定 document / wiki / all source 范围过滤 | [x] |
 | P5-B3 | 优化 answer-bearing chunk 排名与 debug 诊断 | [x] |
 | P5-B4 | 固化 `TEST-DISTRACTOR-001` 干扰材料回归哨兵 | [x] |
-| P5-B5 | 真实 RAG 24 问矩阵达到 PASS | [ ] |
+| P5-B5 | 真实 RAG 24 问矩阵达到 PASS | [x] |
 
 ### P5-C：Wiki 自然语言召回修复
 
@@ -412,7 +412,7 @@ fixture smoke 和真实 RAG / QA 脚本分别覆盖 P4Q-022、P4Q-023。
 `test -f docs/PHASE5_REAL_RAG_24Q_PASS_REPORT.md`；
 `rg -n "P4Q-001|P4Q-024|PASS|source_type|trace_id|TEST-DISTRACTOR-001|PHASE5_REAL" docs/PHASE5_REAL_RAG_24Q_PASS_REPORT.md`。
 
-状态：[ ]
+状态：[x]
 
 ### P5-C1：完善 published Wiki 索引字段覆盖
 

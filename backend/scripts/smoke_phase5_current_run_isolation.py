@@ -25,6 +25,8 @@ from app.services import rag_service  # noqa: E402
 from knowledge_engine.base import KnowledgeEngine  # noqa: E402
 from knowledge_engine.current_run import CURRENT_RUN_FILTER_KEY  # noqa: E402
 from knowledge_engine.current_run import CURRENT_RUN_WARNING_METADATA_KEY  # noqa: E402
+from knowledge_engine.current_run import apply_current_run_isolation  # noqa: E402
+from knowledge_engine.current_run import prepare_current_run_filters  # noqa: E402
 from knowledge_engine.schemas import Evidence  # noqa: E402
 from knowledge_engine.schemas import KnowledgeDocument  # noqa: E402
 from knowledge_engine.schemas import WikiPage  # noqa: E402
@@ -103,6 +105,8 @@ def main() -> int:
     print("- scope: fixture smoke only; this is not real WeKnora PASS")
     print(f"- service items kept: {result['service_items_kept']}")
     print(f"- agent citations kept: {result['agent_citations_kept']}")
+    print(f"- wiki page evidence kept: {result['wiki_items_kept']}")
+    print(f"- wiki page evidence dropped: {result['wiki_items_dropped']}")
     print(f"- dropped evidence warning: {result['dropped_warning']}")
     print(f"- backend knowledge ids: {', '.join(result['backend_knowledge_ids'])}")
     return 0
@@ -165,9 +169,23 @@ def _run_smoke(fixture_backend: FixtureKnowledgeBackend) -> dict[str, Any]:
         "agent retriever did not forward backend knowledge_ids",
     )
 
+    wiki_scope_filter = {
+        **CURRENT_RUN_FILTER,
+        "wiki_page_ids": ["wiki-current-001", "phase5/current-wiki"],
+    }
+    prepared = prepare_current_run_filters({CURRENT_RUN_FILTER_KEY: wiki_scope_filter})
+    isolated = apply_current_run_isolation(_wiki_fixture_evidence(), prepared.scope)
+    _assert(
+        [item.wiki_page_id for item in isolated.items] == ["wiki-current-001"],
+        "explicit current-run wiki_page_ids did not filter historical wiki evidence",
+    )
+    _assert(isolated.dropped_count == 1, "historical wiki evidence was not dropped")
+
     return {
         "service_items_kept": len(result.items),
         "agent_citations_kept": len(citations),
+        "wiki_items_kept": len(isolated.items),
+        "wiki_items_dropped": isolated.dropped_count,
         "dropped_warning": next(
             warning for warning in result.warnings if "dropped 2 evidence" in warning
         ),
@@ -215,6 +233,44 @@ def _fixture_evidence() -> list[Evidence]:
             evidence_id="document_chunk:chunk-unbound-001",
             source_type="document_chunk",
             metadata={},
+        ),
+    ]
+
+
+def _wiki_fixture_evidence() -> list[Evidence]:
+    return [
+        Evidence(
+            document_id=None,
+            external_doc_id=None,
+            chunk_id=None,
+            wiki_page_id="wiki-current-001",
+            title="Current Phase 5 Wiki Fixture",
+            text="TEST-RAG-001 current-run Wiki evidence for the Phase 5 fixture corpus.",
+            score=0.93,
+            source="weknora_api",
+            evidence_id="wiki_page:wiki-current-001",
+            source_type="wiki_page",
+            metadata={
+                "anchor": "TEST-RAG-001",
+                "slug": "phase5/current-wiki",
+                "corpus_id": "phase4_rag_wiki_qa_v1",
+            },
+        ),
+        Evidence(
+            document_id=None,
+            external_doc_id=None,
+            chunk_id=None,
+            wiki_page_id="wiki-old-001",
+            title="Historical Phase 5 Wiki Fixture",
+            text="TEST-RAG-001 historical Wiki evidence with the same anchor.",
+            score=0.9,
+            source="weknora_api",
+            evidence_id="wiki_page:wiki-old-001",
+            source_type="wiki_page",
+            metadata={
+                "anchor": "TEST-RAG-001",
+                "slug": "phase5/old-wiki",
+            },
         ),
     ]
 

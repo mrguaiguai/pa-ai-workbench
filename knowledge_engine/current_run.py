@@ -29,6 +29,7 @@ class CurrentRunScope:
     document_ids: tuple[str, ...] = field(default_factory=tuple)
     external_doc_ids: tuple[str, ...] = field(default_factory=tuple)
     knowledge_ids: tuple[str, ...] = field(default_factory=tuple)
+    wiki_page_ids: tuple[str, ...] = field(default_factory=tuple)
     anchors: tuple[str, ...] = field(default_factory=tuple)
 
     @property
@@ -41,6 +42,7 @@ class CurrentRunScope:
                 self.document_ids,
                 self.external_doc_ids,
                 self.knowledge_ids,
+                self.wiki_page_ids,
                 self.anchors,
             )
         )
@@ -63,6 +65,8 @@ class CurrentRunScope:
             payload["external_doc_ids"] = list(self.external_doc_ids)
         if self.knowledge_ids:
             payload["knowledge_ids"] = list(self.knowledge_ids)
+        if self.wiki_page_ids:
+            payload["wiki_page_ids"] = list(self.wiki_page_ids)
         if self.anchors:
             payload["anchors"] = list(self.anchors)
         return payload
@@ -211,6 +215,13 @@ def _scope_from_filters(filters: dict[str, Any]) -> CurrentRunScope | None:
                 + _list_filter(raw_scope.get("weknora_knowledge_ids"))
             )
         ),
+        wiki_page_ids=tuple(
+            _unique(
+                _list_filter(raw_scope.get("wiki_page_ids"))
+                + _list_filter(raw_scope.get("wiki_page_id"))
+                + _list_filter(raw_scope.get("weknora_wiki_page_ids"))
+            )
+        ),
         anchors=tuple(_unique(_list_filter(raw_scope.get("anchors")))),
     )
     return scope if scope.has_filter_terms else None
@@ -227,16 +238,26 @@ def _matches_scope(evidence: Evidence, scope: CurrentRunScope) -> bool:
         return True
     if scope.knowledge_ids and identifiers["external_doc_ids"] & set(scope.knowledge_ids):
         return True
-    if has_document_scope:
-        return False
-    if scope.anchors and identifiers["anchors"] & set(scope.anchors):
+    if scope.wiki_page_ids and identifiers["wiki_page_ids"] & set(scope.wiki_page_ids):
         return True
+    if evidence.source_type == "wiki_page" and scope.wiki_page_ids:
+        return False
     metadata_terms = identifiers["metadata_terms"]
     if scope.run_id and scope.run_id in metadata_terms:
         return True
     if scope.corpus_id and scope.corpus_id in metadata_terms:
         return True
     if scope.namespace and scope.namespace in metadata_terms:
+        return True
+    if has_document_scope:
+        if (
+            evidence.source_type == "wiki_page"
+            and scope.anchors
+            and identifiers["anchors"] & set(scope.anchors)
+        ):
+            return True
+        return False
+    if scope.anchors and identifiers["anchors"] & set(scope.anchors):
         return True
     return False
 
@@ -272,6 +293,20 @@ def _evidence_identifiers(evidence: Evidence) -> dict[str, set[str]]:
             "weknora_external_doc_id",
         ),
     }
+    wiki_page_ids = {
+        *_value_set(evidence.wiki_page_id),
+        *_metadata_value_set(
+            metadata,
+            "wiki_page_id",
+            "wiki_page_ids",
+            "weknora_wiki_page_id",
+            "weknora_wiki_page_ids",
+            "pa_wiki_page_id",
+            "id",
+            "slug",
+            "weknora_wiki_page_slug",
+        ),
+    }
     anchors = _metadata_value_set(metadata, "anchor", "anchors", "test_anchor", "expected_anchor")
     metadata_terms = _metadata_value_set(
         metadata,
@@ -285,6 +320,7 @@ def _evidence_identifiers(evidence: Evidence) -> dict[str, set[str]]:
     return {
         "document_ids": document_ids,
         "external_doc_ids": external_doc_ids,
+        "wiki_page_ids": wiki_page_ids,
         "anchors": anchors,
         "metadata_terms": metadata_terms,
     }

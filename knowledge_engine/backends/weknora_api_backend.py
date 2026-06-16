@@ -265,7 +265,10 @@ class WeKnoraApiBackend(KnowledgeEngine):
                 for evidence in evidence_items
                 if evidence.source_type == source_type_filter
             ]
-        return evidence_items[: max(top_k, 0)]
+            return evidence_items[: max(top_k, 0)]
+
+        wiki_items = self._retrieve_wiki_evidence(normalized_query, filters, top_k)
+        return _interleave_evidence_sources(evidence_items, wiki_items)[: max(top_k, 0)]
 
     def _retrieve_wiki_evidence(
         self,
@@ -971,6 +974,37 @@ class WeKnoraApiBackend(KnowledgeEngine):
         if source_type == "wiki_page" and wiki_page_id:
             return f"wiki_page:{wiki_page_id}"
         return None
+
+
+def _dedupe_evidence_items(items: list[Evidence]) -> list[Evidence]:
+    seen: set[str] = set()
+    deduped: list[Evidence] = []
+    for item in items:
+        key = (
+            item.evidence_id
+            or item.chunk_id
+            or item.wiki_page_id
+            or f"{item.source_type}:{item.title}:{item.text[:80]}"
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _interleave_evidence_sources(
+    document_items: list[Evidence],
+    wiki_items: list[Evidence],
+) -> list[Evidence]:
+    merged: list[Evidence] = []
+    max_length = max(len(document_items), len(wiki_items))
+    for index in range(max_length):
+        if index < len(document_items):
+            merged.append(document_items[index])
+        if index < len(wiki_items):
+            merged.append(wiki_items[index])
+    return _dedupe_evidence_items(merged)
 
 
 def _string_metadata(metadata: dict) -> dict[str, str]:
