@@ -79,13 +79,14 @@ Read docs/WEKNORA_FIRST_5DAY_SPRINT_SPEC.md
 
 Task selection rules:
 
-1. If the user names a `WF-*` id, execute that id.
-2. If the user says "continue" or gives a broad request, choose the earliest unfinished P0 task.
-3. Do not move to P1 while P0 has unfinished tasks unless the user explicitly reprioritizes.
-4. Treat P2 as backlog unless P0/P1 are stable or the user explicitly scopes a P2 read-only/jump slice.
-5. Execute one task id per run; split oversized work instead of silently completing multiple slices.
-6. Do not mark `[x]` from mock, fixture-only, cached, old report, hidden fallback, or inference-only evidence.
-7. If live validation cannot run, mark `[!]` with cause and next step, or `[b]` if the task is consciously deferred.
+1. Every sprint execution must be tied to exactly one `WF-*` id.
+2. If the user names a `WF-*` id, execute that id.
+3. If the user says "continue" or gives a broad request, choose the earliest unfinished P0 task.
+4. Do not move to P1 while P0 has unfinished tasks unless the user explicitly reprioritizes.
+5. Treat P2 as backlog unless P0/P1 are stable or the user explicitly scopes a P2 read-only/jump slice.
+6. Execute one task id per run; split oversized work instead of silently completing multiple slices.
+7. Do not mark `[x]` from mock, fixture-only, cached, old report, hidden fallback, or inference-only evidence.
+8. If live validation cannot run, mark `[!]` with cause and next step, or `[b]` if the task is consciously deferred.
 
 ### 4.1 Task Status Overview
 
@@ -134,7 +135,220 @@ Task selection rules:
 | WF-P0-04 | Truthful status and report gates | Homepage/backend status exposes native capability readiness without hiding fallback, partial, blocked, or mock states. |
 | WF-P0-05 | Evidence/citation contract preservation | Every native integration maps to PA `source`, `source_type`, `evidence_id`, locator, and history fields. |
 
+#### WF-P0-01: WeKnora native capability map
+
+目标：
+确认 WeKnora native endpoints/modules for knowledge upload/status/chunks/search, Wiki, AgentQA, custom Agent, MCP, web search, and vector store, then map which PA product surfaces should consume them.
+
+范围：
+只做 source/API audit and PA gap mapping. This task does not implement backend/frontend behavior and does not claim live capability PASS.
+
+输入：
+`docs/PA_EXISTING_WORK_REVIEW_FOR_WEKNORA_FIRST.md`, current sprint spec, WeKnora router/handler/service/type files listed in the sprint skill, and PA adapter/product files such as `knowledge_engine/backends/weknora_api_backend.py`, `backend/app/api/*`, `backend/app/services/*`, and `frontend/src/pages/*`.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md`.
+
+可修改文件范围：
+`docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md`, `docs/WEKNORA_FIRST_5DAY_SPRINT_SPEC.md` status/progress rows after validation, and small report-safety/checker docs if needed.
+
+不可修改或不可做的事：
+Do not change product code, runtime config, `.env`, API keys, local databases, uploads, logs, caches, or WeKnora source. Do not mark native features complete from route existence alone.
+
+验收标准：
+The report lists each native area, source files/routes inspected, observed endpoint/module shape, PA owner surface, adapter gap, validation recommendation, and blocked/backlog decision. It explicitly says audit/map evidence is not live capability PASS.
+
+推荐验证命令/API/browser check：
+
+```bash
+test -f docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md
+rg -n "knowledge|wiki|AgentQA|custom Agent|MCP|web search|vector store|blocked|backlog|not live PASS" docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md
+git diff --check
+```
+
+PASS 证据要求：
+Source inspection evidence and a complete gap table are enough for this audit PASS; no live runtime PASS is claimed. The progress row must label evidence as `audit/map`, not `live`.
+
+blocked/backlog 判定：
+Mark `[!]` if key source files or route definitions cannot be inspected. Mark `[b]` for native areas intentionally deferred beyond the five-day P0 slice, with concrete next steps.
+
+状态字段：
+Status source is Section 4.1 row `WF-P0-01`; keep this card's final state aligned with that row.
+
+#### WF-P0-02: Knowledge base and document native path
+
+目标：
+Make PA library/upload/status behavior rely on WeKnora native ingestion/indexing as the source of truth while preserving PA business records and product status display.
+
+范围：
+One smallest live document path: upload or register a sanitized file through PA, obtain native WeKnora identifiers/status, refresh status/events/chunks where available, and record truthful blocker if indexing cannot complete.
+
+输入：
+Native capability map from `WF-P0-01`, PA document API/service/schema files, `knowledge_engine/backends/weknora_api_backend.py`, frontend library page code if the visible state changes, and a sanitized fixture input used only through the live system.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_DOCUMENT_RAG_LIVE_REPORT.md`.
+
+可修改文件范围：
+PA document/library backend adapter files, PA document schemas/tests/smokes, affected frontend library/status files, the report file, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not commit uploaded files, raw document bodies, local databases, logs, caches, screenshots, `.env`, provider payloads, or private endpoint values. Do not deepen PA-native parser/chunker/vector-store logic when WeKnora native ingestion is available. Do not substitute `mock` or `extracted` backend evidence for PASS.
+
+验收标准：
+A current live run proves PA -> WeKnora native upload/status/index path or records a real blocked state. The report includes native ids such as `external_doc_id` or equivalent, status transitions, evidence type labels, and whether chunk/status preview is live, partial, blocked, or backlog.
+
+推荐验证命令/API/browser check：
+
+```bash
+backend/.venv/bin/python backend/scripts/smoke_weknora_connection.py
+backend/.venv/bin/python backend/scripts/smoke_weknora_rag_m1.py
+curl -s http://127.0.0.1:8000/api/status
+curl -s http://127.0.0.1:8000/api/model/status
+```
+
+Browser check: library page upload/status/chunk preview if frontend changes are included.
+
+PASS 证据要求：
+PASS requires current live PA backend/frontend or PA API calling real WeKnora native ingestion/indexing, with non-mock embedding when indexing depends on embedding. Report must distinguish live input fixture from fixture-only proof and include traceable native ids without raw content.
+
+blocked/backlog 判定：
+Mark `[!]` if WeKnora, model, embedding, KB binding, upload API, status API, or indexing runtime is unavailable. Mark `[b]` only for optional chunk preview/admin UX that is consciously deferred after the core live document path is decided.
+
+状态字段：
+Status source is Section 4.1 row `WF-P0-02`; update it only after live validation or a real blocked/backlog decision.
+
+#### WF-P0-03: RAG debug native alignment
+
+目标：
+Keep PA RAG debug as a thin WeKnora-first adapter around native search while preserving PA current-run validation, diagnostics, citation/evidence display, and safety labels.
+
+范围：
+Align one real RAG debug path with native WeKnora search semantics, including query/top_k/source_type/filter handling where supported, and fail closed when native evidence cannot satisfy the PA citation contract.
+
+输入：
+`docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md`, `docs/WEKNORA_FIRST_DOCUMENT_RAG_LIVE_REPORT.md` if available, PA RAG API/service/retriever files, `knowledge_engine/*`, existing Phase 5 real RAG scripts/reports, and native WeKnora search route/service/type files.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_RAG_DEBUG_LIVE_REPORT.md`.
+
+可修改文件范围：
+PA RAG debug backend/API/service files, adapter normalization code, focused tests/smokes, affected RAG debug frontend files, the live report, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not rewrite WeKnora retrieval, build a parallel PA general retrieval engine, hide unsupported native parameters, use historical Phase 5 reports as current PASS, or mark PASS from mock/static UI.
+
+验收标准：
+At least one current PA RAG debug run calls native WeKnora search and returns PA-normalized evidence with `source=weknora_api`, `source_type`, `evidence_id`, native ids where available, score/rank/trace metadata, and visible warnings for unsupported or partial fields.
+
+推荐验证命令/API/browser check：
+
+```bash
+backend/.venv/bin/python backend/scripts/smoke_weknora_connection.py
+backend/.venv/bin/python backend/scripts/smoke_weknora_rag_m1.py
+test -f docs/WEKNORA_FIRST_RAG_DEBUG_LIVE_REPORT.md
+rg -n "source=weknora_api|source_type|evidence_id|trace|rank|live|mock|blocked|partial" docs/WEKNORA_FIRST_RAG_DEBUG_LIVE_REPORT.md
+```
+
+Browser check: RAG debug page evidence list, trace/warning panel, and source status if frontend changes are included.
+
+PASS 证据要求：
+PASS requires current live PA API or browser evidence calling real WeKnora native search, with real non-mock model/embedding posture when the path depends on it. The report must identify current-run evidence and reject cached/old evidence ids.
+
+blocked/backlog 判定：
+Mark `[!]` if native search, KB mapping, current-run scope, embedding, or citation fields are unavailable. Mark `[b]` for advanced search controls that are not required for the smallest live RAG debug path.
+
+状态字段：
+Status source is Section 4.1 row `WF-P0-03`; update it only after live validation or a real blocked/backlog decision.
+
+#### WF-P0-04: Truthful status and report gates
+
+目标：
+Make backend/homepage/report status surfaces expose real/native/mock/fallback/partial/blocked/backlog states truthfully and prevent report PASS from unsafe evidence.
+
+范围：
+Extend status and report gate logic for WeKnora-first P0 evidence. Cover `/health`, `/api/status`, `/api/model/status`, capability readiness, frontend visible cards, and report safety checks as needed.
+
+输入：
+Current status endpoints/services, frontend homepage/status components, existing report safety scripts, Phase 5 report safety rules, and P0 report files created by earlier tasks.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_STATUS_REPORT_GATES.md`.
+
+可修改文件范围：
+Backend status endpoints/services/schemas, report safety checker scripts, homepage/status frontend components, focused tests/smokes, the gate report, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not make UI cards green by hiding fallback/mock/partial states. Do not merge model readiness and embedding readiness into one ambiguous field. Do not print or commit secrets, provider payloads, logs, local DB contents, screenshots, or raw uploaded material.
+
+验收标准：
+Status surfaces separately show PA backend health, WeKnora connectivity, chat model readiness, embedding/index readiness, native capability availability, and blocked/backlog labels. Report gates fail or warn on mock, fixture-only, cached, partial, unsafe, or missing citation evidence.
+
+推荐验证命令/API/browser check：
+
+```bash
+curl -s http://127.0.0.1:8000/health
+curl -s http://127.0.0.1:8000/api/status
+curl -s http://127.0.0.1:8000/api/model/status
+backend/.venv/bin/python backend/scripts/check_phase5_report_safety.py docs/WEKNORA_FIRST_STATUS_REPORT_GATES.md
+```
+
+Browser check: homepage/status cards and any affected report/status page must visibly distinguish real, mock, fallback, partial, blocked, and backlog states.
+
+PASS 证据要求：
+PASS requires current API and browser evidence if frontend changes are present. The report must show the exact evidence categories observed without raw private values.
+
+blocked/backlog 判定：
+Mark `[!]` if status endpoints cannot run, if the runtime cannot distinguish model versus embedding readiness, or if report gates cannot detect unsafe evidence. Mark `[b]` for nonessential visual polish after truthful status is present.
+
+状态字段：
+Status source is Section 4.1 row `WF-P0-04`; update it only after API/browser validation or a real blocked/backlog decision.
+
+#### WF-P0-05: Evidence/citation contract preservation
+
+目标：
+Preserve PA's citation/evidence contract across WeKnora-first native integrations so downstream history, reports, and frontend locators remain trustworthy.
+
+范围：
+Define and validate the minimum cross-capability contract for document chunks, wiki pages, AgentQA/custom Agent outputs, and future native surfaces. Implement only the smallest code/test/report changes needed to keep P0 integrations fail-closed.
+
+输入：
+Existing evidence/citation schemas/builders/checkers, PA history/output models, native response mappings from `WF-P0-01` through `WF-P0-04`, and existing Phase 5 evidence reports.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_CITATION_CONTRACT.md`.
+
+可修改文件范围：
+Citation/evidence schemas, builder/checker code, adapter normalization tests, report safety checks, affected frontend citation rendering if necessary, the contract report, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not invent fake `evidence_id`, `chunk_id`, `external_doc_id`, or `wiki_page_id` values. Do not broaden metadata allowlists to include secrets, raw content, prompts, provider payloads, logs, private endpoints, or local file paths. Do not let missing native ids silently degrade to PASS.
+
+验收标准：
+The contract document defines required/optional fields, per-source mapping rules, metadata allowlist, fail-closed behavior, and report/browser expectations. Focused validation proves native evidence retains `source`, `source_type`, `evidence_id`, native ids where applicable, locator fields, and history traceability.
+
+推荐验证命令/API/browser check：
+
+```bash
+test -f docs/WEKNORA_FIRST_CITATION_CONTRACT.md
+rg -n "source_type|evidence_id|chunk_id|external_doc_id|wiki_page_id|locator|fail closed|allowlist" docs/WEKNORA_FIRST_CITATION_CONTRACT.md
+backend/.venv/bin/python backend/scripts/check_phase5_report_safety.py docs/WEKNORA_FIRST_CITATION_CONTRACT.md
+```
+
+Browser check: citation/evidence rendering on RAG debug, Wiki, knowledge QA, and history pages if frontend citation UI changes are included.
+
+PASS 证据要求：
+PASS requires contract validation from current focused tests/smokes and, when code changes touch live paths, a current live PA + WeKnora evidence sample. Report must label partial native citation support as partial/blocked, not PASS.
+
+blocked/backlog 判定：
+Mark `[!]` if a native response lacks the identifiers required to preserve traceability and no safe mapping exists. Mark `[b]` for source types whose native integration is intentionally deferred to P1/P2.
+
+状态字段：
+Status source is Section 4.1 row `WF-P0-05`; update it only after validation or a real blocked/backlog decision.
+
 ### P1
+
+P1 tasks stay intentionally lightweight until P0 is complete. When a P1 task is selected, create or expand only that single `WF-P1-*` card using the P0 card structure above; do not turn all P1/P2 backlog into a giant document during a P0 run.
 
 | ID | Capability slice | Intended outcome |
 | --- | --- | --- |
@@ -144,6 +358,8 @@ Task selection rules:
 | WF-P1-04 | Frontend integration polish | Update pages to show WeKnora-first state, blocked/backlog labels, and native jump targets. |
 
 ### P2
+
+P2 remains backlog by default. A P2 task may start as a read-only status or native-admin jump slice only when explicitly scoped by the user, and it must still use a single `WF-P2-*` id.
 
 | ID | Capability slice | Intended outcome |
 | --- | --- | --- |
