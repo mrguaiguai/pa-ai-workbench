@@ -65,7 +65,8 @@ Task execution format:
 ```text
 Read docs/WEKNORA_FIRST_5DAY_SPRINT_SPEC.md
 -> Read docs/PA_EXISTING_WORK_REVIEW_FOR_WEKNORA_FIRST.md
--> Read .agents/skills/pa-weknora-first-sprint/SKILL.md
+-> Read .github/skills/pa-weknora-first-sprint/SKILL.md
+-> Read outer .agents/skills/pa-weknora-first-sprint/SKILL.md when available
 -> Run git status -sb and git log --oneline -5
 -> Locate one unfinished task id
 -> Before editing, state task id, classification, planned files, validation, and PASS evidence type
@@ -123,6 +124,22 @@ Task selection rules:
 - Keep validation reports honest: separate live, fixture, mock, cached, partial, blocked, and backlog evidence.
 - Keep unrelated dirty/untracked files out of the task commit.
 
+### 4.4 Repo-Local Skill Mirror
+
+The reusable sprint skill also has a tracked mirror at
+`.github/skills/pa-weknora-first-sprint/SKILL.md`. This mirror exists because
+the outer workspace skill path is outside the nested `pa-ai-workbench` git repo
+and cannot be proven by a repo-local commit.
+
+Execution rule:
+
+- Read the repo-local mirror for every new sprint conversation.
+- Read the outer `.agents` skill when it exists in the active workspace.
+- If the two diverge, obey the stricter rule and update the repo-local mirror
+  in the same governance task when the divergence affects sprint execution.
+- Do not stage the outer `.agents` path from the nested PA repo; it is not owned
+  by this git repository.
+
 ## 5. P0/P1/P2 Capability Priority
 
 ### P0
@@ -156,18 +173,19 @@ Task selection rules:
 Do not change product code, runtime config, `.env`, API keys, local databases, uploads, logs, caches, or WeKnora source. Do not mark native features complete from route existence alone.
 
 验收标准：
-The report lists each native area, source files/routes inspected, observed endpoint/module shape, PA owner surface, adapter gap, validation recommendation, and blocked/backlog decision. It explicitly says audit/map evidence is not live capability PASS.
+The report lists each native area, source files/routes inspected, observed endpoint/module shape, PA owner surface, adapter gap, validation recommendation, and blocked/backlog decision. It explicitly says audit/map evidence is not live capability PASS. The final section must be named `P0 execution order and exact file touch plan`, and it must give the recommended order for `WF-P0-02` through `WF-P0-05` plus the likely files or directories each task may touch.
 
 推荐验证命令/API/browser check：
 
 ```bash
 test -f docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md
 rg -n "knowledge|wiki|AgentQA|custom Agent|MCP|web search|vector store|blocked|backlog|not live PASS" docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md
+rg -n "P0 execution order and exact file touch plan|WF-P0-02|WF-P0-05" docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md
 git diff --check
 ```
 
 PASS 证据要求：
-Source inspection evidence and a complete gap table are enough for this audit PASS; no live runtime PASS is claimed. The progress row must label evidence as `audit/map`, not `live`.
+Source inspection evidence, a complete gap table, and the final P0 execution/file-touch plan are enough for this audit PASS; no live runtime PASS is claimed. The progress row must label evidence as `audit/map`, not `live`.
 
 blocked/backlog 判定：
 Mark `[!]` if key source files or route definitions cannot be inspected. Mark `[b]` for native areas intentionally deferred beyond the five-day P0 slice, with concrete next steps.
