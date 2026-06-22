@@ -46,7 +46,83 @@ The review in `docs/PA_EXISTING_WORK_REVIEW_FOR_WEKNORA_FIRST.md` determines the
 - Freeze PA-native professional Agent work, including deeper policy/case orchestration, for later product design after the WeKnora-first MVP.
 - Treat `mock`, `extracted`, fixture-only, old-cache, and historical evidence as development aids only.
 
-## 4. P0/P1/P2 Capability Priority
+## 4. Sprint Task Board And Progress Protocol
+
+This spec is the sprint source of truth. Future agents must use this section the same way previous phase specs used their task tables: read it first, choose one unfinished task, validate the task, then update the status only after the evidence is real enough for that status.
+
+Status markers:
+
+```text
+[ ] Not started
+[~] In progress or partial evidence exists
+[x] Completed with the required evidence
+[!] Blocked by real runtime/API/config gap
+[b] Backlog/deferred by sprint scope
+```
+
+Task execution format:
+
+```text
+Read docs/WEKNORA_FIRST_5DAY_SPRINT_SPEC.md
+-> Read docs/PA_EXISTING_WORK_REVIEW_FOR_WEKNORA_FIRST.md
+-> Read .agents/skills/pa-weknora-first-sprint/SKILL.md
+-> Run git status -sb and git log --oneline -5
+-> Locate one unfinished task id
+-> Before editing, state task id, classification, planned files, validation, and PASS evidence type
+-> Inspect WeKnora native source/API first for native capability tasks
+-> Implement the smallest real slice
+-> Run backend API validation and/or browser validation as required
+-> Update this task board and progress log only after validation or a real blocked/backlog decision
+-> Run safety checks
+-> Commit only current-task files when a code/docs task is complete
+```
+
+Task selection rules:
+
+1. If the user names a `WF-*` id, execute that id.
+2. If the user says "continue" or gives a broad request, choose the earliest unfinished P0 task.
+3. Do not move to P1 while P0 has unfinished tasks unless the user explicitly reprioritizes.
+4. Treat P2 as backlog unless P0/P1 are stable or the user explicitly scopes a P2 read-only/jump slice.
+5. Execute one task id per run; split oversized work instead of silently completing multiple slices.
+6. Do not mark `[x]` from mock, fixture-only, cached, old report, hidden fallback, or inference-only evidence.
+7. If live validation cannot run, mark `[!]` with cause and next step, or `[b]` if the task is consciously deferred.
+
+### 4.1 Task Status Overview
+
+| ID | Priority | Capability slice | Status | Required status evidence |
+| --- | --- | --- | --- | --- |
+| WF-0 | Stage 0 | Existing-work review, branches, sprint spec, sprint skill | [x] | Review/spec committed on `weknora-first-mvp`; skill validates in workspace. |
+| WF-P0-01 | P0 | WeKnora native capability map | [ ] | Source/routes inspected and gap table documented; no live PASS claimed. |
+| WF-P0-02 | P0 | Knowledge base and document native path | [ ] | PA upload/status/library path proves native WeKnora ingestion/indexing or records real blocker. |
+| WF-P0-03 | P0 | RAG debug native alignment | [ ] | PA RAG debug calls native WeKnora search and returns traceable PA evidence/citations. |
+| WF-P0-04 | P0 | Truthful status and report gates | [ ] | Status surfaces expose real/native/mock/fallback/partial/blocked/backlog truthfully. |
+| WF-P0-05 | P0 | Evidence/citation contract preservation | [ ] | Native integrations preserve `source`, `source_type`, `evidence_id`, native ids, and locator fields. |
+| WF-P1-01 | P1 | WeKnora native AgentQA/custom Agent | [ ] | PA calls native AgentQA/custom Agent and stores answer/history/citation mapping or explicit citation blocker. |
+| WF-P1-02 | P1 | Native Wiki browse/search/index/graph/lint | [ ] | PA reads or links native Wiki surfaces with honest blocked/backlog labels. |
+| WF-P1-03 | P1 | Knowledge base selection and mapping | [ ] | Active workspace/KB mapping is visible and validated through real config/API state. |
+| WF-P1-04 | P1 | Frontend integration polish | [ ] | Browser validation covers the six PA pages and visible WeKnora-first states. |
+| WF-P2-01 | P2 | MCP service visibility | [b] | Backlog unless a read-only status/jump slice is explicitly scoped. |
+| WF-P2-02 | P2 | Web search provider visibility | [b] | Backlog unless AgentQA depends on visible provider readiness. |
+| WF-P2-03 | P2 | Vector store management visibility | [b] | Backlog unless read-only readiness or native-admin jump is scoped. |
+| WF-P2-04 | P2 | Advanced Wiki maintenance | [b] | Backlog until core Wiki browse/search/read is stable. |
+
+### 4.2 Progress Log
+
+| Date | Task id | Status | Evidence | Commit / branch | Notes |
+| --- | --- | --- | --- | --- | --- |
+| 2026-06-22 | WF-0 | [x] | Existing-work review and sprint spec added; `pa-native-baseline-20260622` and `weknora-first-mvp` created; skill frontmatter validated; diff and sensitive-value scans passed. | `bb3dc59` on `weknora-first-mvp` | Skill lives at outer workspace `.agents/skills/pa-weknora-first-sprint`; the nested PA repo does not own that path. |
+
+### 4.3 Status Update Rules
+
+- Update `Status` in the task board and add a progress-log row when a task reaches `[x]`, `[!]`, or `[b]`.
+- Use `[~]` only for a committed partial slice that is useful but not enough for final PASS.
+- A native capability task can be `[x]` only with live PA + live WeKnora evidence, unless the task is explicitly an audit/map task whose acceptance criteria says no live PASS is claimed.
+- A frontend task can be `[x]` only after browser validation or a documented browser-validation blocker.
+- A backend task can be `[x]` only after API/smoke validation or a documented runtime blocker.
+- Keep validation reports honest: separate live, fixture, mock, cached, partial, blocked, and backlog evidence.
+- Keep unrelated dirty/untracked files out of the task commit.
+
+## 5. P0/P1/P2 Capability Priority
 
 ### P0
 
@@ -76,7 +152,7 @@ The review in `docs/PA_EXISTING_WORK_REVIEW_FOR_WEKNORA_FIRST.md` determines the
 | WF-P2-03 | Vector store management visibility | Show vector-store binding/readiness, or link to WeKnora native admin rather than rebuilding admin UI. |
 | WF-P2-04 | Advanced Wiki maintenance | Auto-fix, issue management, graph filtering, and lint workflows after core browse/search/read is stable. |
 
-## 5. Five-Day Roadmap
+## 6. Five-Day Roadmap
 
 | Timebox | Focus | Deliverables |
 | --- | --- | --- |
@@ -87,7 +163,7 @@ The review in `docs/PA_EXISTING_WORK_REVIEW_FOR_WEKNORA_FIRST.md` determines the
 | Day 4 | Native Wiki browse/search/read/index/graph | PA Wiki page uses native surfaces or jump links, with clear blocked/backlog states. |
 | Day 5 | Frontend integration and real acceptance | Browser matrix, live evidence reports, report safety scan, final sprint summary. |
 
-## 6. WeKnora Native Capability Connection Checklist
+## 7. WeKnora Native Capability Connection Checklist
 
 | WeKnora native area | Observed native surface | PA action |
 | --- | --- | --- |
@@ -108,7 +184,7 @@ The review in `docs/PA_EXISTING_WORK_REVIEW_FOR_WEKNORA_FIRST.md` determines the
 | Web search providers | native web search provider routes/services | P2 status only; do not duplicate credential forms. |
 | Vector stores | `/api/v1/vector-stores` and `/types` | P2 status/jump; WeKnora remains native admin owner. |
 
-## 7. PA Adapter And Product-Layer Responsibilities
+## 8. PA Adapter And Product-Layer Responsibilities
 
 PA should implement:
 
@@ -127,7 +203,7 @@ PA should not implement during this sprint:
 - General-purpose Agent tool orchestration when WeKnora native AgentQA/custom Agent is available.
 - Credential management for WeKnora native MCP/web-search/vector-store admin unless a specific secure adapter task is accepted.
 
-## 8. Backlog, Placeholder, And Jump Rules
+## 9. Backlog, Placeholder, And Jump Rules
 
 | Capability | Allowed five-day treatment |
 | --- | --- |
@@ -141,7 +217,7 @@ PA should not implement during this sprint:
 
 Placeholders are allowed only when they are honest product placeholders: they must say blocked/backlog/jump, not pretend the capability works.
 
-## 9. Acceptance Criteria By Capability
+## 10. Acceptance Criteria By Capability
 
 | Capability | PASS criteria |
 | --- | --- |
@@ -154,7 +230,7 @@ Placeholders are allowed only when they are honest product placeholders: they mu
 | Frontend | Browser check covers 首页、资料库、RAG 调试、Wiki、知识问答、历史; no hidden mock/fallback green states. |
 | Reports | Each real PASS report distinguishes live, fixture, mock, cached, blocked, and backlog evidence. |
 
-## 10. Evidence Classification Rules
+## 11. Evidence Classification Rules
 
 | Evidence type | Definition | Can count as sprint PASS |
 | --- | --- | --- |
@@ -167,7 +243,7 @@ Placeholders are allowed only when they are honest product placeholders: they mu
 
 Every report must explicitly state which evidence type it uses.
 
-## 11. Risk And Degradation Plan
+## 12. Risk And Degradation Plan
 
 | Risk | Response |
 | --- | --- |
@@ -178,7 +254,7 @@ Every report must explicitly state which evidence type it uses.
 | Current-run evidence polluted by old materials | Reuse current-run isolation and fail closed when out-of-scope evidence appears. |
 | Scope too large for five days | Prefer smallest live slice plus jump/backlog over broad demo coverage. |
 
-## 12. Real Capability Acceptance Rule
+## 13. Real Capability Acceptance Rule
 
 A task is PASS only when all of these are true:
 
@@ -190,3 +266,5 @@ A task is PASS only when all of these are true:
 6. No secrets, private endpoints, raw uploaded files, local databases, logs, caches, or provider payloads are printed or committed.
 
 Mock, demo, static UI, fixture-only, or historical cached evidence cannot complete this sprint.
+
+When a task is completed or blocked, update Section 4 in the same branch so the next conversation can recover project progress from this spec, `git log --oneline`, and `git status -sb`.
