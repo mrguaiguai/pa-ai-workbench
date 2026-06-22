@@ -31,6 +31,7 @@ import {
   ResultPanel,
   TaskProgress,
   WarningList,
+  WeKnoraFirstStatusStrip,
   parseWarningsJson,
 } from "../components/workbench";
 
@@ -372,6 +373,8 @@ export function AnalysisPage() {
 
   return (
     <div className="analysis-page">
+      <WeKnoraFirstStatusStrip page="知识问答" />
+
       <aside className="analysis-conversations" aria-label="会话列表">
         <div className="analysis-panel-heading">
           <span>会话</span>

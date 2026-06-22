@@ -298,7 +298,15 @@ p {
 .home-page {
   display: grid;
   gap: 18px;
+  max-width: 100%;
+  min-width: 0;
   margin-top: 24px;
+}
+
+.home-page > * {
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
 }
 
 .overview-strip {
@@ -529,6 +537,135 @@ p {
   padding: 4px 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.weknora-status-strip {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.95fr) minmax(0, 1.6fr);
+  gap: 12px;
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.analysis-page > .weknora-status-strip,
+.rag-debug-page > .weknora-status-strip,
+.wiki-page > .weknora-status-strip,
+.history-page > .weknora-status-strip {
+  grid-column: 1 / -1;
+}
+
+.weknora-status-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.weknora-status-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.weknora-status-title svg {
+  flex: 0 0 auto;
+  color: #176b87;
+}
+
+.weknora-status-title span {
+  display: block;
+  color: #6b7a86;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.weknora-status-title strong {
+  display: block;
+  margin-top: 2px;
+  color: #17212b;
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+
+.weknora-status-detail,
+.weknora-status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.weknora-status-detail span {
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f2f6f8;
+  color: #52636e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  padding: 4px 8px;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.weknora-status-chip {
+  display: inline-grid;
+  grid-template-columns: auto minmax(28px, auto);
+  gap: 6px;
+  align-items: center;
+  max-width: 100%;
+  min-height: 28px;
+  overflow: hidden;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #f8fafb;
+  color: #52636e;
+  padding: 4px 8px;
+}
+
+.weknora-status-chip span,
+.weknora-status-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weknora-status-chip.live,
+.weknora-status-chip.connected,
+.weknora-status-chip.validated,
+.weknora-status-chip.supported {
+  border-color: #bfd9cb;
+  background: #f4faf6;
+  color: #256340;
+}
+
+.weknora-status-chip.mock,
+.weknora-status-chip.fallback,
+.weknora-status-chip.partial,
+.weknora-status-chip.backlog,
+.weknora-status-chip.configured,
+.weknora-status-chip.unknown {
+  border-color: #edd8a8;
+  background: #fffaf0;
+  color: #7a5312;
+}
+
+.weknora-status-chip.blocked,
+.weknora-status-chip.unavailable,
+.weknora-status-chip.missing-config,
+.weknora-status-chip.error {
+  border-color: #edc7c2;
+  background: #fff6f4;
+  color: #9b382d;
 }
 
 .home-grid {
@@ -3390,6 +3527,7 @@ p {
 
   .metric-grid,
   .runtime-status-grid,
+  .weknora-status-strip,
   .home-grid,
   .library-summary,
   .library-grid,
@@ -3420,6 +3558,25 @@ p {
 
   .document-row {
     grid-template-columns: 1fr;
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .documents-panel,
+  .document-list,
+  .document-main,
+  .document-title,
+  .document-meta,
+  .document-pipeline,
+  .document-actions {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .document-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 
   .library-panel-heading {

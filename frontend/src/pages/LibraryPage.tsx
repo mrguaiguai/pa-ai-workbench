@@ -20,6 +20,7 @@ import {
   DocumentStatusBadge,
   EmptyState,
   ErrorState,
+  WeKnoraFirstStatusStrip,
 } from "../components/workbench";
 
 type LibraryForm = {
@@ -557,6 +558,8 @@ export function LibraryPage() {
           <strong>{documents[0]?.knowledge_backend ?? "mock"}</strong>
         </div>
       </section>
+
+      <WeKnoraFirstStatusStrip page="资料库" />
 
       <section className="library-grid">
         <form className="upload-panel" onSubmit={onSubmit}>

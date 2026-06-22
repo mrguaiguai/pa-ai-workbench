@@ -364,8 +364,9 @@ def weknora_first_status_gates(
             "partial": partial,
             "blocked": blocked,
             "backlog": [
-                "WF-P1-01 AgentQA/custom Agent live adapter",
-                "WF-P1-02 native Wiki browse/search/index/graph/lint polish",
+                "native AgentQA citation mapping remains blocked until traceable references are emitted",
+                "native AgentQA frontend agent picker and custom Agent selection",
+                "native Wiki mutations/admin actions such as rebuild-links and auto-fix",
                 "WF-P2-01 MCP service visibility",
                 "WF-P2-02 web search provider visibility",
                 "WF-P2-03 vector store management visibility",

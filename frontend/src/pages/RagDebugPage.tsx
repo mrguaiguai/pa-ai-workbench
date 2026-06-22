@@ -16,7 +16,12 @@ import {
   RagDebugResponse,
   apiClient,
 } from "../api/client";
-import { EmptyState, ErrorState, WarningList } from "../components/workbench";
+import {
+  EmptyState,
+  ErrorState,
+  WarningList,
+  WeKnoraFirstStatusStrip,
+} from "../components/workbench";
 
 type DebugForm = {
   query: string;
@@ -94,6 +99,8 @@ export function RagDebugPage() {
 
   return (
     <div className="rag-debug-page">
+      <WeKnoraFirstStatusStrip page="RAG 调试" />
+
       <form className="rag-debug-controls" onSubmit={runDebug}>
         <label className="field-group wide">
           <span>检索问题</span>

@@ -7,12 +7,13 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  ShieldCheck,
   WifiOff,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ApiError, apiClient } from "../api/client";
-import type { Task } from "../api/client";
-import { useState } from "react";
+import type { NativeWikiOverviewResponse, StatusResponse, Task } from "../api/client";
+import { useEffect, useMemo, useState } from "react";
 
 export type CitationListItem = {
   id?: string | null;
@@ -71,6 +72,116 @@ export function ErrorState({ message }: { message: string }) {
   );
 }
 
+type WeKnoraFirstStatusStripState =
+  | {
+      state: "loading";
+      status: null;
+      wikiOverview: null;
+      error: null;
+      wikiError: null;
+    }
+  | {
+      state: "ready";
+      status: StatusResponse;
+      wikiOverview: NativeWikiOverviewResponse | null;
+      error: null;
+      wikiError: string | null;
+    }
+  | {
+      state: "error";
+      status: null;
+      wikiOverview: null;
+      error: string;
+      wikiError: null;
+    };
+
+type WeKnoraStatusChip = {
+  label: string;
+  value: string;
+  status: string;
+};
+
+export function WeKnoraFirstStatusStrip({ page }: { page: string }) {
+  const [state, setState] = useState<WeKnoraFirstStatusStripState>({
+    state: "loading",
+    status: null,
+    wikiOverview: null,
+    error: null,
+    wikiError: null,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    Promise.allSettled([apiClient.getStatus(), apiClient.getNativeWikiOverview({ limit: 5 })])
+      .then(([statusResult, wikiResult]) => {
+        if (!isMounted) {
+          return;
+        }
+        if (statusResult.status !== "fulfilled") {
+          setState({
+            state: "error",
+            status: null,
+            wikiOverview: null,
+            error: errorLabel(statusResult.reason),
+            wikiError: null,
+          });
+          return;
+        }
+        setState({
+          state: "ready",
+          status: statusResult.value,
+          wikiOverview: wikiResult.status === "fulfilled" ? wikiResult.value : null,
+          error: null,
+          wikiError: wikiResult.status === "fulfilled" ? null : errorLabel(wikiResult.reason),
+        });
+      })
+      .catch((error: unknown) => {
+        if (isMounted) {
+          setState({
+            state: "error",
+            status: null,
+            wikiOverview: null,
+            error: errorLabel(error),
+            wikiError: null,
+          });
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const details = useMemo(() => statusStripDetails(state), [state]);
+  const chips = useMemo(() => statusStripChips(state), [state]);
+
+  return (
+    <section className="weknora-status-strip" aria-label={`${page} WeKnora-first 状态`}>
+      <div className="weknora-status-main">
+        <div className="weknora-status-title">
+          <ShieldCheck size={18} aria-hidden="true" />
+          <div>
+            <span>{page}</span>
+            <strong>WeKnora-first 状态</strong>
+          </div>
+        </div>
+        <div className="weknora-status-detail">
+          {details.map((detail) => (
+            <span key={detail}>{detail}</span>
+          ))}
+        </div>
+      </div>
+      <div className="weknora-status-chips">
+        {chips.map((chip) => (
+          <span className={`weknora-status-chip ${statusClassName(chip.status)}`} key={chip.label}>
+            <span>{chip.label}</span>
+            <strong>{chip.value}</strong>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function WarningList({
   warnings,
   emptyText,
@@ -94,6 +205,130 @@ export function WarningList({
       ))}
     </div>
   );
+}
+
+function statusStripChips(state: WeKnoraFirstStatusStripState): WeKnoraStatusChip[] {
+  if (state.state === "loading") {
+    return [
+      { label: "live", value: "loading", status: "partial" },
+      { label: "mock", value: "unknown", status: "mock" },
+      { label: "blocked", value: "checking", status: "blocked" },
+    ];
+  }
+  if (state.state === "error") {
+    return [
+      { label: "live", value: "blocked", status: "blocked" },
+      { label: "fallback", value: "unverified", status: "fallback" },
+      { label: "blocked", value: state.error, status: "blocked" },
+    ];
+  }
+
+  const status = state.status;
+  const gates = status.backend_capabilities.weknora_first_status_gates?.status_categories;
+  const kbMapping = status.weknora.kb_mapping;
+  const wikiStatus = state.wikiOverview?.status ?? (state.wikiError ? "blocked" : "unknown");
+  const backlogCount =
+    (gates?.backlog.length ?? 0) +
+    (kbMapping?.backlog.length ?? 0) +
+    (state.wikiOverview?.surfaces.mutations?.status === "backlog" ? 1 : 0);
+  const blockedCount =
+    (gates?.blocked.length ?? 0) +
+    (kbMapping?.status === "blocked" ? 1 : 0) +
+    (wikiStatus === "blocked" ? 1 : 0);
+
+  return [
+    {
+      label: "live/native",
+      value: status.weknora.connected ? "connected" : status.weknora.status,
+      status: status.weknora.connected ? "live" : status.weknora.status,
+    },
+    {
+      label: "KB mapping",
+      value: kbMapping?.status ?? "unknown",
+      status: kbMapping?.status ?? "partial",
+    },
+    {
+      label: "Wiki native",
+      value: wikiStatus,
+      status: wikiStatus,
+    },
+    {
+      label: "mock",
+      value: String(gates?.mock.length ?? (status.mock_mode ? 1 : 0)),
+      status: (gates?.mock.length ?? 0) > 0 || status.mock_mode ? "mock" : "live",
+    },
+    {
+      label: "fallback",
+      value: String(gates?.fallback.length ?? 0),
+      status: (gates?.fallback.length ?? 0) > 0 ? "fallback" : "live",
+    },
+    {
+      label: "partial",
+      value: String(gates?.partial.length ?? 0),
+      status: (gates?.partial.length ?? 0) > 0 ? "partial" : "live",
+    },
+    {
+      label: "blocked",
+      value: String(blockedCount),
+      status: blockedCount > 0 ? "blocked" : "live",
+    },
+    {
+      label: "backlog",
+      value: String(backlogCount),
+      status: backlogCount > 0 ? "backlog" : "live",
+    },
+  ];
+}
+
+function statusStripDetails(state: WeKnoraFirstStatusStripState) {
+  if (state.state === "loading") {
+    return ["读取 /api/status", "读取 native Wiki overview"];
+  }
+  if (state.state === "error") {
+    return ["blocked：PA backend status unreachable", `原因：${state.error}`];
+  }
+
+  const status = state.status;
+  const gates = status.backend_capabilities.weknora_first_status_gates?.status_categories;
+  const kbMapping = status.weknora.kb_mapping;
+  const details = [
+    `backend=${status.knowledge_backend}`,
+    `model/mock=${status.mock_mode ? "mock" : "non-mock backend"}`,
+    `citation_trace=${status.backend_capabilities.parity_summary.citation_trace}`,
+    `fail_closed=${status.backend_capabilities.parity_summary.fail_closed ? "yes" : "no"}`,
+  ];
+  if (kbMapping?.kb_id) {
+    details.push(`kb=${kbMapping.kb_id}`);
+  }
+  if (state.wikiOverview) {
+    details.push(`wiki=${state.wikiOverview.status}`);
+  }
+  if (state.wikiError) {
+    details.push(`wiki blocked：${state.wikiError}`);
+  }
+  const blocked = gates?.blocked[0];
+  if (blocked) {
+    details.push(`blocked：${blocked}`);
+  }
+  const backlog = gates?.backlog[0] || kbMapping?.backlog[0];
+  if (backlog) {
+    details.push(`backlog：${backlog}`);
+  }
+  return details;
+}
+
+function errorLabel(error: unknown) {
+  if (error instanceof ApiError) {
+    return `HTTP ${error.status}`;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "unknown error";
+}
+
+function statusClassName(value: string) {
+  return value.replace(/[\s_]+/g, "-").toLowerCase();
 }
 
 export function CitationList({

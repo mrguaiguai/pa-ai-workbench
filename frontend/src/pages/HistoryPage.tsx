@@ -22,6 +22,7 @@ import {
   ErrorState,
   StatusBadge,
   WarningList,
+  WeKnoraFirstStatusStrip,
   parseWarningsJson,
 } from "../components/workbench";
 
@@ -300,6 +301,8 @@ export function HistoryPage() {
 
   return (
     <div className="history-page">
+      <WeKnoraFirstStatusStrip page="历史" />
+
       <aside className="history-list-panel" aria-label="生成历史列表">
         <section className="history-filter-panel">
           <div className="history-panel-heading">

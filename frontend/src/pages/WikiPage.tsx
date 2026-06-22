@@ -26,6 +26,7 @@ import {
   CitationList,
   EmptyState,
   ErrorState,
+  WeKnoraFirstStatusStrip,
 } from "../components/workbench";
 
 type LoadState = "idle" | "loading" | "error";
@@ -742,6 +743,8 @@ export function WikiPage() {
 
   return (
     <div className="wiki-page">
+      <WeKnoraFirstStatusStrip page="Wiki" />
+
       <aside className="wiki-search-panel" aria-label="Wiki 搜索">
         <form className="wiki-search-form" onSubmit={onSubmit}>
           <div className="wiki-panel-heading">

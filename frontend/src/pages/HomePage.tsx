@@ -12,7 +12,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, ModelStatusResponse, StatusResponse, apiClient } from "../api/client";
-import { BackendStatusBadge } from "../components/workbench";
+import { BackendStatusBadge, WeKnoraFirstStatusStrip } from "../components/workbench";
 
 type HomePageProps = {
   navigateTo: (route: "/library" | "/analysis" | "/wiki" | "/history") => void;
@@ -206,7 +206,8 @@ export function HomePage({ navigateTo }: HomePageProps) {
     const weknora = backend?.weknora;
     const capabilities = backend?.backend_capabilities;
     const parity = capabilities?.parity_summary;
-    const kbMapping = capabilities?.kb_mapping;
+    const kbMapping = weknora?.kb_mapping;
+    const capabilityKbMapping = capabilities?.kb_mapping;
     const statusGates = capabilities?.weknora_first_status_gates;
     const gateCategories = statusGates?.status_categories;
     const statusCounts = parity?.status_counts ?? {};
@@ -283,7 +284,10 @@ export function HomePage({ navigateTo }: HomePageProps) {
     const capabilityDetails = parity
       ? [
           `事实来源：${parity.data_fact_source}`,
-          `知识库映射：${kbMapping?.mapping_count ?? 0}`,
+          `知识库映射：${kbMapping?.status ?? "unknown"}`,
+          `映射来源：${kbMapping?.selection_source ?? "unknown"}`,
+          `活动 KB：${kbMapping?.kb_id ?? "unknown"}`,
+          `映射配置数：${capabilityKbMapping?.mapping_count ?? 0}`,
           `引用追踪：${parity.citation_trace}`,
           `Wiki 发布：${parity.wiki}`,
           `调试能力：${parity.debug}`,
@@ -362,6 +366,8 @@ export function HomePage({ navigateTo }: HomePageProps) {
         </div>
         <BackendStatusBadge state={status.state} label={backendLabel} />
       </section>
+
+      <WeKnoraFirstStatusStrip page="首页" />
 
       <section className="metric-grid" aria-label="核心数据">
         {metrics.map((metric) => (

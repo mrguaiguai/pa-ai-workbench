@@ -35,6 +35,24 @@ export type StatusResponse = {
     kb_configured: boolean;
     health_status: string | null;
     message: string | null;
+    kb_mapping?: {
+      schema_version: string;
+      status: "validated" | "configured" | "blocked" | "backlog" | string;
+      source: string | null;
+      configured: boolean;
+      validated: boolean;
+      workspace_id: string | null;
+      kb_id: string | null;
+      selection_source: string | null;
+      mapping_name: string | null;
+      default_used: boolean | null;
+      default_fallback_allowed: boolean;
+      mapping_configured: boolean;
+      blocked_reason: string | null;
+      workspace: Record<string, unknown> | null;
+      knowledge_base: Record<string, unknown> | null;
+      backlog: string[];
+    };
   };
   backend_capabilities: {
     active_backend: string;
@@ -129,6 +147,24 @@ export type StatusResponse = {
 
 export type BackendCapabilitiesResponse = StatusResponse["backend_capabilities"];
 
+export type NativeWikiOverviewResponse = {
+  schema_version: string;
+  status: "live" | "partial" | "blocked" | string;
+  source: string;
+  kb_id: string | null;
+  query: string;
+  limit: number;
+  warnings: string[];
+  surfaces: Record<
+    string,
+    {
+      status: "live" | "partial" | "blocked" | "backlog" | string;
+      reason?: string;
+      [key: string]: unknown;
+    }
+  >;
+};
+
 export type ModelProviderStatus = {
   provider: string;
   model: string;
@@ -206,6 +242,12 @@ export type DocumentListFilters = {
   has_error?: boolean;
   knowledge_backend?: string;
   refresh_status?: boolean;
+};
+
+export type NativeWikiOverviewParams = {
+  kb_id?: string;
+  query?: string;
+  limit?: number;
 };
 
 export type HistoryListFilters = {
@@ -631,11 +673,30 @@ function historyFilterParams(filters: HistoryListFilters) {
   return params;
 }
 
+function nativeWikiOverviewParams(params: NativeWikiOverviewParams = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.kb_id) {
+    searchParams.set("kb_id", params.kb_id);
+  }
+  if (params.query) {
+    searchParams.set("query", params.query);
+  }
+  if (params.limit) {
+    searchParams.set("limit", String(params.limit));
+  }
+  return searchParams;
+}
+
 export const apiClient = {
   baseUrl: API_BASE_URL,
   getStatus: () => request<StatusResponse>("/api/status"),
   getCapabilities: () => request<BackendCapabilitiesResponse>("/api/capabilities"),
   getModelStatus: () => request<ModelStatusResponse>("/api/model/status"),
+  getNativeWikiOverview: (params: NativeWikiOverviewParams = {}) => {
+    const searchParams = nativeWikiOverviewParams(params);
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return request<NativeWikiOverviewResponse>(`/api/wiki/native/overview${suffix}`);
+  },
   listDocuments: (filters: DocumentListFilters = {}) => {
     const params = documentFilterParams(filters);
     const suffix = params.toString() ? `?${params.toString()}` : "";
