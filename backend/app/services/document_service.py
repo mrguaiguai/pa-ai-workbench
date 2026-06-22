@@ -229,6 +229,14 @@ def parse_document_file(
     document: Document,
     parser: DocumentParser | None = None,
 ) -> tuple[Document, dict]:
+    if _is_weknora_document(document):
+        updated = sync_document_status(session, document)
+        return updated, _weknora_native_action_metadata(
+            document=updated,
+            action="status_refresh",
+            message="WeKnora owns native document parsing; PA refreshed native status instead of running local parsing.",
+        )
+
     _transition_document(
         session=session,
         document=document,
@@ -263,6 +271,10 @@ def index_document_chunks(
     embedding_provider: EmbeddingProvider | None = None,
     vector_store: VectorStore | None = None,
 ) -> tuple[Document, int]:
+    if _is_weknora_document(document):
+        updated = sync_document_status(session, document)
+        return updated, _weknora_native_chunk_count(session, updated)
+
     try:
         resolved_embedding_provider = embedding_provider or get_embedding_provider()
         resolved_vector_store = vector_store or get_vector_store()
@@ -350,6 +362,10 @@ def reindex_document_chunks(
     embedding_provider: EmbeddingProvider | None = None,
     vector_store: VectorStore | None = None,
 ) -> tuple[Document, int]:
+    if _is_weknora_document(document):
+        updated, _ = recover_document_processing(session, document)
+        return updated, _weknora_native_chunk_count(session, updated)
+
     _record_event(
         session=session,
         document=document,
@@ -374,7 +390,7 @@ def retry_index_document(session: Session, document: Document) -> Document:
 
 
 def recover_document_processing(session: Session, document: Document) -> tuple[Document, str]:
-    if document.knowledge_backend != "weknora_api":
+    if not _is_weknora_document(document):
         updated, _ = reindex_document_chunks(session, document)
         return updated, "Document chunks rebuilt, embedded, and indexed."
 
@@ -423,6 +439,31 @@ def recover_document_processing(session: Session, document: Document) -> tuple[D
     if document.status == "failed" and document.failed_step == "weknora_retry":
         raise DocumentWorkflowError(document.error_message or "WeKnora retry upload failed.")
     return document, "Document retry submitted to WeKnora using the existing PA record."
+
+
+def _is_weknora_document(document: Document) -> bool:
+    return document.knowledge_backend == "weknora_api"
+
+
+def _weknora_native_chunk_count(session: Session, document: Document) -> int:
+    if not document.external_doc_id:
+        return 0
+    return len(list_document_chunks(session, document.id))
+
+
+def _weknora_native_action_metadata(
+    document: Document,
+    action: str,
+    message: str,
+) -> dict[str, Any]:
+    return {
+        "source": "weknora_api",
+        "action": action,
+        "message": message,
+        "external_doc_id": document.external_doc_id,
+        "status": document.status,
+        "failed_step": document.failed_step,
+    }
 
 
 def document_processing_summary(document: Document) -> dict[str, Any]:

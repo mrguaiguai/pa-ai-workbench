@@ -147,7 +147,7 @@ def index_document(
     return DocumentIndexResponse(
         document=_document_read(session, updated),
         chunk_count=chunk_count,
-        message="Document parsed, chunked, embedded, and indexed.",
+        message=_document_index_message(updated, default="Document parsed, chunked, embedded, and indexed."),
     )
 
 
@@ -164,7 +164,11 @@ def reindex_document(
     return DocumentIndexResponse(
         document=_document_read(session, updated),
         chunk_count=chunk_count,
-        message="Document chunks rebuilt, embedded, and indexed.",
+        message=_document_index_message(
+            updated,
+            default="Document chunks rebuilt, embedded, and indexed.",
+            retry=True,
+        ),
     )
 
 
@@ -206,7 +210,11 @@ def retry_document_index(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return DocumentRetryIndexResponse(
         document=_document_read(session, updated),
-        message="Document chunks rebuilt, embedded, and indexed.",
+        message=_document_index_message(
+            updated,
+            default="Document chunks rebuilt, embedded, and indexed.",
+            retry=True,
+        ),
     )
 
 
@@ -231,6 +239,14 @@ def _require_document(session: Session, document_id: str):
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
     return document
+
+
+def _document_index_message(document, default: str, retry: bool = False) -> str:
+    if document.knowledge_backend != "weknora_api":
+        return default
+    if retry:
+        return "WeKnora native document retry/status refresh completed; PA did not run local chunking or vector indexing."
+    return "WeKnora native document status refreshed; PA did not run local chunking or vector indexing."
 
 
 def _document_read(session: Session, document) -> DocumentRead:
