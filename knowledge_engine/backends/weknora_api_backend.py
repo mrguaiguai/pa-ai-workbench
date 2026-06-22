@@ -200,6 +200,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "knowledge_count": _optional_int(payload.get("knowledge_count")),
             "chunk_count": _optional_int(payload.get("chunk_count")),
             "is_processing": bool(payload.get("is_processing")),
+            "vector_store": self._knowledge_base_vector_store_safe_dict(payload),
             "source": "weknora_api",
         }
 
@@ -755,6 +756,26 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if isinstance(item, dict)
         ]
 
+    def list_vector_store_types(self) -> list[dict]:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/vector-stores/types")
+        items = self._unwrap_items(data)
+        return [
+            self._vector_store_type_safe_dict(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+    def list_vector_stores(self) -> list[dict]:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/vector-stores")
+        items = self._unwrap_items(data)
+        return [
+            self._vector_store_safe_dict(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+
     def create_agent_session(
         self,
         title: str,
@@ -1230,6 +1251,47 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "configured_credential_field_count": configured_credential_field_count,
             "credentials_configured": configured_credential_field_count > 0,
             "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _vector_store_type_safe_dict(item: dict) -> dict:
+        connection_fields = item.get("connection_fields")
+        index_fields = item.get("index_fields")
+        safe_connection_fields = connection_fields if isinstance(connection_fields, list) else []
+        safe_index_fields = index_fields if isinstance(index_fields, list) else []
+        return {
+            "type": _optional_str(item.get("type")),
+            "display_name": _optional_str(item.get("display_name")),
+            "connection_field_count": len(safe_connection_fields),
+            "sensitive_connection_field_count": sum(
+                1
+                for field in safe_connection_fields
+                if isinstance(field, dict) and bool(field.get("sensitive"))
+            ),
+            "index_field_count": len(safe_index_fields),
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _vector_store_safe_dict(item: dict) -> dict:
+        return {
+            "engine_type": _optional_str(item.get("engine_type")),
+            "source": _optional_str(item.get("source")) or "weknora_api",
+            "readonly": bool(item.get("readonly")),
+            "status": _optional_str(item.get("status")) or "available",
+        }
+
+    @staticmethod
+    def _knowledge_base_vector_store_safe_dict(item: dict) -> dict:
+        source = _optional_str(item.get("vector_store_source"))
+        status = _optional_str(item.get("vector_store_status"))
+        engine_type = _optional_str(item.get("vector_store_engine_type"))
+        return {
+            "bound": bool(item.get("vector_store_id")),
+            "source": source,
+            "status": status,
+            "engine_type": engine_type,
+            "available": status == "available",
         }
 
     def _retrieve_payload(self, query: str, filters: dict) -> dict:

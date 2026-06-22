@@ -369,7 +369,7 @@ def weknora_first_status_gates(
                 "native Wiki mutations/admin actions such as rebuild-links and auto-fix",
                 "native MCP service CRUD, credential forms, tool execution, and approval mutation",
                 "native web search provider CRUD, credential forms, connection tests, and raw search orchestration",
-                "WF-P2-03 vector store management visibility",
+                "native vector store CRUD, connection tests, raw config display, and KB rebind mutation",
                 "WF-P2-04 advanced Wiki maintenance",
             ],
         },
