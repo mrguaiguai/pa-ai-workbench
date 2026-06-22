@@ -264,7 +264,7 @@ Excluded or limited groups:
 | ID | Priority | Capability slice | Status | Required evidence |
 | --- | --- | --- | --- | --- |
 | WNX-0-01 | Governance | New native expansion spec + skill | [x] | Spec/skill created, skill frontmatter validates, diff/sensitive scans pass. |
-| WNX-0-02 | Governance | Architecture blueprint and module boundaries | [ ] | `docs/WEKNORA_NATIVE_EXPANSION_ARCHITECTURE.md` with PA/WeKnora/DB/adapter/evidence/ops boundaries. |
+| WNX-0-02 | Governance | Architecture blueprint and module boundaries | [x] | `docs/WEKNORA_NATIVE_EXPANSION_ARCHITECTURE.md` with PA/WeKnora/DB/adapter/evidence/ops boundaries. |
 | WNX-0-03 | Governance | Coverage ledger and 80% scoring baseline | [ ] | `docs/WEKNORA_NATIVE_CAPABILITY_COVERAGE_LEDGER.md` with current/target states and scoring. |
 | WNX-P0-01 | P0 | Unified WeKnora native client | [ ] | Adapter has shared config/error/timeout/retry/trace/normalization and smoke validation. |
 | WNX-P0-02 | P0 | Internal config/status center backend | [ ] | PA API exposes masked native config/status for core platform areas. |
@@ -293,6 +293,7 @@ Excluded or limited groups:
 | Date | Task id | Status | Evidence | Commit / branch | Notes |
 | --- | --- | --- | --- | --- | --- |
 | 2026-06-22 | WNX-0-01 | [x] | `governance artifact`: native expansion spec and skill added; validation includes skill frontmatter, diff check, sensitive scan, and keyword checks. | this commit on `weknora-first-mvp` | No product code changed and no new live capability PASS is claimed. |
+| 2026-06-22 | WNX-0-02 | [x] | `audit/map`: architecture blueprint added with PA Frontend Shell, PA Backend BFF, WeKnora Native Adapter, PA Business DB, Evidence/Citation Layer, Validation/Ops Layer, and PA-native Professional Workflow Layer boundaries; validation includes diff check, keyword checks, and sensitive scan. | this commit on `weknora-first-mvp` | No product code changed and no new live capability PASS is claimed; the blueprint maps later `WNX-P0`, `WNX-P1`, and `WNX-P2` development landing zones. |
 
 ## 8. Task Cards
 
