@@ -1,0 +1,165 @@
+# WeKnora Native Capability Coverage Ledger
+
+> Task: `WNX-0-03`
+>
+> Date: 2026-06-22
+>
+> Evidence type: audit/map. This ledger establishes the baseline and scoring
+> method for the Native Expansion stage; it does not create new live capability
+> PASS evidence.
+
+## Purpose
+
+This ledger makes the Native Expansion 80% coverage target executable. It
+enumerates every eligible WeKnora native capability group, assigns the current
+baseline state, records the target state, links the evidence source, and maps
+the next `WNX-*` task that should move the group.
+
+Important evidence boundary:
+
+- Current state is based on committed branch evidence from the prior
+  WeKnora-first stage, the native expansion spec, and the architecture
+  blueprint.
+- Prior `WF-*` reports can justify the starting baseline, but future internal
+  production PASS in `WNX-P3-02` must refresh live evidence through current
+  `WNX-*` validation.
+- No score is granted from mock evidence, fixture-only evidence, static UI,
+  cached browser state, hidden fallback, or unverified inference.
+
+## Scoring Model
+
+| State | Score | Meaning |
+| --- | ---: | --- |
+| `live-full` | 1.0 | Real PA path calls real WeKnora native capability and satisfies the PA contract, including history/citation/status when applicable. |
+| `live-partial` | 0.5 | Real native call works, but the PA contract is incomplete, such as missing citation, incomplete mutation controls, incomplete history, or partial workflow coverage. |
+| `read-only` | 0.25 | PA can safely inspect native status/list/catalog, but cannot execute the user workflow. |
+| `blocked` | 0 | A real API/config/runtime/safety gap prevents completion. |
+| `backlog` | 0 | Deferred by stage scope or risk. |
+| `unsafe-for-pa` | 0 | Not suitable for PA exposure without a separate safety design. |
+
+Formula:
+
+```text
+coverage = sum(current_score) / count(eligible_capability_groups)
+target_coverage = sum(target_score) / count(eligible_capability_groups)
+```
+
+Eligible capability groups: `15`.
+
+Current baseline score:
+
+```text
+5.50 / 15 = 36.7%
+```
+
+Minimum internal production target:
+
+```text
+12.00 / 15 = 80.0%
+```
+
+The target deliberately reaches exactly the stage threshold without forcing
+credential-heavy platform admin surfaces to become `live-full`. MCP, web
+search, vector store, model/config/parser, data source, and organization
+features can count as `live-partial` when PA exposes safe live readiness or
+safe limited workflows without leaking secrets or rebuilding WeKnora admin.
+
+## Current Coverage Ledger
+
+| Capability group | Current state | Score | Target state | Target score | Current evidence source | Validation method | Risk / blocker | Next action |
+| --- | --- | ---: | --- | ---: | --- | --- | --- | --- |
+| System health/status/deployment | `live-partial` | 0.5 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_STATUS_REPORT_GATES.md`; `/api/status`, `/api/model/status`, homepage status strip were validated in prior stage. | `WNX-P0-02` config/status API; `WNX-P0-05` service/runbook validation. | Prior evidence proves truthful status, not recoverable internal production deployment. Parser/rerank/service recovery still need WNX validation. | `WNX-P0-02`, `WNX-P0-05` |
+| Workspace/knowledge-base management | `live-partial` | 0.5 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_KB_SELECTION_MAPPING_REPORT.md`; active workspace/KB mapping validated live. | Live PA API for list/read/active selection, then browser workflow. | Active selection is live, but KB CRUD/pin/tag/multi-KB workflow is backlog. | `WNX-P1-01` |
+| Document lifecycle | `live-partial` | 0.5 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_DOCUMENT_RAG_LIVE_REPORT.md`; PA uploaded a sanitized file to WeKnora, persisted native id, reached indexed, and read native chunks. | Live upload/status/chunk smoke plus browser library workflow. | File upload/status works; url/manual ingestion, preview/download, delete/reparse/cancel, status spans, and recovery controls remain incomplete. | `WNX-P1-02` |
+| Chunk management | `read-only` | 0.25 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_DOCUMENT_RAG_LIVE_REPORT.md`; native chunk preview was read after indexing. | Live chunk list/by-id and browser chunk detail workflow; mutation tests only with confirmation. | Preview exists, but update/toggle/delete/generated questions are not PA-safe yet. Chunk status cannot be treated as answer evidence. | `WNX-P1-03` |
+| Knowledge-search/RAG | `live-full` | 1.0 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_RAG_DEBUG_LIVE_REPORT.md`; PA RAG debug called native search and returned `source=weknora_api`, `source_type=document_chunk`, `evidence_id`, rank, trace, and native ids. | Current-run live RAG matrix with source scope and citation checks. | Search path is live-full for RAG debug; future knowledge-chat is scored separately. | `WNX-P1-04` |
+| Knowledge-chat/session chat | `backlog` | 0 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md`; native `/api/v1/knowledge-chat/{session_id}` exists, but PA has not integrated it. | Live PA chat API/browser workflow with conversation history and citation mapping. | No PA native knowledge-chat path yet. Must not substitute PA-native general QA as completion. | `WNX-P1-04` |
+| AgentQA/custom Agent | `live-partial` | 0.5 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_AGENTQA_LIVE_REPORT.md`; native AgentQA answer/history path worked, but citation mapping recorded `CITATION_BLOCKED`. | Live AgentQA/custom Agent API and browser analysis workflow. Citation PASS requires traceable native references. | AgentQA answer/history is live; citation references were absent and custom Agent picker/config remains incomplete. | `WNX-P1-05` |
+| Native Wiki | `live-partial` | 0.5 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_WIKI_NATIVE_BROWSE_REPORT.md`; PA read native Wiki pages/search/read/index/stats/graph/lint/issues; mutations backlog. | Live PA Wiki API plus browser workflow with confirmation for safe mutations. | Read-only surfaces are live; create/update/delete and maintenance mutations require safety design and audit trail. | `WNX-P1-06` |
+| MCP | `read-only` | 0.25 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_MCP_VISIBILITY_REPORT.md`; PA read native MCP service list safely; tools/resources/approval/mutations backlog. | Live MCP list/read/test where configured, browser status, sensitive scan. | Credential forms, tool execution, approval mutation, and service CRUD are unsafe without explicit approval model. | `WNX-P2-02` |
+| Web search | `read-only` | 0.25 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_WEB_SEARCH_VISIBILITY_REPORT.md`; PA read provider catalog/configured providers and marked AgentQA dependency optional/unconfigured. | Live provider readiness/test where configured and AgentQA dependency validation. | Provider CRUD, credential handling, raw search debugging, and PA-owned web search orchestration remain backlog. | `WNX-P2-03` |
+| Vector store | `read-only` | 0.25 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md`; PA read vector-store types/list, KB binding, and embedding readiness without raw config. | Live vector-store readiness/test where safe, KB binding check, sensitive scan. | CRUD, connection tests, raw config display, KB rebind mutation, and PA-owned vector administration remain backlog. | `WNX-P2-04` |
+| Model/embedding/rerank/parser | `live-partial` | 0.5 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_STATUS_REPORT_GATES.md`; `docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md`; prior status showed non-mock chat/embedding and live embedding posture. | Masked model/embedding/rerank/parser status API and safe remote checks. | Chat/embedding posture exists; model catalog, rerank, parser engine, remote test calls, and sanitized provider status are not unified. | `WNX-P2-01` |
+| Data sources/connectors | `backlog` | 0 | `live-partial` | 0.5 | `docs/WEKNORA_NATIVE_EXPANSION_ARCHITECTURE.md`; native data source routes identified for future safe status/sync slices. | Live connector type/status/resources/sync smoke with sanitized output. | Credential-heavy connector setup and sync logs may expose secrets; start with read-only or safe validate/resources. | `WNX-P2-05` |
+| FAQ/tags/favorites/skills | `backlog` | 0 | `live-partial` | 0.5 | `docs/WEKNORA_NATIVE_EXPANSION_ARCHITECTURE.md`; native FAQ/tags/favorites/skills route families identified. | Live API smoke for at least one organization primitive plus browser workflow. | Useful workbench polish, but not yet integrated into PA UX; avoid inventing a parallel taxonomy. | `WNX-P2-06` |
+| History/citation/product shell | `live-partial` | 0.5 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_CITATION_CONTRACT.md`; `docs/WEKNORA_FIRST_FRONTEND_BROWSER_ACCEPTANCE_REPORT.md`; PA pages and citation contract are live for document/Wiki evidence. | API and browser validation across history filters, citation locator, warnings, and each native workflow output. | Product shell and document/Wiki citations work; all native workflows do not yet persist consistent history/citation, and AgentQA citation is blocked. | `WNX-P1-07`, `WNX-P3-01` |
+
+## Target Coverage Plan
+
+The minimum target plan reaches 80% by completing these state moves:
+
+| Move | Groups | Score gain |
+| --- | --- | ---: |
+| `live-partial` to `live-full` | System health/status/deployment, Workspace/KB, Document lifecycle, AgentQA/custom Agent, Native Wiki, History/citation/product shell | +3.0 |
+| `read-only` to `live-full` | Chunk management | +0.75 |
+| `backlog` to `live-full` | Knowledge-chat/session chat | +1.0 |
+| `read-only` to `live-partial` | MCP, Web search, Vector store | +0.75 |
+| `backlog` to `live-partial` | Data sources/connectors, FAQ/tags/favorites/skills | +1.0 |
+| Keep `live-partial` target | Model/embedding/rerank/parser | +0 |
+
+Planned target score:
+
+```text
+5.50 current + 6.50 planned gain = 12.00 / 15 = 80.0%
+```
+
+Stretch target:
+
+- Promote MCP, web search, vector store, and model/config/parser from
+  `live-partial` to `live-full` only when safe mutation/test workflows exist
+  without secret leakage.
+- Promote data sources and FAQ/tags/favorites/skills to `live-full` only after
+  browser workflows and PA history/status integration are validated.
+
+## Evidence Freshness Rules
+
+Future tasks must update this ledger when they change a capability state:
+
+1. Add or update the evidence report link.
+2. Keep live evidence, fixture evidence, mock evidence, cached evidence,
+   partial evidence, blocked evidence, and backlog evidence separate.
+3. Recompute the score.
+4. Never upgrade a state from report text alone if the relevant task requires
+   live API, browser, or service validation.
+5. Treat read-only visibility as at most `read-only` unless PA can execute a
+   real user workflow.
+6. Treat status/config/provider readiness as status, not citation evidence.
+7. Treat AgentQA/custom Agent answers without traceable references as
+   `live-partial` at most when citation is part of the PA contract.
+
+## Blocked And Backlog Baseline
+
+| Area | Baseline decision |
+| --- | --- |
+| AgentQA citation mapping | Blocked until native AgentQA emits traceable references or PA receives a documented native citation shape. |
+| Native Wiki mutations and maintenance | Backlog until confirmation, audit trail, preview, and rollback story are designed. |
+| MCP execution and credentials | Backlog/unsafe until approval and secret-handling model is explicit. |
+| Web search provider credentials and raw tests | Backlog until a secure masked credential flow is explicitly scoped. |
+| Vector-store CRUD/test/raw config | Backlog until PA can avoid raw DSN/config leakage and avoid conflicting with WeKnora admin ownership. |
+| Data source credentials and sync logs | Backlog until sanitized validate/resources/sync output is proven safe. |
+| General PA-native Agent/RAG/Wiki expansion | Backlog by stage policy when WeKnora has a native path. |
+
+## Next Ledger Update Points
+
+- `WNX-P0-01`: update adapter-related risks if shared client changes evidence
+  normalization or safe status shape.
+- `WNX-P0-02`: update system, model/config, MCP, web search, vector store,
+  data source, FAQ/tag/favorite/skill status baselines from the unified status
+  center.
+- `WNX-P0-04`: add checker evidence and any computed score validation.
+- `WNX-P1-*`: upgrade workflow groups only after live API/browser evidence.
+- `WNX-P2-*`: upgrade platform groups only after sanitized live status or safe
+  workflow validation.
+- `WNX-P3-02`: recompute final score from current WNX evidence, not just prior
+  WF reports.
+
+## PASS Boundary For This Ledger
+
+`WNX-0-03` is complete when this ledger:
+
+- lists all eligible capability groups from the spec;
+- shows current state, target state, score, evidence source, risk, and next
+  action for each group;
+- computes the current baseline and the 80% target;
+- avoids inflating read-only visibility into live-full capability; and
+- passes diff, keyword, and sensitive-value checks.
