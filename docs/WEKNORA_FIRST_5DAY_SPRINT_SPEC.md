@@ -104,7 +104,7 @@ Task selection rules:
 | WF-P1-02 | P1 | Native Wiki browse/search/index/graph/lint | [x] | PA reads native Wiki browse/search/read/index/stats/graph/lint/issues with honest backlog labels for mutations. |
 | WF-P1-03 | P1 | Knowledge base selection and mapping | [x] | Active workspace/KB mapping is visible and validated through real config/API state. |
 | WF-P1-04 | P1 | Frontend integration polish | [x] | Browser validation covers the six PA pages and visible WeKnora-first states. |
-| WF-P2-01 | P2 | MCP service visibility | [b] | Backlog unless a read-only status/jump slice is explicitly scoped. |
+| WF-P2-01 | P2 | MCP service visibility | [x] | Live PA API/browser shows sanitized read-only native MCP readiness; mutation/credential/execution stays backlog. |
 | WF-P2-02 | P2 | Web search provider visibility | [b] | Backlog unless AgentQA depends on visible provider readiness. |
 | WF-P2-03 | P2 | Vector store management visibility | [b] | Backlog unless read-only readiness or native-admin jump is scoped. |
 | WF-P2-04 | P2 | Advanced Wiki maintenance | [b] | Backlog until core Wiki browse/search/read is stable. |
@@ -123,6 +123,7 @@ Task selection rules:
 | 2026-06-22 | WF-P1-02 | [x] | `live PA API + live native Wiki`: PA `/api/wiki/native/overview` called WeKnora native Wiki pages/search/read/index/stats/graph/lint/issues; live counts were pages `5/355`, search `5`, index `5/15`, stats total pages `355`, graph nodes `5`, lint issues `2261`, issue list `0`, and read traceability was true. | this commit on `weknora-first-mvp` | Report: `docs/WEKNORA_FIRST_WIKI_NATIVE_BROWSE_REPORT.md`; native Wiki mutations such as rebuild-links, auto-fix, and issue status updates remain explicit backlog. |
 | 2026-06-22 | WF-P1-03 | [x] | `live PA API + live WeKnora mapping`: PA `/api/status` exposed `weknora.kb_mapping.status=validated`, `selection_source=default`, `default_used=True`, workspace id `10000`, KB id `29adf20a-91db-45b5-9df1-6c608f802e8d`, KB type `document`; `/api/model/status` showed chat and embedding are not mock. | this commit on `weknora-first-mvp` | Report: `docs/WEKNORA_FIRST_KB_SELECTION_MAPPING_REPORT.md`; multi-KB management UI, KB CRUD, and credential-management UI remain backlog. |
 | 2026-06-22 | WF-P1-04 | [x] | `live browser + build`: six PA pages rendered the shared WeKnora-first strip from `/api/status` and `/api/wiki/native/overview`; desktop and `390x844` mobile checks showed visible live/native/mock/fallback/partial/blocked/backlog labels, AgentQA citation blocker text, and no tracked horizontal overflow. | this commit on `weknora-first-mvp` | Report: `docs/WEKNORA_FIRST_FRONTEND_BROWSER_ACCEPTANCE_REPORT.md`; `npm` was unavailable, so validation used the bundled Node runtime with project-local `tsc` and Vite. |
+| 2026-06-22 | WF-P2-01 | [x] | `live PA API/browser + native MCP read-only`: PA `/api/mcp/native/overview` reached WeKnora native MCP service list with `status=live`, `services=0`, `tools/resources/approval=backlog`, `mutations=backlog`, and sanitized response true; homepage status strip rendered `MCP native` as live. | this commit on `weknora-first-mvp` | Report: `docs/WEKNORA_FIRST_MCP_VISIBILITY_REPORT.md`; credential forms, service mutation, approval mutation, and tool execution remain explicit backlog. |
 
 ### 4.3 Status Update Rules
 

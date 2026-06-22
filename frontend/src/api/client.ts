@@ -165,6 +165,22 @@ export type NativeWikiOverviewResponse = {
   >;
 };
 
+export type NativeMcpOverviewResponse = {
+  schema_version: string;
+  status: "live" | "partial" | "blocked" | "backlog" | string;
+  source: string;
+  warnings: string[];
+  surfaces: Record<
+    string,
+    {
+      status: "live" | "partial" | "blocked" | "backlog" | string;
+      reason?: string;
+      count?: number;
+      [key: string]: unknown;
+    }
+  >;
+};
+
 export type ModelProviderStatus = {
   provider: string;
   model: string;
@@ -247,6 +263,10 @@ export type DocumentListFilters = {
 export type NativeWikiOverviewParams = {
   kb_id?: string;
   query?: string;
+  limit?: number;
+};
+
+export type NativeMcpOverviewParams = {
   limit?: number;
 };
 
@@ -687,6 +707,14 @@ function nativeWikiOverviewParams(params: NativeWikiOverviewParams = {}) {
   return searchParams;
 }
 
+function nativeMcpOverviewParams(params: NativeMcpOverviewParams = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.limit) {
+    searchParams.set("limit", String(params.limit));
+  }
+  return searchParams;
+}
+
 export const apiClient = {
   baseUrl: API_BASE_URL,
   getStatus: () => request<StatusResponse>("/api/status"),
@@ -696,6 +724,11 @@ export const apiClient = {
     const searchParams = nativeWikiOverviewParams(params);
     const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
     return request<NativeWikiOverviewResponse>(`/api/wiki/native/overview${suffix}`);
+  },
+  getNativeMcpOverview: (params: NativeMcpOverviewParams = {}) => {
+    const searchParams = nativeMcpOverviewParams(params);
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return request<NativeMcpOverviewResponse>(`/api/mcp/native/overview${suffix}`);
   },
   listDocuments: (filters: DocumentListFilters = {}) => {
     const params = documentFilterParams(filters);

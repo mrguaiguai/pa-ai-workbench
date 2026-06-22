@@ -680,6 +680,61 @@ class WeKnoraApiBackend(KnowledgeEngine):
         items = self._unwrap_items(data)
         return [item for item in items if isinstance(item, dict)]
 
+    def list_mcp_services(self) -> list[dict]:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/mcp-services")
+        items = self._unwrap_items(data)
+        return [
+            self._mcp_service_safe_dict(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+    def get_mcp_service_tools(self, service_id: str) -> list[dict]:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        data = self._request_json("GET", f"/api/v1/mcp-services/{encoded_id}/tools")
+        items = self._unwrap_items(data)
+        return [
+            {
+                "name": _optional_str(item.get("name")),
+                "require_approval": bool(item.get("require_approval")),
+            }
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+    def get_mcp_service_resources(self, service_id: str) -> list[dict]:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        data = self._request_json("GET", f"/api/v1/mcp-services/{encoded_id}/resources")
+        items = self._unwrap_items(data)
+        return [
+            {
+                "name": _optional_str(item.get("name")),
+                "mime_type": _optional_str(item.get("mimeType") or item.get("mime_type")),
+            }
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+    def list_mcp_tool_approvals(self, service_id: str) -> list[dict]:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        data = self._request_json(
+            "GET",
+            f"/api/v1/mcp-services/{encoded_id}/tool-approvals",
+        )
+        items = self._unwrap_items(data)
+        return [
+            {
+                "tool_name": _optional_str(item.get("tool_name")),
+                "require_approval": bool(item.get("require_approval")),
+            }
+            for item in items
+            if isinstance(item, dict)
+        ]
+
     def create_agent_session(
         self,
         title: str,
@@ -1100,6 +1155,29 @@ class WeKnoraApiBackend(KnowledgeEngine):
                 return _shorten(_redact_sensitive_text(json.dumps(value, default=str)), 300)
             return _shorten(_redact_sensitive_text(str(value)), 300)
         return None
+
+    @staticmethod
+    def _mcp_service_safe_dict(item: dict) -> dict:
+        credentials = item.get("credentials")
+        credential_field_count = 0
+        configured_credential_field_count = 0
+        if isinstance(credentials, dict):
+            for field in credentials.values():
+                if isinstance(field, dict):
+                    credential_field_count += 1
+                    if field.get("configured"):
+                        configured_credential_field_count += 1
+        return {
+            "id": _optional_str(item.get("id")),
+            "name": _optional_str(item.get("name")),
+            "enabled": bool(item.get("enabled")),
+            "transport_type": _optional_str(item.get("transport_type")),
+            "is_builtin": bool(item.get("is_builtin")),
+            "credential_field_count": credential_field_count,
+            "configured_credential_field_count": configured_credential_field_count,
+            "credentials_configured": configured_credential_field_count > 0,
+            "source": "weknora_api",
+        }
 
     def _retrieve_payload(self, query: str, filters: dict) -> dict:
         payload: dict[str, object] = {"query": query}

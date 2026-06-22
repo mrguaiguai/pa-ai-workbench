@@ -367,7 +367,7 @@ def weknora_first_status_gates(
                 "native AgentQA citation mapping remains blocked until traceable references are emitted",
                 "native AgentQA frontend agent picker and custom Agent selection",
                 "native Wiki mutations/admin actions such as rebuild-links and auto-fix",
-                "WF-P2-01 MCP service visibility",
+                "native MCP service CRUD, credential forms, tool execution, and approval mutation",
                 "WF-P2-02 web search provider visibility",
                 "WF-P2-03 vector store management visibility",
                 "WF-P2-04 advanced Wiki maintenance",
