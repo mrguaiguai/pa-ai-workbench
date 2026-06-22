@@ -107,6 +107,19 @@ export type StatusResponse = {
       default_fallback_allowed: boolean;
       ids_redacted: boolean;
     };
+    weknora_first_status_gates?: {
+      schema_version: string;
+      status_categories: {
+        live: string[];
+        mock: string[];
+        fallback: string[];
+        partial: string[];
+        blocked: string[];
+        backlog: string[];
+      };
+      report_gate_requirements: string[];
+      unsafe_pass_evidence: Record<string, boolean>;
+    };
     notes: string[];
   };
   memory_recent_limit: number;

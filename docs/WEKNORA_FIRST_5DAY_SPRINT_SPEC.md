@@ -97,7 +97,7 @@ Task selection rules:
 | WF-P0-01 | P0 | WeKnora native capability map | [x] | Source/routes inspected and gap table documented; no live PASS claimed. |
 | WF-P0-02 | P0 | Knowledge base and document native path | [x] | Live PA document service uploaded to WeKnora, persisted native id, reached indexed, and read native chunks. |
 | WF-P0-03 | P0 | RAG debug native alignment | [x] | Live PA RAG debug path called native WeKnora search and returned traceable evidence/rank/trace metadata. |
-| WF-P0-04 | P0 | Truthful status and report gates | [ ] | Status surfaces expose real/native/mock/fallback/partial/blocked/backlog truthfully. |
+| WF-P0-04 | P0 | Truthful status and report gates | [x] | Live API/browser status surfaces expose real/native/mock/fallback/partial/blocked/backlog; report checker gates unsafe PASS evidence. |
 | WF-P0-05 | P0 | Evidence/citation contract preservation | [ ] | Native integrations preserve `source`, `source_type`, `evidence_id`, native ids, and locator fields. |
 | WF-P1-01 | P1 | WeKnora native AgentQA/custom Agent | [ ] | PA calls native AgentQA/custom Agent and stores answer/history/citation mapping or explicit citation blocker. |
 | WF-P1-02 | P1 | Native Wiki browse/search/index/graph/lint | [ ] | PA reads or links native Wiki surfaces with honest blocked/backlog labels. |
@@ -116,6 +116,7 @@ Task selection rules:
 | 2026-06-22 | WF-P0-01 | [x] | `audit/map`: WeKnora native routes/services/types and PA adapter/product surfaces inspected; `docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md` added; no live capability PASS claimed. | this commit on `weknora-first-mvp` | P0 follow-up order and exact file touch plan documented for `WF-P0-02` through `WF-P0-05`; P2 MCP/web search/vector store admin remains backlog by default. |
 | 2026-06-22 | WF-P0-02 | [x] | `live`: PA document service uploaded a sanitized file to WeKnora, persisted `external_doc_id=e3fa4420-c083-4a2d-b47e-a3c540e6f3fb`, reached `indexed`, and read 1 native chunk; fixture smoke proves PA-local parser/chunker/vector path is avoided for WeKnora docs. | this commit on `weknora-first-mvp` | Report: `docs/WEKNORA_FIRST_DOCUMENT_RAG_LIVE_REPORT.md`; evidence is not fixture-only and does not print keys, provider payloads, or raw document body. |
 | 2026-06-22 | WF-P0-03 | [x] | `live`: PA RAG debug retrieved WeKnora evidence for `external_doc_id=257afb30-83f8-4f32-ba4e-a216d319a7fd` with `source=weknora_api`, `source_type=document_chunk`, `evidence_id=document_chunk:7caecfe8-619e-44e2-930d-814fb3e29fb7`, rank/native rank, and trace stages. | this commit on `weknora-first-mvp` | Report: `docs/WEKNORA_FIRST_RAG_DEBUG_LIVE_REPORT.md`; fixture smokes only guard redaction/validation and are not the PASS evidence. |
+| 2026-06-22 | WF-P0-04 | [x] | `live API/browser`: temporary current-worktree backend exposed `weknora_first_status_gates`; homepage showed live/mock/partial/blocked/backlog and fixture-only PASS rejection; checker self-test and report scan passed. | this commit on `weknora-first-mvp` | Report: `docs/WEKNORA_FIRST_STATUS_REPORT_GATES.md`; port 8000 service config was not modified, and validation used temporary localhost ports 8017/5177. |
 
 ### 4.3 Status Update Rules
 

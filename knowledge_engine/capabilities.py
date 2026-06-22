@@ -21,6 +21,7 @@ CAPABILITY_ORDER = (
     "real_data_source",
 )
 FEATURE_FLAG_SCHEMA_VERSION = "p3-m3-a3"
+WEKNORA_FIRST_STATUS_GATE_SCHEMA_VERSION = "wf-p0-04"
 RELEASE_ENVIRONMENTS = {
     "prod",
     "production",
@@ -256,6 +257,15 @@ def backend_capability_snapshot(
     fail_closed = strict_mode and fallback_to_mock_would_be_silent
     release_eligible = selected == "weknora_api" and weknora_ready is not False
     capabilities = deepcopy(BACKEND_CAPABILITY_MATRIX[active_backend])
+    status_gates = weknora_first_status_gates(
+        active_backend=active_backend,
+        selected_backend=selected,
+        known_backend=known_backend,
+        capabilities=capabilities,
+        release_eligible=release_eligible,
+        fail_closed=fail_closed,
+        weknora_ready=weknora_ready,
+    )
 
     return {
         "active_backend": active_backend,
@@ -295,12 +305,105 @@ def backend_capability_snapshot(
             "rerank": "reserved" if active_backend == "weknora_api" else "unsupported",
             "threshold": "reserved" if active_backend == "weknora_api" else "local_or_unsupported",
         },
+        "weknora_first_status_gates": status_gates,
         "notes": [
             "Mock and extracted results must not be counted as WeKnora release evidence.",
             "Extracted is selectable only as an explicit backend, never as automatic fallback.",
             "Evidence without citation trace must not be marked as a real WeKnora citation.",
         ],
     }
+
+
+def weknora_first_status_gates(
+    *,
+    active_backend: str,
+    selected_backend: str,
+    known_backend: bool,
+    capabilities: dict[str, str],
+    release_eligible: bool,
+    fail_closed: bool,
+    weknora_ready: bool | None,
+) -> dict[str, Any]:
+    partial = [
+        capability
+        for capability in CAPABILITY_ORDER
+        if capabilities.get(capability) == "partial"
+    ]
+    unsupported = [
+        capability
+        for capability in CAPABILITY_ORDER
+        if capabilities.get(capability) == "unsupported"
+    ]
+    dev_only = [
+        capability
+        for capability in CAPABILITY_ORDER
+        if capabilities.get(capability) == "dev-only"
+    ]
+    blocked = _blocked_status_gate_reasons(
+        selected_backend=selected_backend,
+        known_backend=known_backend,
+        fail_closed=fail_closed,
+        weknora_ready=weknora_ready,
+    )
+    fallback = []
+    if active_backend != selected_backend:
+        fallback.append(f"selected backend `{selected_backend}` resolved to `{active_backend}`")
+    if active_backend in {"mock", "extracted"}:
+        fallback.append(f"`{active_backend}` is not WeKnora release evidence")
+    return {
+        "schema_version": WEKNORA_FIRST_STATUS_GATE_SCHEMA_VERSION,
+        "status_categories": {
+            "live": [
+                "pa_backend_health",
+                "weknora_native_capabilities",
+            ]
+            if release_eligible and active_backend == "weknora_api"
+            else ["pa_backend_health"],
+            "mock": dev_only,
+            "fallback": fallback,
+            "partial": partial,
+            "blocked": blocked,
+            "backlog": [
+                "WF-P1-01 AgentQA/custom Agent live adapter",
+                "WF-P1-02 native Wiki browse/search/index/graph/lint polish",
+                "WF-P2-01 MCP service visibility",
+                "WF-P2-02 web search provider visibility",
+                "WF-P2-03 vector store management visibility",
+                "WF-P2-04 advanced Wiki maintenance",
+            ],
+        },
+        "report_gate_requirements": [
+            "live evidence must be labelled explicitly",
+            "mock, fixture-only, cached, partial, blocked, and backlog evidence must not be counted as PASS",
+            "chat model readiness and embedding readiness must remain separate",
+            "native capability status must expose unsupported or partial states",
+            "secrets, provider payloads, raw uploaded material, logs, caches, and local databases must be absent",
+        ],
+        "unsafe_pass_evidence": {
+            "mock_pass_allowed": False,
+            "fixture_only_pass_allowed": False,
+            "cached_or_old_report_pass_allowed": False,
+            "partial_pass_allowed": False,
+            "hidden_fallback_pass_allowed": False,
+        },
+    }
+
+
+def _blocked_status_gate_reasons(
+    *,
+    selected_backend: str,
+    known_backend: bool,
+    fail_closed: bool,
+    weknora_ready: bool | None,
+) -> list[str]:
+    blocked: list[str] = []
+    if not known_backend:
+        blocked.append(f"unknown backend `{selected_backend}`")
+    if selected_backend == "weknora_api" and weknora_ready is False:
+        blocked.append("WeKnora backend selected but required config is incomplete")
+    if fail_closed:
+        blocked.append("strict fallback policy is fail-closed")
+    return blocked
 
 
 def _data_fact_source(backend_name: str) -> str:
@@ -374,6 +477,7 @@ __all__ = [
     "RELEASE_ENVIRONMENTS",
     "SUPPORTED_BACKENDS",
     "FEATURE_FLAG_SCHEMA_VERSION",
+    "WEKNORA_FIRST_STATUS_GATE_SCHEMA_VERSION",
     "backend_parity_summary",
     "backend_feature_flags",
     "backend_capability_snapshot",
@@ -383,4 +487,5 @@ __all__ = [
     "is_strict_fallback_mode",
     "normalize_backend_name",
     "should_fail_closed_for_unavailable_backend",
+    "weknora_first_status_gates",
 ]

@@ -414,6 +414,7 @@ p {
 .runtime-status-card.mock,
 .runtime-status-card.fallback,
 .runtime-status-card.partial,
+.runtime-status-card.backlog,
 .runtime-status-card.indexing {
   border-color: #edd8a8;
   background: #fffaf0;
@@ -422,6 +423,7 @@ p {
 .runtime-status-card.missing-config,
 .runtime-status-card.unavailable,
 .runtime-status-card.fail-closed,
+.runtime-status-card.blocked,
 .runtime-status-card.error {
   border-color: #edc7c2;
   background: #fff6f4;
@@ -472,6 +474,7 @@ p {
 .runtime-status-card.mock .runtime-status-title strong,
 .runtime-status-card.fallback .runtime-status-title strong,
 .runtime-status-card.partial .runtime-status-title strong,
+.runtime-status-card.backlog .runtime-status-title strong,
 .runtime-status-card.indexing .runtime-status-title strong {
   background: #fff1cb;
   color: #7a5312;
@@ -480,6 +483,7 @@ p {
 .runtime-status-card.missing-config .runtime-status-title strong,
 .runtime-status-card.unavailable .runtime-status-title strong,
 .runtime-status-card.fail-closed .runtime-status-title strong,
+.runtime-status-card.blocked .runtime-status-title strong,
 .runtime-status-card.error .runtime-status-title strong {
   background: #ffe1dc;
   color: #9b382d;

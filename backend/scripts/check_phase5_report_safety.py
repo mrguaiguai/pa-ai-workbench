@@ -230,10 +230,12 @@ def _check_evidence_fields(path: Path, text: str) -> list[Issue]:
     if not _is_pass_report(text):
         return []
     issues: list[Issue] = []
-    if "PHASE5_REAL" not in text:
-        issues.append(_field_issue(path, "missing_marker", "PHASE5_REAL"))
+    expected_marker = _expected_report_marker(lower_name, text)
+    if expected_marker not in text:
+        issues.append(_field_issue(path, "missing_marker", expected_marker))
     if _has_nonzero_fail_count(text):
         issues.append(_field_issue(path, "nonzero_fail_count", "FAIL count must be zero"))
+    issues.extend(_check_unsafe_pass_evidence(path, lower_name, text))
 
     required = _required_fields_for_report(lower_name, text)
     for field in required:
@@ -244,6 +246,12 @@ def _check_evidence_fields(path: Path, text: str) -> list[Issue]:
         if field not in text:
             issues.append(_field_issue(path, f"missing_{field}", field))
     return issues
+
+
+def _expected_report_marker(lower_name: str, text: str) -> str:
+    if lower_name.startswith("weknora_first_") or "weknora-first" in text.lower():
+        return "WEKNORA_FIRST"
+    return "PHASE5_REAL"
 
 
 def _is_pass_report(text: str) -> bool:
@@ -258,7 +266,8 @@ def _has_nonzero_fail_count(text: str) -> bool:
 
 
 def _required_fields_for_report(lower_name: str, text: str) -> list[str]:
-    del text
+    if lower_name.startswith("weknora_first_") or "weknora-first" in text.lower():
+        return _required_fields_for_weknora_first_report(lower_name)
     if "frontend" in lower_name or "env" in lower_name:
         return []
     if "rag_24q" in lower_name or "knowledge_qa" in lower_name:
@@ -268,6 +277,53 @@ def _required_fields_for_report(lower_name: str, text: str) -> list[str]:
     if "upload_index" in lower_name:
         return ["source", "source_type", "evidence_id", "chunk_id"]
     return []
+
+
+def _required_fields_for_weknora_first_report(lower_name: str) -> list[str]:
+    common = ["live", "mock", "blocked", "backlog"]
+    if "rag_debug" in lower_name:
+        return [*common, "source", "source_type", "evidence_id", "chunk_id", "trace_id", "rank"]
+    if "document_rag" in lower_name:
+        return [*common, "source", "external_doc_id", "chunk"]
+    if "status_report_gates" in lower_name:
+        return [
+            *common,
+            "partial",
+            "/health",
+            "/api/status",
+            "/api/model/status",
+            "fixture-only",
+        ]
+    if "citation_contract" in lower_name:
+        return [*common, "source_type", "evidence_id", "chunk_id", "external_doc_id", "wiki_page_id"]
+    return common
+
+
+def _check_unsafe_pass_evidence(path: Path, lower_name: str, text: str) -> list[Issue]:
+    if not lower_name.startswith("weknora_first_"):
+        return []
+    lower_text = text.lower()
+    issues: list[Issue] = []
+    if "live" not in lower_text:
+        issues.append(_field_issue(path, "missing_live_evidence", "live"))
+    unsafe_patterns = {
+        "unsafe_fixture_only_pass": r"(?<!not )fixture-only\s+pass\s*(?:allowed|:|\|)",
+        "unsafe_mock_pass": r"(?<!not )mock\s+pass\s*(?:allowed|:|\|)",
+        "unsafe_cached_pass": r"(?<!not )(?:cached|old report)\s+pass\s*(?:allowed|:|\|)",
+        "unsafe_partial_pass": r"(?<!not )partial\s+pass\s*(?:allowed|:|\|)",
+    }
+    for code, pattern in unsafe_patterns.items():
+        if re.search(pattern, lower_text):
+            issues.append(
+                Issue(
+                    path=path,
+                    line_number=0,
+                    code=code,
+                    message="WeKnora-first PASS report appears to count unsafe evidence as PASS",
+                    excerpt="-",
+                )
+            )
+    return issues
 
 
 def _field_issue(path: Path, code: str, field: str) -> Issue:
@@ -289,13 +345,19 @@ def _run_self_test() -> int:
         bad.write_text(_bad_fixture_report(), encoding="utf-8")
         local_frontend = root / "PHASE5_REAL_FRONTEND_PASS_REPORT.md"
         local_frontend.write_text(_local_frontend_fixture_report(), encoding="utf-8")
+        weknora_good = root / "WEKNORA_FIRST_STATUS_REPORT_GATES.md"
+        weknora_good.write_text(_weknora_first_good_fixture_report(), encoding="utf-8")
+        weknora_bad = root / "WEKNORA_FIRST_RAG_DEBUG_BAD_REPORT.md"
+        weknora_bad.write_text(_weknora_first_bad_fixture_report(), encoding="utf-8")
 
         good_issues = _check_report(good)
         frontend_issues = _check_report(local_frontend)
+        weknora_good_issues = _check_report(weknora_good)
         bad_issues = _check_report(bad)
-        if good_issues or frontend_issues:
+        weknora_bad_issues = _check_report(weknora_bad)
+        if good_issues or frontend_issues or weknora_good_issues:
             print("Phase 5 report safety self-test failed: positive fixture rejected")
-            for issue in [*good_issues, *frontend_issues]:
+            for issue in [*good_issues, *frontend_issues, *weknora_good_issues]:
                 print(f"- {issue.code}: {issue.message}: {issue.excerpt}")
             return 1
         required_codes = {issue.code for issue in bad_issues}
@@ -304,6 +366,17 @@ def _run_self_test() -> int:
             print("Phase 5 report safety self-test failed: negative fixture missed issues")
             print(f"- expected subset: {sorted(expected_codes)}")
             print(f"- actual: {sorted(required_codes)}")
+            return 1
+        weknora_required_codes = {issue.code for issue in weknora_bad_issues}
+        weknora_expected_codes = {
+            "missing_live_evidence",
+            "missing_source",
+            "unsafe_fixture_only_pass",
+        }
+        if not weknora_expected_codes <= weknora_required_codes:
+            print("Phase 5 report safety self-test failed: WeKnora-first fixture missed issues")
+            print(f"- expected subset: {sorted(weknora_expected_codes)}")
+            print(f"- actual: {sorted(weknora_required_codes)}")
             return 1
     print("Phase 5 report safety self-test passed")
     return 0
@@ -330,14 +403,15 @@ def _good_fixture_report() -> str:
 
 
 def _bad_fixture_report() -> str:
-    return """# Phase 5 Real RAG 24Q PASS Report
+    fake_key = "sk-" + "fixturefixturefixture"
+    return f"""# Phase 5 Real RAG 24Q PASS Report
 
 | Field | Value |
 | --- | --- |
 | Report marker | PHASE5_REAL |
 | Result | PASS |
 | Debug URL | http://192.168.1.20:8080 |
-| API key | sk-fixturefixturefixture |
+| API key | {fake_key} |
 
 | Status | Count |
 | --- | ---: |
@@ -356,6 +430,46 @@ def _local_frontend_fixture_report() -> str:
 | Result | PASS |
 
 Screenshots were captured in `/private/tmp/p5-e4-frontend-screens/home.png`.
+"""
+
+
+def _weknora_first_good_fixture_report() -> str:
+    return """# WeKnora-First Status Report Gates
+
+| Field | Value |
+| --- | --- |
+| Report marker | WEKNORA_FIRST |
+| Result | PASS |
+| Evidence type | live API |
+
+| Gate | Evidence |
+| --- | --- |
+| /health | live backend health checked |
+| /api/status | live status exposes real, mock, partial, blocked, and backlog categories |
+| /api/model/status | live chat and embedding readiness checked separately |
+| fixture-only | not fixture-only PASS |
+| mock | mock evidence is rejected for PASS |
+| blocked | blocked states must be labelled |
+| backlog | backlog states must be labelled |
+| partial | partial evidence must not be PASS |
+"""
+
+
+def _weknora_first_bad_fixture_report() -> str:
+    return """# WeKnora-First RAG Debug PASS Report
+
+| Field | Value |
+| --- | --- |
+| Report marker | WEKNORA_FIRST |
+| Result | PASS |
+| Evidence type | fixture-only |
+| source_type | document_chunk |
+| evidence_id | document_chunk:fixture |
+| chunk_id | chunk-fixture |
+| trace_id | trace-fixture |
+| rank | 1 |
+
+fixture-only PASS allowed
 """
 
 

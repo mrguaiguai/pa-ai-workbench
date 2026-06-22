@@ -33,6 +33,8 @@ type RuntimeStatusKey =
   | "mock"
   | "fallback"
   | "partial"
+  | "blocked"
+  | "backlog"
   | "unavailable"
   | "missing_config"
   | "indexing"
@@ -94,6 +96,8 @@ function runtimeStatusLabel(status: RuntimeStatusKey) {
     mock: "mock 模式",
     fallback: "fallback 回退",
     partial: "partial 部分可用",
+    blocked: "blocked 阻塞",
+    backlog: "backlog 待办",
     unavailable: "unavailable 不可用",
     missing_config: "配置缺失",
     indexing: "索引中",
@@ -203,6 +207,8 @@ export function HomePage({ navigateTo }: HomePageProps) {
     const capabilities = backend?.backend_capabilities;
     const parity = capabilities?.parity_summary;
     const kbMapping = capabilities?.kb_mapping;
+    const statusGates = capabilities?.weknora_first_status_gates;
+    const gateCategories = statusGates?.status_categories;
     const statusCounts = parity?.status_counts ?? {};
     const partialCapabilityCount =
       countStatus(statusCounts, "partial") + (parity?.partial_capabilities.length ?? 0);
@@ -255,6 +261,8 @@ export function HomePage({ navigateTo }: HomePageProps) {
     const capabilityStatus = backendReady
       ? parity?.fail_closed
         ? "fail_closed"
+        : (gateCategories?.blocked.length ?? 0) > 0
+          ? "blocked"
         : partialCapabilityCount > 0
           ? "partial"
           : unsupportedCapabilityCount > 0 && !parity?.release_evidence
@@ -279,6 +287,12 @@ export function HomePage({ navigateTo }: HomePageProps) {
           `引用追踪：${parity.citation_trace}`,
           `Wiki 发布：${parity.wiki}`,
           `调试能力：${parity.debug}`,
+          `live：${gateCategories?.live.length ?? 0}`,
+          `mock：${gateCategories?.mock.length ?? 0}`,
+          `partial：${gateCategories?.partial.length ?? 0}`,
+          `blocked：${gateCategories?.blocked.length ?? 0}`,
+          `backlog：${gateCategories?.backlog.length ?? 0}`,
+          `fixture-only PASS：禁止`,
         ]
       : [status.state === "loading" ? "加载中" : status.error ?? "错误"];
     return [
