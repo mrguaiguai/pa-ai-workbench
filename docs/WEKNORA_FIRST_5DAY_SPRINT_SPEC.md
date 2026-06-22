@@ -883,3 +883,13 @@ A task is PASS only when all of these are true:
 Mock, demo, static UI, fixture-only, or historical cached evidence cannot complete this sprint.
 
 When a task is completed or blocked, update Section 4 in the same branch so the next conversation can recover project progress from this spec, `git log --oneline`, and `git status -sb`.
+
+## 14. Next Stage Entry
+
+The next stage continues in `docs/WEKNORA_NATIVE_EXPANSION_INTERNAL_PROD_SPEC.md`
+with the repo-local skill
+`.github/skills/pa-weknora-native-expansion/SKILL.md` and the outer workspace
+skill
+`/Users/mac/Downloads/WeKnora-main/.agents/skills/pa-weknora-native-expansion/SKILL.md`.
+Execute `WNX-*` tasks there without changing completed `WF-*` status rows
+unless a later verification proves a prior claim must be corrected.
