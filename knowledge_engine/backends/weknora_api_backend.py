@@ -735,6 +735,26 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if isinstance(item, dict)
         ]
 
+    def list_web_search_provider_types(self) -> list[dict]:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/web-search-providers/types")
+        items = self._unwrap_items(data)
+        return [
+            self._web_search_provider_type_safe_dict(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+    def list_web_search_providers(self) -> list[dict]:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/web-search-providers")
+        items = self._unwrap_items(data)
+        return [
+            self._web_search_provider_safe_dict(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+
     def create_agent_session(
         self,
         title: str,
@@ -1173,6 +1193,39 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "enabled": bool(item.get("enabled")),
             "transport_type": _optional_str(item.get("transport_type")),
             "is_builtin": bool(item.get("is_builtin")),
+            "credential_field_count": credential_field_count,
+            "configured_credential_field_count": configured_credential_field_count,
+            "credentials_configured": configured_credential_field_count > 0,
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _web_search_provider_type_safe_dict(item: dict) -> dict:
+        return {
+            "id": _optional_str(item.get("id")),
+            "name": _optional_str(item.get("name")),
+            "requires_api_key": bool(item.get("requires_api_key")),
+            "requires_engine_id": bool(item.get("requires_engine_id")),
+            "requires_base_url": bool(item.get("requires_base_url")),
+            "supports_proxy": bool(item.get("supports_proxy")),
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _web_search_provider_safe_dict(item: dict) -> dict:
+        credentials = item.get("credentials")
+        credential_field_count = 0
+        configured_credential_field_count = 0
+        if isinstance(credentials, dict):
+            for field in credentials.values():
+                if isinstance(field, dict):
+                    credential_field_count += 1
+                    if field.get("configured"):
+                        configured_credential_field_count += 1
+        return {
+            "id": _optional_str(item.get("id")),
+            "provider": _optional_str(item.get("provider")),
+            "is_default": bool(item.get("is_default")),
             "credential_field_count": credential_field_count,
             "configured_credential_field_count": configured_credential_field_count,
             "credentials_configured": configured_credential_field_count > 0,

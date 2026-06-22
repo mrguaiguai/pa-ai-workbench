@@ -14,6 +14,7 @@ import type { LucideIcon } from "lucide-react";
 import { ApiError, apiClient } from "../api/client";
 import type {
   NativeMcpOverviewResponse,
+  NativeWebSearchOverviewResponse,
   NativeWikiOverviewResponse,
   StatusResponse,
   Task,
@@ -82,27 +83,33 @@ type WeKnoraFirstStatusStripState =
       state: "loading";
       status: null;
       mcpOverview: null;
+      webSearchOverview: null;
       wikiOverview: null;
       error: null;
       mcpError: null;
+      webSearchError: null;
       wikiError: null;
     }
   | {
       state: "ready";
       status: StatusResponse;
       mcpOverview: NativeMcpOverviewResponse | null;
+      webSearchOverview: NativeWebSearchOverviewResponse | null;
       wikiOverview: NativeWikiOverviewResponse | null;
       error: null;
       mcpError: string | null;
+      webSearchError: string | null;
       wikiError: string | null;
     }
   | {
       state: "error";
       status: null;
       mcpOverview: null;
+      webSearchOverview: null;
       wikiOverview: null;
       error: string;
       mcpError: null;
+      webSearchError: null;
       wikiError: null;
     };
 
@@ -117,9 +124,11 @@ export function WeKnoraFirstStatusStrip({ page }: { page: string }) {
     state: "loading",
     status: null,
     mcpOverview: null,
+    webSearchOverview: null,
     wikiOverview: null,
     error: null,
     mcpError: null,
+    webSearchError: null,
     wikiError: null,
   });
 
@@ -129,8 +138,9 @@ export function WeKnoraFirstStatusStrip({ page }: { page: string }) {
       apiClient.getStatus(),
       apiClient.getNativeWikiOverview({ limit: 5 }),
       apiClient.getNativeMcpOverview({ limit: 5 }),
+      apiClient.getNativeWebSearchOverview({ limit: 5 }),
     ])
-      .then(([statusResult, wikiResult, mcpResult]) => {
+      .then(([statusResult, wikiResult, mcpResult, webSearchResult]) => {
         if (!isMounted) {
           return;
         }
@@ -139,9 +149,11 @@ export function WeKnoraFirstStatusStrip({ page }: { page: string }) {
             state: "error",
             status: null,
             mcpOverview: null,
+            webSearchOverview: null,
             wikiOverview: null,
             error: errorLabel(statusResult.reason),
             mcpError: null,
+            webSearchError: null,
             wikiError: null,
           });
           return;
@@ -150,9 +162,13 @@ export function WeKnoraFirstStatusStrip({ page }: { page: string }) {
           state: "ready",
           status: statusResult.value,
           mcpOverview: mcpResult.status === "fulfilled" ? mcpResult.value : null,
+          webSearchOverview:
+            webSearchResult.status === "fulfilled" ? webSearchResult.value : null,
           wikiOverview: wikiResult.status === "fulfilled" ? wikiResult.value : null,
           error: null,
           mcpError: mcpResult.status === "fulfilled" ? null : errorLabel(mcpResult.reason),
+          webSearchError:
+            webSearchResult.status === "fulfilled" ? null : errorLabel(webSearchResult.reason),
           wikiError: wikiResult.status === "fulfilled" ? null : errorLabel(wikiResult.reason),
         });
       })
@@ -162,9 +178,11 @@ export function WeKnoraFirstStatusStrip({ page }: { page: string }) {
             state: "error",
             status: null,
             mcpOverview: null,
+            webSearchOverview: null,
             wikiOverview: null,
             error: errorLabel(error),
             mcpError: null,
+            webSearchError: null,
             wikiError: null,
           });
         }
@@ -251,18 +269,24 @@ function statusStripChips(state: WeKnoraFirstStatusStripState): WeKnoraStatusChi
   const kbMapping = status.weknora.kb_mapping;
   const wikiStatus = state.wikiOverview?.status ?? (state.wikiError ? "blocked" : "unknown");
   const mcpStatus = state.mcpOverview?.status ?? (state.mcpError ? "blocked" : "unknown");
+  const webSearchStatus =
+    state.webSearchOverview?.status ?? (state.webSearchError ? "blocked" : "unknown");
   const backlogCount =
     (gates?.backlog.length ?? 0) +
     (kbMapping?.backlog.length ?? 0) +
     (state.wikiOverview?.surfaces.mutations?.status === "backlog" ? 1 : 0) +
-    (state.mcpOverview?.surfaces.mutations?.status === "backlog" ? 1 : 0);
+    (state.mcpOverview?.surfaces.mutations?.status === "backlog" ? 1 : 0) +
+    (state.webSearchOverview?.surfaces.mutations?.status === "backlog" ? 1 : 0);
   const blockedCount =
     (gates?.blocked.length ?? 0) +
     (kbMapping?.status === "blocked" ? 1 : 0) +
     (wikiStatus === "blocked" ? 1 : 0) +
-    (mcpStatus === "blocked" ? 1 : 0);
+    (mcpStatus === "blocked" ? 1 : 0) +
+    (webSearchStatus === "blocked" ? 1 : 0);
   const partialCount =
-    (gates?.partial.length ?? 0) + (mcpStatus === "partial" ? 1 : 0);
+    (gates?.partial.length ?? 0) +
+    (mcpStatus === "partial" ? 1 : 0) +
+    (webSearchStatus === "partial" ? 1 : 0);
 
   return [
     {
@@ -284,6 +308,11 @@ function statusStripChips(state: WeKnoraFirstStatusStripState): WeKnoraStatusChi
       label: "MCP native",
       value: mcpStatus,
       status: mcpStatus,
+    },
+    {
+      label: "Web search",
+      value: webSearchStatus,
+      status: webSearchStatus,
     },
     {
       label: "mock",
@@ -315,7 +344,12 @@ function statusStripChips(state: WeKnoraFirstStatusStripState): WeKnoraStatusChi
 
 function statusStripDetails(state: WeKnoraFirstStatusStripState) {
   if (state.state === "loading") {
-    return ["读取 /api/status", "读取 native Wiki overview", "读取 native MCP overview"];
+    return [
+      "读取 /api/status",
+      "读取 native Wiki overview",
+      "读取 native MCP overview",
+      "读取 native web search overview",
+    ];
   }
   if (state.state === "error") {
     return ["blocked：PA backend status unreachable", `原因：${state.error}`];
@@ -352,6 +386,18 @@ function statusStripDetails(state: WeKnoraFirstStatusStripState) {
   }
   if (state.mcpError) {
     details.push(`mcp blocked：${state.mcpError}`);
+  }
+  if (state.webSearchOverview) {
+    const providerTypes = state.webSearchOverview.surfaces.provider_types;
+    const configuredProviders = state.webSearchOverview.surfaces.configured_providers;
+    const agentqaDependency = state.webSearchOverview.surfaces.agentqa_dependency;
+    details.push(`web_search=${state.webSearchOverview.status}`);
+    details.push(`web_search types=${surfaceCount(providerTypes)}`);
+    details.push(`web_search providers=${surfaceCount(configuredProviders)}`);
+    details.push(`web_search AgentQA=${agentqaDependency?.status ?? "unknown"}`);
+  }
+  if (state.webSearchError) {
+    details.push(`web_search blocked：${state.webSearchError}`);
   }
   const blocked = gates?.blocked[0];
   if (blocked) {

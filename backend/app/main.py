@@ -11,6 +11,7 @@ from app.api.history import router as history_router
 from app.api.mcp import router as mcp_router
 from app.api.model import router as model_router
 from app.api.rag import router as rag_router
+from app.api.web_search import router as web_search_router
 from app.api.wiki import router as wiki_router
 from app.config import get_settings
 from app.database import init_db
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(mcp_router)
     app.include_router(model_router)
     app.include_router(rag_router)
+    app.include_router(web_search_router)
     app.include_router(wiki_router)
 
     @app.on_event("startup")

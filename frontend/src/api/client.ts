@@ -181,6 +181,22 @@ export type NativeMcpOverviewResponse = {
   >;
 };
 
+export type NativeWebSearchOverviewResponse = {
+  schema_version: string;
+  status: "live" | "partial" | "blocked" | "backlog" | string;
+  source: string;
+  warnings: string[];
+  surfaces: Record<
+    string,
+    {
+      status: "live" | "partial" | "blocked" | "backlog" | "optional" | string;
+      reason?: string;
+      count?: number;
+      [key: string]: unknown;
+    }
+  >;
+};
+
 export type ModelProviderStatus = {
   provider: string;
   model: string;
@@ -267,6 +283,10 @@ export type NativeWikiOverviewParams = {
 };
 
 export type NativeMcpOverviewParams = {
+  limit?: number;
+};
+
+export type NativeWebSearchOverviewParams = {
   limit?: number;
 };
 
@@ -715,6 +735,14 @@ function nativeMcpOverviewParams(params: NativeMcpOverviewParams = {}) {
   return searchParams;
 }
 
+function nativeWebSearchOverviewParams(params: NativeWebSearchOverviewParams = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.limit) {
+    searchParams.set("limit", String(params.limit));
+  }
+  return searchParams;
+}
+
 export const apiClient = {
   baseUrl: API_BASE_URL,
   getStatus: () => request<StatusResponse>("/api/status"),
@@ -729,6 +757,13 @@ export const apiClient = {
     const searchParams = nativeMcpOverviewParams(params);
     const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
     return request<NativeMcpOverviewResponse>(`/api/mcp/native/overview${suffix}`);
+  },
+  getNativeWebSearchOverview: (params: NativeWebSearchOverviewParams = {}) => {
+    const searchParams = nativeWebSearchOverviewParams(params);
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return request<NativeWebSearchOverviewResponse>(
+      `/api/web-search/native/overview${suffix}`,
+    );
   },
   listDocuments: (filters: DocumentListFilters = {}) => {
     const params = documentFilterParams(filters);
