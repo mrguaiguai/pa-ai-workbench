@@ -22,6 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.api import rag as rag_api  # noqa: E402
 from app.schemas import RagDebugRequest  # noqa: E402
+from app.services.rag_service import RetrievalContext  # noqa: E402
 from knowledge_engine.schemas import Evidence  # noqa: E402
 
 
@@ -38,15 +39,15 @@ class SmokeError(RuntimeError):
 
 
 def main() -> int:
-    original_retrieve = rag_api.retrieve_evidence
-    rag_api.retrieve_evidence = _fixture_retrieve
+    original_retrieve = rag_api.retrieve_evidence_with_context
+    rag_api.retrieve_evidence_with_context = _fixture_retrieve
     try:
         result = _run_smoke()
     except Exception as exc:  # noqa: BLE001
         print(f"RAG debug API smoke failed: {exc}", file=sys.stderr)
         return 1
     finally:
-        rag_api.retrieve_evidence = original_retrieve
+        rag_api.retrieve_evidence_with_context = original_retrieve
 
     print("RAG debug API smoke passed (fixture)")
     print(f"- trace id: {result['trace_id']}")
@@ -88,6 +89,12 @@ def _run_smoke() -> dict[str, Any]:
     _assert(FIXTURE_TOKEN not in str(payload), "token leaked")
     _assert("raw_response" not in item["metadata"], "raw response metadata leaked")
     _assert("weknora_knowledge_base_id" in item["metadata"], "safe metadata missing")
+    _assert(
+        item["metadata"]["weknora_search_endpoint"] == "/api/v1/knowledge-search",
+        "native endpoint missing",
+    )
+    _assert(item["metadata"]["weknora_search_native"] is True, "native search flag missing")
+    _assert(item["metadata"]["weknora_native_rank"] == 1, "native rank missing")
 
     return {
         "trace_id": payload["trace_id"],
@@ -98,30 +105,41 @@ def _run_smoke() -> dict[str, Any]:
     }
 
 
-def _fixture_retrieve(query: str, filters: dict | None = None, top_k: int = 8) -> list[Evidence]:
+def _fixture_retrieve(
+    query: str,
+    filters: dict | None = None,
+    top_k: int = 8,
+) -> RetrievalContext:
     _assert(query == "synthetic policy debug query", "handler did not pass query")
     _assert((filters or {}).get("source_type") == "document_chunk", "handler did not pass filters")
     _assert(top_k == 3, "handler did not pass top_k")
-    return [
-        Evidence(
-            document_id=None,
-            external_doc_id="fixture-doc-001",
-            chunk_id="fixture-chunk-001",
-            title="Synthetic Fixture Evidence",
-            text=LONG_BODY,
-            score=1.25,
-            source="weknora_api",
-            metadata={
-                "weknora_knowledge_base_id": "fixture-kb",
-                "weknora_knowledge_id": "fixture-doc-001",
-                "weknora_chunk_index": 4,
-                "raw_response": {"token": FIXTURE_TOKEN, "body": LONG_BODY},
-                "service_token": FIXTURE_TOKEN,
-            },
-            evidence_id="document_chunk:fixture-chunk-001",
-            source_type="document_chunk",
-        )
-    ]
+    return RetrievalContext(
+        items=[
+            Evidence(
+                document_id=None,
+                external_doc_id="fixture-doc-001",
+                chunk_id="fixture-chunk-001",
+                title="Synthetic Fixture Evidence",
+                text=LONG_BODY,
+                score=1.25,
+                source="weknora_api",
+                metadata={
+                    "weknora_knowledge_base_id": "fixture-kb",
+                    "weknora_knowledge_id": "fixture-doc-001",
+                    "weknora_chunk_index": 4,
+                    "weknora_search_endpoint": "/api/v1/knowledge-search",
+                    "weknora_search_native": True,
+                    "weknora_native_rank": 1,
+                    "raw_response": {"token": FIXTURE_TOKEN, "body": LONG_BODY},
+                    "service_token": FIXTURE_TOKEN,
+                },
+                evidence_id="document_chunk:fixture-chunk-001",
+                source_type="document_chunk",
+            )
+        ],
+        filters=filters or {},
+        warnings=[],
+    )
 
 
 def _assert(condition: bool, message: str) -> None:

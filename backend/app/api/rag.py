@@ -39,6 +39,7 @@ DEBUG_METADATA_ALLOWLIST = {
     "business_area",
     "document_type",
     "source",
+    "evidence_id",
     "score_semantics",
     "citation_source_type",
     "weknora_knowledge_base_id",
@@ -53,6 +54,9 @@ DEBUG_METADATA_ALLOWLIST = {
     "weknora_parent_chunk_id",
     "weknora_wiki_page_id",
     "weknora_wiki_page_slug",
+    "weknora_search_endpoint",
+    "weknora_search_native",
+    "weknora_native_rank",
     "slug",
     "page_type",
     "retrieval_debug_trace",
@@ -110,8 +114,8 @@ def retrieve_rag_debug(request: RagDebugRequest) -> RagDebugResponse:
     )
     debug_trace = retrieval_debug_trace(retrieval_options)
     requested_source_type = _optional_str(
-        request.filters.get("source_scope")
-        or request.filters.get("source_type")
+        request.filters.get("source_type")
+        or request.filters.get("source_scope")
         or request.filters.get("source")
         or request.filters.get("sourceType")
     )

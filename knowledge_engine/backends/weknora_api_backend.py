@@ -250,8 +250,8 @@ class WeKnoraApiBackend(KnowledgeEngine):
         retrieval_metadata = self._retrieval_metadata(filters)
         knowledge_scope = _knowledge_scope_filter(filters)
         evidence_items = [
-            self._to_evidence(item, retrieval_metadata)
-            for item in items
+            self._to_evidence(item, retrieval_metadata, native_rank=native_rank)
+            for native_rank, item in enumerate(items, start=1)
             if isinstance(item, dict)
         ]
         if knowledge_scope:
@@ -742,13 +742,21 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "retrieval_options": options,
             "retrieval_debug_trace": retrieval_debug_trace(options),
             "weknora_retrieval_options_forwarded": bool(options_payload),
+            "weknora_search_endpoint": "/api/v1/knowledge-search",
+            "weknora_search_native": True,
         }
 
     @staticmethod
-    def _to_evidence(item: dict, retrieval_metadata: dict | None = None) -> Evidence:
+    def _to_evidence(
+        item: dict,
+        retrieval_metadata: dict | None = None,
+        native_rank: int | None = None,
+    ) -> Evidence:
         metadata = WeKnoraApiBackend._search_result_metadata(item)
         if retrieval_metadata:
             metadata.update(retrieval_metadata)
+        if native_rank is not None:
+            metadata["weknora_native_rank"] = native_rank
         source_type = WeKnoraApiBackend._source_type(item, metadata)
         chunk_id = None if source_type == "wiki_page" else item.get("chunk_id") or item.get("id")
         wiki_page_id = (
