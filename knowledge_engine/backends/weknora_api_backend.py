@@ -399,6 +399,105 @@ class WeKnoraApiBackend(KnowledgeEngine):
             raise KnowledgeBackendUnavailableError("WeKnora Wiki update returned invalid JSON")
         return self._to_wiki_page(data, slug)
 
+    def list_agents(self) -> list[dict]:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/agents")
+        items = self._unwrap_items(data)
+        return [item for item in items if isinstance(item, dict)]
+
+    def create_agent_session(
+        self,
+        title: str,
+        description: str | None = None,
+    ) -> str:
+        self._require_configured()
+        payload = {"title": title, "description": description or ""}
+        data = self._request_json("POST", "/api/v1/sessions", payload)
+        data = self._unwrap_data(data)
+        if not isinstance(data, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora session create returned invalid JSON")
+        session_id = _optional_str(data.get("id"))
+        if not session_id:
+            raise KnowledgeBackendUnavailableError("WeKnora session create returned no session id")
+        return session_id
+
+    def run_agent_qa(
+        self,
+        *,
+        session_id: str,
+        query: str,
+        agent_id: str,
+        knowledge_base_ids: list[str] | None = None,
+        knowledge_ids: list[str] | None = None,
+        web_search_enabled: bool = False,
+        disable_title: bool = True,
+    ) -> dict:
+        self._require_configured()
+        payload = {
+            "query": query,
+            "agent_enabled": True,
+            "agent_id": agent_id,
+            "knowledge_base_ids": knowledge_base_ids or [],
+            "knowledge_ids": knowledge_ids or [],
+            "web_search_enabled": web_search_enabled,
+            "disable_title": disable_title,
+        }
+        events = self._request_sse_json(
+            "POST",
+            f"/api/v1/agent-chat/{quote(session_id, safe='')}",
+            payload,
+        )
+        answer_parts: list[str] = []
+        reference_items: list[dict] = []
+        event_counts: dict[str, int] = {}
+        errors: list[str] = []
+        tool_names: list[str] = []
+        for event_item in events:
+            response_type = str(event_item.get("response_type") or "unknown")
+            event_counts[response_type] = event_counts.get(response_type, 0) + 1
+            if response_type == "answer":
+                answer_parts.append(str(event_item.get("content") or ""))
+            elif response_type == "references":
+                references = event_item.get("knowledge_references")
+                if isinstance(references, list):
+                    reference_items.extend(
+                        item for item in references if isinstance(item, dict)
+                    )
+            elif response_type == "tool_call":
+                data = event_item.get("data")
+                if isinstance(data, dict):
+                    tool_name = _optional_str(data.get("tool_name"))
+                    if tool_name and tool_name not in tool_names:
+                        tool_names.append(tool_name)
+            elif response_type == "error":
+                error_text = _optional_str(event_item.get("content"))
+                if error_text:
+                    errors.append(_shorten(_redact_sensitive_text(error_text), 240))
+
+        evidence_items = [
+            self._to_evidence(
+                item,
+                {
+                    "weknora_agentqa_native": True,
+                    "weknora_agentqa_agent_id": agent_id,
+                    "weknora_agentqa_session_id": session_id,
+                    "weknora_agentqa_event_source": "references",
+                },
+                native_rank=native_rank,
+            )
+            for native_rank, item in enumerate(reference_items, start=1)
+        ]
+        return {
+            "session_id": session_id,
+            "agent_id": agent_id,
+            "answer": "".join(answer_parts),
+            "evidence_items": evidence_items,
+            "event_counts": event_counts,
+            "errors": errors,
+            "tool_names": tool_names,
+            "reference_count": len(reference_items),
+        }
+
     def _request_json(self, method: str, path: str, payload: dict | None = None) -> dict | list:
         body = None
         headers = {"Accept": "application/json"}
@@ -435,6 +534,69 @@ class WeKnoraApiBackend(KnowledgeEngine):
             method="POST",
         )
         return self._perform_json_request(request, operation=f"POST {path}")
+
+    def _request_sse_json(
+        self,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+    ) -> list[dict]:
+        body = None
+        headers = {"Accept": "text/event-stream"}
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        self._apply_auth_headers(headers)
+        request = Request(
+            url=f"{self.base_url}{path}",
+            data=body,
+            headers=headers,
+            method=method,
+        )
+        operation = _sanitize_operation(f"{method} {path}")
+        events: list[dict] = []
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    payload_text = line[5:].strip()
+                    if not payload_text or payload_text == "[DONE]":
+                        continue
+                    try:
+                        event_payload = json.loads(payload_text)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(event_payload, dict):
+                        events.append(event_payload)
+                        if event_payload.get("response_type") == "complete":
+                            break
+        except HTTPError as exc:
+            body_text = exc.read().decode("utf-8", errors="replace")
+            raise _http_error_to_weknora_error(exc.code, body_text, operation) from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise WeKnoraTimeoutError(
+                "WeKnora SSE request timed out",
+                error_code="weknora_timeout",
+                operation=operation,
+                retryable=True,
+            ) from exc
+        except URLError as exc:
+            if _url_error_is_timeout(exc):
+                raise WeKnoraTimeoutError(
+                    "WeKnora SSE request timed out",
+                    error_code="weknora_timeout",
+                    operation=operation,
+                    retryable=True,
+                ) from exc
+            raise WeKnoraNetworkError(
+                "WeKnora SSE request failed",
+                error_code="weknora_network_error",
+                operation=operation,
+                retryable=True,
+            ) from exc
+        return events
 
     def _perform_json_request(self, request: Request, operation: str) -> dict | list:
         attempts = self.retry_attempts + 1
@@ -1201,6 +1363,13 @@ def _shorten(value: str, limit: int = 240) -> str:
     if len(collapsed) <= limit:
         return collapsed
     return collapsed[: limit - 3] + "..."
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _elapsed_ms(started: float) -> int:

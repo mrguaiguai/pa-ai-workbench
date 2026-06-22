@@ -99,7 +99,7 @@ Task selection rules:
 | WF-P0-03 | P0 | RAG debug native alignment | [x] | Live PA RAG debug path called native WeKnora search and returned traceable evidence/rank/trace metadata. |
 | WF-P0-04 | P0 | Truthful status and report gates | [x] | Live API/browser status surfaces expose real/native/mock/fallback/partial/blocked/backlog; report checker gates unsafe PASS evidence. |
 | WF-P0-05 | P0 | Evidence/citation contract preservation | [x] | Native integrations preserve `source`, `source_type`, `evidence_id`, native ids, and locator fields. |
-| WF-P1-01 | P1 | WeKnora native AgentQA/custom Agent | [ ] | PA calls native AgentQA/custom Agent and stores answer/history/citation mapping or explicit citation blocker. |
+| WF-P1-01 | P1 | WeKnora native AgentQA/custom Agent | [x] | PA calls native AgentQA/custom Agent and stores answer/history with citation mapping or explicit citation blocker. |
 | WF-P1-02 | P1 | Native Wiki browse/search/index/graph/lint | [ ] | PA reads or links native Wiki surfaces with honest blocked/backlog labels. |
 | WF-P1-03 | P1 | Knowledge base selection and mapping | [ ] | Active workspace/KB mapping is visible and validated through real config/API state. |
 | WF-P1-04 | P1 | Frontend integration polish | [ ] | Browser validation covers the six PA pages and visible WeKnora-first states. |
@@ -118,6 +118,7 @@ Task selection rules:
 | 2026-06-22 | WF-P0-03 | [x] | `live`: PA RAG debug retrieved WeKnora evidence for `external_doc_id=257afb30-83f8-4f32-ba4e-a216d319a7fd` with `source=weknora_api`, `source_type=document_chunk`, `evidence_id=document_chunk:7caecfe8-619e-44e2-930d-814fb3e29fb7`, rank/native rank, and trace stages. | this commit on `weknora-first-mvp` | Report: `docs/WEKNORA_FIRST_RAG_DEBUG_LIVE_REPORT.md`; fixture smokes only guard redaction/validation and are not the PASS evidence. |
 | 2026-06-22 | WF-P0-04 | [x] | `live API/browser`: temporary current-worktree backend exposed `weknora_first_status_gates`; homepage showed live/mock/partial/blocked/backlog and fixture-only PASS rejection; checker self-test and report scan passed. | this commit on `weknora-first-mvp` | Report: `docs/WEKNORA_FIRST_STATUS_REPORT_GATES.md`; port 8000 service config was not modified, and validation used temporary localhost ports 8017/5177. |
 | 2026-06-22 | WF-P0-05 | [x] | `audit/map + focused smoke`: `docs/WEKNORA_FIRST_CITATION_CONTRACT.md` defines required fields, per-source mapping, metadata allowlist, fail-closed behavior, locator expectations, and blocked/backlog rules; citation smoke preserved document/Wiki evidence ids, persisted 2 citations, located 2 citations, and passed 3 fail-closed checks. | this commit on `weknora-first-mvp` | No live path or frontend rendering code changed; prior P0 live reports remain supporting context, and fixture smoke is not counted as standalone live capability PASS. |
+| 2026-06-22 | WF-P1-01 | [x] | `live API + explicit citation blocker`: PA adapter called native `/api/v1/agent-chat/{session_id}` with `builtin-wiki-researcher`, stored a completed PA output, saw event types `agent_query,answer,complete,tool_call,tool_result`, and recorded `native_reference_count=0`, `saved_citations=0`, `CITATION_BLOCKED`. | this commit on `weknora-first-mvp` | Report: `docs/WEKNORA_FIRST_AGENTQA_LIVE_REPORT.md`; answer/history adapter slice is PASS, while citation mapping is blocked because native AgentQA emitted no traceable `references` event. |
 
 ### 4.3 Status Update Rules
 
@@ -379,6 +380,49 @@ P1 tasks stay intentionally lightweight until P0 is complete. When a P1 task is 
 | WF-P1-02 | Native Wiki browse/search/index/graph/lint | Let PA show or link to WeKnora native Wiki capabilities while preserving PA navigation. |
 | WF-P1-03 | Knowledge base selection and mapping | Make active workspace/KB selection more visible and less dependent on hidden config assumptions. |
 | WF-P1-04 | Frontend integration polish | Update pages to show WeKnora-first state, blocked/backlog labels, and native jump targets. |
+
+#### WF-P1-01: WeKnora native AgentQA/custom Agent
+
+目标：
+Add the smallest PA adapter entry for native WeKnora AgentQA/custom Agent while preserving PA output/history and citation fail-closed behavior.
+
+范围：
+Call native WeKnora AgentQA through `POST /api/v1/agent-chat/{session_id}` after creating a native session, parse SSE answer/reference events, store the answer through PA output/history, and save citations only when native references are traceable. This task does not add frontend AgentQA UI or claim citation PASS when native references are absent.
+
+输入：
+Native WeKnora session/custom Agent/AgentQA router, handler, service, and stream types; PA `WeKnoraApiBackend`; PA output/history services; citation builder/checker contract from `WF-P0-05`.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_AGENTQA_LIVE_REPORT.md`.
+
+可修改文件范围：
+`knowledge_engine/backends/weknora_api_backend.py`, focused native AgentQA smoke script, the AgentQA live report, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not invent fake `source_type`, `evidence_id`, `chunk_id`, `external_doc_id`, or `wiki_page_id` values. Do not treat missing native references as citation PASS. Do not broaden this slice into frontend integration, Agent configuration UI, MCP, web search, or vector-store admin work.
+
+验收标准：
+Focused validation calls live native AgentQA/custom Agent, receives a non-empty live answer stream, stores a completed PA output/history record, and either saves traceable citations or records an explicit citation blocker.
+
+推荐验证命令/API/browser check：
+
+```bash
+backend/.venv/bin/python -m py_compile knowledge_engine/backends/weknora_api_backend.py backend/scripts/smoke_weknora_agentqa_native_live.py
+backend/.venv/bin/python backend/scripts/smoke_weknora_agentqa_native_live.py
+backend/.venv/bin/python backend/scripts/check_phase5_report_safety.py docs/WEKNORA_FIRST_AGENTQA_LIVE_REPORT.md
+rg -n "AgentQA|agent-chat|CITATION_BLOCKED|source_type|evidence_id|live|mock|blocked|backlog" docs/WEKNORA_FIRST_AGENTQA_LIVE_REPORT.md
+```
+
+Browser check: not required for this slice because no frontend files changed.
+
+PASS 证据要求：
+PASS requires current live PA + WeKnora AgentQA evidence for the adapter/history slice. Citation mapping can count only when native references include traceable fields; otherwise the report must mark citation mapping as blocked.
+
+blocked/backlog 判定：
+Mark citation mapping blocked if native AgentQA emits no `references` event or lacks required citation identifiers. Keep frontend AgentQA integration and richer custom Agent selection as backlog unless selected as a later `WF-*` task.
+
+状态字段：
+Status source is Section 4.1 row `WF-P1-01`; update it only after validation or a real blocked/backlog decision.
 
 ### P2
 
