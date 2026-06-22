@@ -415,6 +415,7 @@ class WeKnoraStatus(BaseModel):
     kb_configured: bool
     health_status: str | None = None
     message: str | None = None
+    kb_mapping: dict[str, Any] = Field(default_factory=dict)
 
 
 class StatusResponse(BaseModel):

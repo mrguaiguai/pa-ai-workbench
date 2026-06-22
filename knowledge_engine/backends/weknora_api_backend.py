@@ -151,6 +151,58 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "source": "weknora_api",
         }
 
+    def active_kb_target(self) -> dict:
+        target = self.kb_resolver.resolve_one({}, operation="status")
+        return {
+            "workspace_id": target.workspace_id,
+            "kb_id": target.kb_id,
+            "mapping_name": target.mapping_name,
+            "selection_source": target.selection_source,
+            "default_used": target.default_used,
+            "source": "weknora_api",
+        }
+
+    def get_workspace(self, workspace_id: str | None = None) -> dict:
+        self._require_configured()
+        resolved_workspace_id = str(workspace_id or self.workspace_id or "").strip()
+        if not resolved_workspace_id:
+            raise KnowledgeBackendUnavailableError("WEKNORA_WORKSPACE_ID is not configured")
+        data = self._request_json(
+            "GET",
+            f"/api/v1/tenants/{quote(resolved_workspace_id, safe='')}",
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora workspace returned invalid JSON")
+        return {
+            "id": _optional_str(payload.get("id")) or resolved_workspace_id,
+            "name": _optional_str(payload.get("name") or payload.get("title")),
+            "source": "weknora_api",
+        }
+
+    def get_knowledge_base(self, kb_id: str | None = None) -> dict:
+        self._require_configured()
+        resolved_kb_id = str(kb_id or self.default_kb_id or "").strip()
+        if not resolved_kb_id:
+            raise KnowledgeBackendUnavailableError("WEKNORA_DEFAULT_KB_ID is not configured")
+        data = self._request_json(
+            "GET",
+            f"/api/v1/knowledge-bases/{quote(resolved_kb_id, safe='')}",
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora knowledge base returned invalid JSON")
+        return {
+            "id": _optional_str(payload.get("id")) or resolved_kb_id,
+            "name": _optional_str(payload.get("name") or payload.get("title")),
+            "type": _optional_str(payload.get("type")),
+            "is_temporary": bool(payload.get("is_temporary")),
+            "knowledge_count": _optional_int(payload.get("knowledge_count")),
+            "chunk_count": _optional_int(payload.get("chunk_count")),
+            "is_processing": bool(payload.get("is_processing")),
+            "source": "weknora_api",
+        }
+
     def upload_document(self, file_path: str, metadata: dict) -> KnowledgeDocument:
         self._require_configured()
         target = self.kb_resolver.resolve_one(metadata, operation="upload_document")
