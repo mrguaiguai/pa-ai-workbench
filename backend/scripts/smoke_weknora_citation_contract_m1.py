@@ -1,8 +1,9 @@
 """Contract-check WeKnora Evidence -> Citation traceability.
 
-This fixture test covers P3-M1-B4:
+This fixture test covers P3-M1-B4 and WF-P0-05:
 - document_chunk evidence can become a traceable citation.
 - wiki_page evidence can become a traceable citation through metadata binding.
+- persisted citations can be located through PA document/Wiki routes.
 - incomplete non-mock evidence fails closed.
 """
 
@@ -30,6 +31,11 @@ from agent.schemas import Citation as AgentCitation  # noqa: E402
 from agent.tools.citation_checker import CitationChecker  # noqa: E402
 from app.services.generation_service import create_output_with_citations  # noqa: E402
 from app.services.generation_service import create_task  # noqa: E402
+from app.models import Document  # noqa: E402
+from app.models import DocumentChunk  # noqa: E402
+from app.models import WikiPage  # noqa: E402
+from app.schemas import CitationLocateRequest  # noqa: E402
+from app.services.citation_locator_service import locate_citation  # noqa: E402
 from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend  # noqa: E402
 from knowledge_engine.citations import CitationBuilder  # noqa: E402
 from knowledge_engine.citations import CitationBindingError  # noqa: E402
@@ -50,6 +56,7 @@ def main() -> int:
     print(f"- document evidence id: {result['document_evidence_id']}")
     print(f"- wiki evidence id: {result['wiki_evidence_id']}")
     print(f"- saved citations: {result['saved_citations']}")
+    print(f"- located citations: {result['located_citations']}")
     print(f"- fail-closed checks: {result['fail_closed_checks']}")
     return 0
 
@@ -152,6 +159,7 @@ def _run_contract_smoke() -> dict[str, Any]:
         "document_evidence_id": document_evidence.evidence_id,
         "wiki_evidence_id": wiki_evidence.evidence_id,
         "saved_citations": saved_count,
+        "located_citations": saved_count,
         "fail_closed_checks": fail_closed_checks,
     }
 
@@ -180,6 +188,7 @@ def _assert_generation_service_persists(
         engine = create_engine(f"sqlite:///{Path(temp_dir) / 'smoke.db'}")
         SQLModel.metadata.create_all(engine)
         with Session(engine) as session:
+            _seed_locator_targets(session)
             task = create_task(session=session, task_type="knowledge_qa", title="fixture")
             _, citations = create_output_with_citations(
                 session=session,
@@ -193,7 +202,55 @@ def _assert_generation_service_persists(
             )
             if len(citations) != 2:
                 raise SmokeError(f"expected 2 saved citations, got {len(citations)}")
+            located = 0
+            for citation in citations:
+                location = locate_citation(
+                    session=session,
+                    request=CitationLocateRequest(id=citation.id),
+                )
+                if not location.located:
+                    raise SmokeError(f"citation was not locatable: {location.message}")
+                if location.target_type not in {"document_chunk", "wiki_page"}:
+                    raise SmokeError(f"unexpected locator target: {location.target_type}")
+                located += 1
+            if located != 2:
+                raise SmokeError(f"expected 2 located citations, got {located}")
             return len(citations)
+
+
+def _seed_locator_targets(session: Session) -> None:
+    document = Document(
+        id="doc-policy-001",
+        title="Fixture Policy",
+        knowledge_backend="weknora_api",
+        external_doc_id="wk-doc-001",
+        status="indexed",
+    )
+    chunk = DocumentChunk(
+        id="chunk-policy-001",
+        document_id=document.id,
+        external_doc_id=document.external_doc_id,
+        chunk_index=2,
+        title="Fixture Policy",
+        content="sanitized policy evidence",
+        content_hash="fixture-policy-hash",
+        token_count=3,
+        char_count=25,
+        source="weknora_api",
+        embedding_status="indexed",
+    )
+    wiki_page = WikiPage(
+        id="wiki-page-001",
+        slug="fixture-wiki",
+        title="Fixture Wiki",
+        content_markdown="sanitized wiki evidence",
+        status="published",
+        embedding_status="indexed",
+    )
+    session.add(document)
+    session.add(chunk)
+    session.add(wiki_page)
+    session.commit()
 
 
 def _to_generation_citation(citation: AgentCitation) -> dict[str, Any]:
