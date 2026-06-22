@@ -26,6 +26,7 @@ from app.services.wiki_service import create_wiki_draft_from_output
 from app.services.wiki_service import create_wiki_page_record
 from app.services.wiki_service import index_wiki_page_record
 from app.services.wiki_service import list_wiki_citation_records
+from app.services.wiki_service import native_wiki_overview
 from app.services.wiki_service import page_metadata
 from app.services.wiki_service import page_source_citation_ids
 from app.services.wiki_service import page_source_document_ids
@@ -45,6 +46,15 @@ from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
 
 router = APIRouter(prefix="/api/wiki", tags=["wiki"])
+
+
+@router.get("/native/overview")
+def native_wiki_overview_api(
+    kb_id: str | None = None,
+    query: str = Query(default=""),
+    limit: int = Query(default=10, ge=1, le=20),
+) -> dict[str, Any]:
+    return native_wiki_overview(kb_id=kb_id, query=query, limit=limit)
 
 
 @router.get("/search", response_model=WikiSearchResponse)

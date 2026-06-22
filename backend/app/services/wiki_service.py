@@ -487,6 +487,217 @@ def read_wiki_page(
     return engine.read_wiki_page(slug=slug, kb_id=kb_id)
 
 
+def native_wiki_overview(
+    kb_id: str | None = None,
+    query: str = "",
+    limit: int = 10,
+) -> dict[str, Any]:
+    settings = get_settings()
+    resolved_kb_id = str(kb_id or settings.weknora_default_kb_id or "").strip()
+    overview: dict[str, Any] = {
+        "source": settings.knowledge_backend,
+        "kb_id": resolved_kb_id,
+        "status": "blocked",
+        "query": query.strip(),
+        "surfaces": {},
+        "warnings": [],
+    }
+    if settings.knowledge_backend != "weknora_api":
+        overview["warnings"].append("blocked: KNOWLEDGE_BACKEND is not weknora_api")
+        overview["surfaces"]["native_wiki"] = {
+            "status": "blocked",
+            "reason": "weknora_api backend is required for native Wiki overview",
+        }
+        return overview
+    if not resolved_kb_id:
+        overview["source"] = "weknora_api"
+        overview["warnings"].append("blocked: no active WeKnora knowledge base id")
+        overview["surfaces"]["native_wiki"] = {
+            "status": "blocked",
+            "reason": "WEKNORA_DEFAULT_KB_ID or kb_id is required",
+        }
+        return overview
+
+    overview["source"] = "weknora_api"
+    backend = _weknora_backend(settings)
+    page_limit = max(min(limit, 20), 1)
+    required_blockers: list[str] = []
+    optional_blockers: list[str] = []
+
+    def capture(
+        name: str,
+        fn,
+        *,
+        required: bool,
+    ) -> Any | None:
+        try:
+            value = fn()
+        except KnowledgeBackendUnavailableError as exc:
+            blocker = f"{name}: {exc.error_code}"
+            overview["surfaces"][name] = {
+                "status": "blocked",
+                "reason": blocker,
+            }
+            overview["warnings"].append(f"blocked: {blocker}")
+            if required:
+                required_blockers.append(blocker)
+            else:
+                optional_blockers.append(blocker)
+            return None
+        overview["surfaces"][name] = {"status": "live"}
+        return value
+
+    pages = capture(
+        "pages",
+        lambda: backend.list_wiki_pages(kb_id=resolved_kb_id, page_size=page_limit),
+        required=True,
+    )
+    first_page = None
+    if isinstance(pages, dict):
+        page_items = [item for item in pages.get("pages") or [] if isinstance(item, dict)]
+        first_page = page_items[0] if page_items else None
+        overview["surfaces"]["pages"].update(
+            {
+                "count": len(page_items),
+                "total": pages.get("total"),
+                "items": page_items[:5],
+            }
+        )
+        if not first_page:
+            required_blockers.append("pages: no native Wiki pages returned")
+            overview["warnings"].append("blocked: pages returned no native Wiki page to read")
+
+    search_query = query.strip()
+    if not search_query and isinstance(first_page, dict):
+        search_query = str(first_page.get("title") or first_page.get("slug") or "").strip()
+    if search_query:
+        search_items = capture(
+            "search",
+            lambda: backend.search_wiki(search_query, kb_id=resolved_kb_id, limit=page_limit),
+            required=True,
+        )
+        if isinstance(search_items, list):
+            overview["surfaces"]["search"].update(
+                {
+                    "query": search_query,
+                    "count": len(search_items),
+                    "items": [_wiki_summary_safe_dict(item) for item in search_items[:5]],
+                }
+            )
+    else:
+        required_blockers.append("search: no safe query available")
+        overview["surfaces"]["search"] = {
+            "status": "blocked",
+            "reason": "no native Wiki page or query available",
+        }
+
+    read_slug = ""
+    if isinstance(first_page, dict):
+        read_slug = str(first_page.get("slug") or "").strip()
+    if read_slug:
+        read_page = capture(
+            "read",
+            lambda: backend.read_wiki_page(read_slug, kb_id=resolved_kb_id),
+            required=True,
+        )
+        if isinstance(read_page, WikiPage):
+            overview["surfaces"]["read"].update(_wiki_page_safe_dict(read_page))
+    else:
+        required_blockers.append("read: no native Wiki slug available")
+        overview["surfaces"]["read"] = {
+            "status": "blocked",
+            "reason": "no native Wiki slug available",
+        }
+
+    index = capture(
+        "index",
+        lambda: backend.get_wiki_index(kb_id=resolved_kb_id, limit=page_limit),
+        required=True,
+    )
+    if isinstance(index, dict):
+        groups = [item for item in index.get("groups") or [] if isinstance(item, dict)]
+        overview["surfaces"]["index"].update(
+            {
+                "group_count": len(groups),
+                "entry_count": sum(len(group.get("items") or []) for group in groups),
+                "groups": groups[:5],
+                "intro_present": bool(index.get("intro_present")),
+            }
+        )
+
+    stats = capture(
+        "stats",
+        lambda: backend.get_wiki_stats(kb_id=resolved_kb_id),
+        required=True,
+    )
+    if isinstance(stats, dict):
+        overview["surfaces"]["stats"].update(
+            {
+                "total_pages": stats.get("total_pages"),
+                "pages_by_type": stats.get("pages_by_type"),
+                "total_links": stats.get("total_links"),
+                "orphan_count": stats.get("orphan_count"),
+                "pending_tasks": stats.get("pending_tasks"),
+                "pending_issues": stats.get("pending_issues"),
+                "is_active": stats.get("is_active"),
+            }
+        )
+
+    graph = capture(
+        "graph",
+        lambda: backend.get_wiki_graph(kb_id=resolved_kb_id, limit=page_limit),
+        required=False,
+    )
+    if isinstance(graph, dict):
+        overview["surfaces"]["graph"].update(
+            {
+                "nodes_count": graph.get("nodes_count"),
+                "edges_count": graph.get("edges_count"),
+                "meta": graph.get("meta"),
+            }
+        )
+
+    lint = capture(
+        "lint",
+        lambda: backend.get_wiki_lint(kb_id=resolved_kb_id),
+        required=False,
+    )
+    if isinstance(lint, dict):
+        overview["surfaces"]["lint"].update(
+            {
+                "health_score": lint.get("health_score"),
+                "issue_count": lint.get("issue_count"),
+                "sample_issues": lint.get("sample_issues") or [],
+            }
+        )
+
+    issues = capture(
+        "issues",
+        lambda: backend.list_wiki_issues(kb_id=resolved_kb_id),
+        required=False,
+    )
+    if isinstance(issues, list):
+        overview["surfaces"]["issues"].update(
+            {
+                "count": len(issues),
+                "items": issues[:5],
+            }
+        )
+
+    overview["surfaces"]["mutations"] = {
+        "status": "backlog",
+        "items": ["rebuild-links", "auto-fix", "issue-status-update"],
+        "reason": "WF-P1-02 is read-only; native Wiki mutations stay deferred.",
+    }
+    if required_blockers:
+        overview["status"] = "blocked"
+    elif optional_blockers:
+        overview["status"] = "partial"
+    else:
+        overview["status"] = "live"
+    return overview
+
+
 def _sync_page_to_weknora(
     session: Session,
     page: WikiPageModel,
@@ -1528,6 +1739,47 @@ def _normalize_slug(slug: str) -> str:
     if not normalized:
         raise ValueError("Wiki page slug must not be empty.")
     return normalized
+
+
+def _wiki_summary_safe_dict(page: WikiPageSummary) -> dict[str, Any]:
+    metadata = page.metadata or {}
+    wiki_page_id = str(
+        metadata.get("id")
+        or metadata.get("weknora_wiki_page_id")
+        or metadata.get("wiki_page_id")
+        or page.slug
+    )
+    return {
+        "slug": page.slug,
+        "title": page.title,
+        "page_type": page.page_type,
+        "summary": _excerpt(page.summary, 240),
+        "source": page.source,
+        "source_type": "wiki_page",
+        "wiki_page_id": wiki_page_id,
+        "evidence_id": f"wiki_page:{wiki_page_id}",
+    }
+
+
+def _wiki_page_safe_dict(page: WikiPage) -> dict[str, Any]:
+    metadata = page.metadata or {}
+    wiki_page_id = str(
+        metadata.get("id")
+        or metadata.get("weknora_wiki_page_id")
+        or metadata.get("wiki_page_id")
+        or page.slug
+    )
+    return {
+        "slug": page.slug,
+        "title": page.title,
+        "page_type": page.page_type,
+        "summary": _excerpt(page.summary, 240),
+        "source": page.source,
+        "source_type": "wiki_page",
+        "wiki_page_id": wiki_page_id,
+        "evidence_id": f"wiki_page:{wiki_page_id}",
+        "content_chars": len(page.content or ""),
+    }
 
 
 def _normalize_title(title: str) -> str:

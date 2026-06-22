@@ -399,6 +399,229 @@ class WeKnoraApiBackend(KnowledgeEngine):
             raise KnowledgeBackendUnavailableError("WeKnora Wiki update returned invalid JSON")
         return self._to_wiki_page(data, slug)
 
+    def list_wiki_pages(
+        self,
+        kb_id: str | None = None,
+        *,
+        query: str = "",
+        page_type: str = "",
+        status: str = "",
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        params: dict[str, object] = {
+            "page": max(page, 1),
+            "page_size": max(page_size, 1),
+            "sort_by": "updated_at",
+            "sort_order": "desc",
+        }
+        if query:
+            params["query"] = query
+        if page_type:
+            params["page_type"] = page_type
+        if status:
+            params["status"] = status
+        data = self._request_json(
+            "GET",
+            f"{self._wiki_base_path(resolved_kb_id)}/pages?{urlencode(params)}",
+        )
+        payload = self._unwrap_data(data)
+        pages = self._unwrap_wiki_pages(data)
+        return {
+            "pages": [self._wiki_summary_dict(item) for item in pages if isinstance(item, dict)],
+            "total": _optional_int(payload.get("total")) if isinstance(payload, dict) else None,
+            "page": _optional_int(payload.get("page")) if isinstance(payload, dict) else None,
+            "page_size": _optional_int(payload.get("page_size")) if isinstance(payload, dict) else None,
+            "total_pages": _optional_int(payload.get("total_pages")) if isinstance(payload, dict) else None,
+            "source": "weknora_api",
+            "kb_id": resolved_kb_id,
+        }
+
+    def get_wiki_index(
+        self,
+        kb_id: str | None = None,
+        *,
+        page_types: list[str] | None = None,
+        limit: int = 20,
+        cursor: str = "",
+    ) -> dict:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        params: dict[str, object] = {"limit": max(limit, 1)}
+        if page_types:
+            params["types"] = ",".join(page_types)
+        if cursor:
+            params["cursor"] = cursor
+        data = self._request_json(
+            "GET",
+            f"{self._wiki_base_path(resolved_kb_id)}/index?{urlencode(params)}",
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora Wiki index returned invalid JSON")
+        groups = []
+        for group in payload.get("groups") or []:
+            if not isinstance(group, dict):
+                continue
+            items = [
+                self._wiki_index_entry_dict(item)
+                for item in group.get("items") or []
+                if isinstance(item, dict)
+            ]
+            groups.append(
+                {
+                    "type": _optional_str(group.get("type")) or "unknown",
+                    "total": _optional_int(group.get("total")) or 0,
+                    "items": items,
+                    "next_cursor": _optional_str(group.get("next_cursor")),
+                }
+            )
+        return {
+            "intro_present": bool(str(payload.get("intro") or "").strip()),
+            "version": _optional_int(payload.get("version")),
+            "groups": groups,
+            "source": "weknora_api",
+            "kb_id": resolved_kb_id,
+        }
+
+    def get_wiki_stats(self, kb_id: str | None = None) -> dict:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        data = self._request_json("GET", f"{self._wiki_base_path(resolved_kb_id)}/stats")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora Wiki stats returned invalid JSON")
+        return {
+            "total_pages": _optional_int(payload.get("total_pages")) or 0,
+            "pages_by_type": _int_mapping(payload.get("pages_by_type")),
+            "total_links": _optional_int(payload.get("total_links")) or 0,
+            "orphan_count": _optional_int(payload.get("orphan_count")) or 0,
+            "pending_tasks": _optional_int(payload.get("pending_tasks")) or 0,
+            "pending_issues": _optional_int(payload.get("pending_issues")) or 0,
+            "is_active": bool(payload.get("is_active")),
+            "recent_updates": [
+                self._wiki_summary_dict(item)
+                for item in payload.get("recent_updates") or []
+                if isinstance(item, dict)
+            ],
+            "source": "weknora_api",
+            "kb_id": resolved_kb_id,
+        }
+
+    def get_wiki_graph(
+        self,
+        kb_id: str | None = None,
+        *,
+        mode: str = "overview",
+        center: str = "",
+        depth: int = 1,
+        page_types: list[str] | None = None,
+        limit: int = 50,
+    ) -> dict:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        params: dict[str, object] = {
+            "mode": mode,
+            "depth": max(depth, 1),
+            "limit": max(limit, 1),
+        }
+        if center:
+            params["center"] = center
+        if page_types:
+            params["types"] = ",".join(page_types)
+        data = self._request_json(
+            "GET",
+            f"{self._wiki_base_path(resolved_kb_id)}/graph?{urlencode(params)}",
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora Wiki graph returned invalid JSON")
+        nodes = [item for item in payload.get("nodes") or [] if isinstance(item, dict)]
+        edges = [item for item in payload.get("edges") or [] if isinstance(item, dict)]
+        meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+        return {
+            "nodes_count": len(nodes),
+            "edges_count": len(edges),
+            "sample_nodes": [
+                {
+                    "slug": _optional_str(item.get("slug")),
+                    "title": _optional_str(item.get("title")),
+                    "page_type": _optional_str(item.get("page_type")),
+                    "link_count": _optional_int(item.get("link_count")) or 0,
+                }
+                for item in nodes[:5]
+            ],
+            "meta": {
+                "mode": _optional_str(meta.get("mode")) or mode,
+                "total": _optional_int(meta.get("total")) or 0,
+                "returned": _optional_int(meta.get("returned")) or len(nodes),
+                "truncated": bool(meta.get("truncated")),
+                "center": _optional_str(meta.get("center")),
+                "depth": _optional_int(meta.get("depth")),
+            },
+            "source": "weknora_api",
+            "kb_id": resolved_kb_id,
+        }
+
+    def get_wiki_lint(self, kb_id: str | None = None) -> dict:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        data = self._request_json("GET", f"{self._wiki_base_path(resolved_kb_id)}/lint")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora Wiki lint returned invalid JSON")
+        issues = [item for item in payload.get("issues") or [] if isinstance(item, dict)]
+        return {
+            "health_score": _optional_int(payload.get("health_score")),
+            "issue_count": len(issues),
+            "summary": _shorten(str(payload.get("summary") or ""), 240),
+            "sample_issues": [
+                {
+                    "type": _optional_str(item.get("type")),
+                    "severity": _optional_str(item.get("severity")),
+                    "page_slug": _optional_str(item.get("page_slug")),
+                    "fixable": bool(item.get("fixable")),
+                }
+                for item in issues[:5]
+            ],
+            "source": "weknora_api",
+            "kb_id": resolved_kb_id,
+        }
+
+    def list_wiki_issues(
+        self,
+        kb_id: str | None = None,
+        *,
+        slug: str = "",
+        status: str = "",
+    ) -> list[dict]:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        params: dict[str, str] = {}
+        if slug:
+            params["slug"] = slug
+        if status:
+            params["status"] = status
+        suffix = f"?{urlencode(params)}" if params else ""
+        data = self._request_json(
+            "GET",
+            f"{self._wiki_base_path(resolved_kb_id)}/issues{suffix}",
+        )
+        items = self._unwrap_items(data)
+        return [
+            {
+                "id": _optional_str(item.get("id")),
+                "slug": _optional_str(item.get("slug")),
+                "issue_type": _optional_str(item.get("issue_type")),
+                "status": _optional_str(item.get("status")),
+                "reported_by": _optional_str(item.get("reported_by")),
+            }
+            for item in items
+            if isinstance(item, dict)
+        ]
+
     def list_agents(self) -> list[dict]:
         self._require_configured()
         data = self._request_json("GET", "/api/v1/agents")
@@ -1085,6 +1308,37 @@ class WeKnoraApiBackend(KnowledgeEngine):
         )
 
     @staticmethod
+    def _wiki_summary_dict(item: dict) -> dict:
+        metadata = WeKnoraApiBackend._wiki_page_metadata(item)
+        return {
+            "id": _optional_str(metadata.get("id") or item.get("id")),
+            "slug": _optional_str(item.get("slug") or item.get("id")) or "",
+            "title": _optional_str(item.get("title")) or "Untitled",
+            "page_type": _optional_str(item.get("page_type") or item.get("type") or "wiki"),
+            "summary": _shorten(str(item.get("summary") or ""), 240),
+            "status": _optional_str(metadata.get("status") or item.get("status")),
+            "source_type": "wiki_page",
+            "evidence_id": WeKnoraApiBackend._evidence_id(
+                "wiki_page",
+                None,
+                _optional_str(metadata.get("id") or item.get("id") or item.get("slug")),
+            ),
+            "wiki_page_id": _optional_str(metadata.get("id") or item.get("id") or item.get("slug")),
+        }
+
+    @staticmethod
+    def _wiki_index_entry_dict(item: dict) -> dict:
+        wiki_page_id = _optional_str(item.get("id") or item.get("slug"))
+        return {
+            "slug": _optional_str(item.get("slug")) or "",
+            "title": _optional_str(item.get("title")) or "Untitled",
+            "summary": _shorten(str(item.get("summary") or ""), 240),
+            "source_type": "wiki_page",
+            "wiki_page_id": wiki_page_id,
+            "evidence_id": WeKnoraApiBackend._evidence_id("wiki_page", None, wiki_page_id),
+        }
+
+    @staticmethod
     def _to_wiki_page(item: dict, fallback_slug: str) -> WikiPage:
         metadata = WeKnoraApiBackend._wiki_page_metadata(item)
         return WikiPage(
@@ -1370,6 +1624,17 @@ def _optional_str(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _int_mapping(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, int] = {}
+    for key, item in value.items():
+        parsed = _optional_int(item)
+        if parsed is not None:
+            result[str(key)] = parsed
+    return result
 
 
 def _elapsed_ms(started: float) -> int:
