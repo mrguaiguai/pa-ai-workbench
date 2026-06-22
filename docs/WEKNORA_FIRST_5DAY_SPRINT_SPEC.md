@@ -85,9 +85,10 @@ Task selection rules:
 3. If the user says "continue" or gives a broad request, choose the earliest unfinished P0 task.
 4. Do not move to P1 while P0 has unfinished tasks unless the user explicitly reprioritizes.
 5. Treat P2 as backlog unless P0/P1 are stable or the user explicitly scopes a P2 read-only/jump slice.
-6. Execute one task id per run; split oversized work instead of silently completing multiple slices.
-7. Do not mark `[x]` from mock, fixture-only, cached, old report, hidden fallback, or inference-only evidence.
-8. If live validation cannot run, mark `[!]` with cause and next step, or `[b]` if the task is consciously deferred.
+6. Treat P3 as future/post-sprint scope unless a `WF-P3-*` row and full task card are explicitly added.
+7. Execute one task id per run; split oversized work instead of silently completing multiple slices.
+8. Do not mark `[x]` from mock, fixture-only, cached, old report, hidden fallback, or inference-only evidence.
+9. If live validation cannot run, mark `[!]` with cause and next step, or `[b]` if the task is consciously deferred.
 
 ### 4.1 Task Status Overview
 
@@ -372,7 +373,7 @@ Status source is Section 4.1 row `WF-P0-05`; update it only after validation or 
 
 ### P1
 
-P1 tasks stay intentionally lightweight until P0 is complete. When a P1 task is selected, create or expand only that single `WF-P1-*` card using the P0 card structure above; do not turn all P1/P2 backlog into a giant document during a P0 run.
+P1 tasks use the same executable card shape as P0. They should preserve PA product shell value while consuming WeKnora native Wiki, AgentQA/custom Agent, workspace/KB, and frontend status surfaces where live evidence exists.
 
 | ID | Capability slice | Intended outcome |
 | --- | --- | --- |
@@ -424,9 +425,147 @@ Mark citation mapping blocked if native AgentQA emits no `references` event or l
 状态字段：
 Status source is Section 4.1 row `WF-P1-01`; update it only after validation or a real blocked/backlog decision.
 
+#### WF-P1-02: Native Wiki browse/search/index/graph/lint
+
+目标：
+Expose WeKnora native Wiki browse/search/read/index surfaces through PA or clear native jump links while preserving PA Wiki navigation, citation traceability, and blocked/backlog labels.
+
+范围：
+Start with read-only native Wiki list/search/read/index status. Add graph/stats/lint/issues only as read-only status or native-admin jump if the core browse/search/read path is stable. Mutation actions such as auto-fix, rebuild-links, issue status updates, or broad Wiki admin workflows stay out of this task unless explicitly rescoped.
+
+输入：
+`docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md`, `docs/WEKNORA_FIRST_CITATION_CONTRACT.md`, WeKnora Wiki route/handler/service/type files, PA `WeKnoraApiBackend`, `backend/app/api/wiki.py`, `backend/app/services/wiki_service.py`, `frontend/src/pages/WikiPage.tsx`, and History/citation locator behavior when native Wiki ids are displayed.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_WIKI_NATIVE_BROWSE_REPORT.md`.
+
+可修改文件范围：
+`knowledge_engine/backends/weknora_api_backend.py`, `backend/app/api/wiki.py`, `backend/app/services/wiki_service.py`, relevant schemas/tests/smokes, `frontend/src/pages/WikiPage.tsx`, optional History citation locator rendering if required, the report file, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not rebuild WeKnora Wiki admin in PA. Do not implement graph/lint/auto-fix engines in PA. Do not mutate native Wiki pages/issues unless explicitly scoped. Do not mark read-only jump links as live browse/search PASS. Do not invent `wiki_page_id`, `source_refs`, or citation locators.
+
+验收标准：
+PA can read or link native Wiki pages/search/index with visible native ids/status, and any unsupported graph/lint/issues capability is labeled partial, blocked, backlog, or jump. Citation fields remain traceable for native Wiki pages.
+
+推荐验证命令/API/browser check：
+
+```bash
+backend/.venv/bin/python -m py_compile knowledge_engine/backends/weknora_api_backend.py backend/app/api/wiki.py backend/app/services/wiki_service.py
+test -f docs/WEKNORA_FIRST_WIKI_NATIVE_BROWSE_REPORT.md
+rg -n "wiki|wiki_page_id|search|index|graph|lint|live|partial|blocked|backlog|jump" docs/WEKNORA_FIRST_WIKI_NATIVE_BROWSE_REPORT.md
+backend/.venv/bin/python backend/scripts/check_phase5_report_safety.py docs/WEKNORA_FIRST_WIKI_NATIVE_BROWSE_REPORT.md
+```
+
+Browser check: Wiki page read/search/index/jump/status states if frontend files change.
+
+PASS 证据要求：
+PASS requires current live PA API or browser evidence calling real WeKnora native Wiki surfaces, or an explicit read-only native jump plus blocked/backlog labels for surfaces not implemented. Fixture-only Wiki examples and old Phase 5 Wiki reports do not count as current PASS.
+
+blocked/backlog 判定：
+Mark `[!]` if native Wiki endpoints, KB mapping, auth, or citation identifiers are unavailable. Mark `[b]` for graph/lint/auto-fix/admin mutations that are consciously deferred after core browse/search/read is decided.
+
+状态字段：
+Status source is Section 4.1 row `WF-P1-02`; update it only after validation or a real blocked/backlog decision.
+
+#### WF-P1-03: Knowledge base selection and mapping
+
+目标：
+Make active workspace/knowledge-base selection visible, testable, and consistent across PA Library, RAG debug, Wiki, AgentQA, status, and reports.
+
+范围：
+Expose the current workspace/KB mapping from safe config/API state, validate the active KB against WeKnora where feasible, and make page-level behavior honest when a user-facing task depends on a different or unavailable KB. This task does not build a broad KB admin UI.
+
+输入：
+`docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md`, existing PA settings and runtime status services, `knowledge_engine/factory.py`, `knowledge_engine/backends/weknora_api_backend.py`, backend status/document/rag/wiki/analysis APIs, and frontend pages that display source/KB context.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_KB_SELECTION_MAPPING_REPORT.md`.
+
+可修改文件范围：
+PA settings/schema/status services, backend document/rag/wiki/analysis request/response schemas where KB mapping must be surfaced, `frontend/src/pages/HomePage.tsx`, `LibraryPage.tsx`, `RagDebugPage.tsx`, `WikiPage.tsx`, `AnalysisPage.tsx`, focused tests/smokes, the report file, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not print `.env` values, tokens, private endpoints, or raw provider payloads. Do not store secrets in reports. Do not add credential-management UI. Do not silently fall back to a hidden default KB when the selected or configured KB is unavailable.
+
+验收标准：
+PA surfaces the active workspace/KB source clearly enough that document upload, RAG debug, Wiki, AgentQA, and status reports can say which KB was used or why the mapping is blocked/backlog. Runtime checks distinguish missing config, unreachable WeKnora, invalid KB, and partial capability readiness.
+
+推荐验证命令/API/browser check：
+
+```bash
+curl -s http://127.0.0.1:8000/api/status
+curl -s http://127.0.0.1:8000/api/model/status
+test -f docs/WEKNORA_FIRST_KB_SELECTION_MAPPING_REPORT.md
+rg -n "workspace|knowledge base|KB|mapping|configured|validated|blocked|backlog|partial" docs/WEKNORA_FIRST_KB_SELECTION_MAPPING_REPORT.md
+backend/.venv/bin/python backend/scripts/check_phase5_report_safety.py docs/WEKNORA_FIRST_KB_SELECTION_MAPPING_REPORT.md
+```
+
+Browser check: affected pages must show the selected or active KB context if frontend files change.
+
+PASS 证据要求：
+PASS requires current API/status or browser evidence proving the active mapping is visible and validated, or an explicit blocked state if validation cannot run. The report must show variable names and sanitized ids only; never secret values.
+
+blocked/backlog 判定：
+Mark `[!]` if active workspace/KB cannot be determined safely, if WeKnora cannot validate it, or if page behavior depends on ambiguous hidden defaults. Mark `[b]` for multi-KB management, KB CRUD, or native admin replacement.
+
+状态字段：
+Status source is Section 4.1 row `WF-P1-03`; update it only after validation or a real blocked/backlog decision.
+
+#### WF-P1-04: Frontend integration polish
+
+目标：
+Make the six PA product pages present the WeKnora-first state coherently, including native live paths, explicit citation blockers, partial surfaces, blocked/backlog labels, and safe native jump targets.
+
+范围：
+Frontend integration only unless a tiny backend response field is required for truthful display. Cover 首页、资料库、RAG 调试、Wiki、知识问答、历史. Preserve dense product workflow ergonomics and avoid turning PA into a WeKnora admin clone.
+
+输入：
+P0 and P1 reports, status endpoints, frontend page components, API client types, and existing Phase 5 browser acceptance assets.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_FRONTEND_BROWSER_ACCEPTANCE_REPORT.md`.
+
+可修改文件范围：
+`frontend/src/pages/HomePage.tsx`, `LibraryPage.tsx`, `RagDebugPage.tsx`, `WikiPage.tsx`, `AnalysisPage.tsx`, `HistoryPage.tsx`, shared frontend API/types/components if needed, minimal backend schema/status fields only if required, the browser acceptance report, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not hide mock/fallback/partial/blocked states to make cards look healthy. Do not add marketing/landing-page content. Do not commit screenshots, browser cache, `frontend/dist`, `node_modules`, or local runtime artifacts. Do not introduce unrelated redesigns.
+
+验收标准：
+Browser validation covers the six pages, with no broken primary workflows, no incoherent overlap, and visible labels for live/native/mock/fallback/partial/blocked/backlog states. Citation and AgentQA blockers remain visible rather than hidden.
+
+推荐验证命令/API/browser check：
+
+```bash
+cd frontend
+npm run build
+```
+
+If `npm` is unavailable, use existing local frontend binaries under `frontend/node_modules/.bin/`.
+
+Browser check: 首页、资料库、RAG 调试、Wiki、知识问答、历史 against the running local app.
+
+Report checks:
+
+```bash
+test -f docs/WEKNORA_FIRST_FRONTEND_BROWSER_ACCEPTANCE_REPORT.md
+rg -n "首页|资料库|RAG|Wiki|知识问答|历史|live|mock|fallback|partial|blocked|backlog" docs/WEKNORA_FIRST_FRONTEND_BROWSER_ACCEPTANCE_REPORT.md
+backend/.venv/bin/python backend/scripts/check_phase5_report_safety.py docs/WEKNORA_FIRST_FRONTEND_BROWSER_ACCEPTANCE_REPORT.md
+```
+
+PASS 证据要求：
+PASS requires current browser evidence for all six pages and a build/type check when feasible. Static UI review, old screenshots, or cached browser state cannot complete this task.
+
+blocked/backlog 判定：
+Mark `[!]` if the local app cannot run, build/type check fails, or browser validation cannot reach affected pages. Mark `[b]` for nonessential visual polish after truthfulness and primary workflows pass.
+
+状态字段：
+Status source is Section 4.1 row `WF-P1-04`; update it only after browser validation or a real blocked/backlog decision.
+
 ### P2
 
-P2 remains backlog by default. A P2 task may start as a read-only status or native-admin jump slice only when explicitly scoped by the user, and it must still use a single `WF-P2-*` id.
+P2 remains backlog by default, but each P2 item still has an executable task card so future work can start with a safe read-only or native-admin jump slice instead of broad admin rebuilds.
 
 | ID | Capability slice | Intended outcome |
 | --- | --- | --- |
@@ -434,6 +573,192 @@ P2 remains backlog by default. A P2 task may start as a read-only status or nati
 | WF-P2-02 | Web search provider visibility | Surface native web-search provider readiness if AgentQA depends on it. |
 | WF-P2-03 | Vector store management visibility | Show vector-store binding/readiness, or link to WeKnora native admin rather than rebuilding admin UI. |
 | WF-P2-04 | Advanced Wiki maintenance | Auto-fix, issue management, graph filtering, and lint workflows after core browse/search/read is stable. |
+
+#### WF-P2-01: MCP service visibility
+
+目标：
+Surface WeKnora native MCP service/tool/resource/approval readiness in PA as read-only status or native-admin jump links without copying credential management into PA.
+
+范围：
+Read-only native MCP visibility only: list service readiness, tools/resources availability, approval status, and safe jump targets. Credential CRUD, tool execution, approval mutation, and secret handling are out of scope unless explicitly accepted as a separate secure task.
+
+输入：
+`docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md`, WeKnora MCP route/handler/service/DTO files, PA status/capability services, frontend status surfaces, and citation/report safety rules.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_MCP_VISIBILITY_REPORT.md`.
+
+可修改文件范围：
+Backend capability/status adapters, safe schemas that omit secrets, homepage/status/frontend jump surfaces, focused read-only smoke/report files, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not expose, print, store, or commit MCP credentials, tokens, headers, private endpoints, provider payloads, or approval secrets. Do not implement MCP service CRUD, tool execution, or credential forms in PA during this task.
+
+验收标准：
+PA shows read-only MCP readiness or a clearly labeled native jump/backlog state. Any native response included in reports is sanitized and contains no secret values. Unsupported MCP mutation/execution remains blocked/backlog.
+
+推荐验证命令/API/browser check：
+
+```bash
+test -f docs/WEKNORA_FIRST_MCP_VISIBILITY_REPORT.md
+rg -n "MCP|service|tool|resource|approval|read-only|jump|blocked|backlog|secret" docs/WEKNORA_FIRST_MCP_VISIBILITY_REPORT.md
+backend/.venv/bin/python backend/scripts/check_phase5_report_safety.py docs/WEKNORA_FIRST_MCP_VISIBILITY_REPORT.md
+```
+
+API/browser check: use a focused PA API/status smoke or browser status card only if this backlog task is explicitly activated.
+
+PASS 证据要求：
+PASS requires current read-only PA API/browser evidence or a deliberate `[b]` backlog decision. No credential-bearing response can count as PASS.
+
+blocked/backlog 判定：
+Keep `[b]` by default unless the user scopes this slice. Mark `[!]` if native read-only MCP endpoints are unavailable or unsafe to display without leaking secrets.
+
+状态字段：
+Status source is Section 4.1 row `WF-P2-01`; update it only after validation or a real blocked/backlog decision.
+
+#### WF-P2-02: Web search provider visibility
+
+目标：
+Expose WeKnora native web-search provider readiness only where it helps AgentQA/status truthfulness, without duplicating provider credential configuration in PA.
+
+范围：
+Read-only provider catalog/status or native-admin jump. Do not implement provider CRUD, secret forms, raw search debugging, or independent PA web-search orchestration unless a later task explicitly scopes it.
+
+输入：
+WeKnora web-search provider routes/services/types, AgentQA live report blocker context, PA status/capability services, frontend status surfaces, and report safety rules.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_WEB_SEARCH_VISIBILITY_REPORT.md`.
+
+可修改文件范围：
+Backend status/capability adapters, safe schemas that omit credentials, homepage/AgentQA readiness surfaces, focused read-only smoke/report files, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not expose provider API keys, endpoints with secrets, raw provider payloads, or credential forms. Do not make web search appear required for AgentQA unless live validation proves that dependency.
+
+验收标准：
+PA can label native web-search readiness, unavailable state, or native jump target truthfully. AgentQA-related status must say whether web search is required, optional, unavailable, or backlog.
+
+推荐验证命令/API/browser check：
+
+```bash
+test -f docs/WEKNORA_FIRST_WEB_SEARCH_VISIBILITY_REPORT.md
+rg -n "web search|provider|readiness|AgentQA|required|optional|jump|blocked|backlog" docs/WEKNORA_FIRST_WEB_SEARCH_VISIBILITY_REPORT.md
+backend/.venv/bin/python backend/scripts/check_phase5_report_safety.py docs/WEKNORA_FIRST_WEB_SEARCH_VISIBILITY_REPORT.md
+```
+
+API/browser check: use focused PA status/API or browser status only when this backlog slice is explicitly activated.
+
+PASS 证据要求：
+PASS requires current read-only PA API/browser evidence or a deliberate `[b]` backlog decision. Provider credentials and raw payloads must be absent from reports and commits.
+
+blocked/backlog 判定：
+Keep `[b]` by default unless AgentQA or user scope requires visibility. Mark `[!]` if provider readiness cannot be queried safely or if native API shape is unavailable.
+
+状态字段：
+Status source is Section 4.1 row `WF-P2-02`; update it only after validation or a real blocked/backlog decision.
+
+#### WF-P2-03: Vector store management visibility
+
+目标：
+Show WeKnora native vector-store readiness/binding status or a native-admin jump while preserving the PA/WeKnora storage boundary.
+
+范围：
+Read-only vector-store type/list/health readiness and KB binding context. Do not build vector-store CRUD, connection testing with raw secrets, or PA-native vector administration.
+
+输入：
+WeKnora vector-store routes/services/types, `docs/WEKNORA_FIRST_KB_SELECTION_MAPPING_REPORT.md` if available, PA status/model/embedding readiness services, and frontend status surfaces.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md`.
+
+可修改文件范围：
+Backend status/capability adapters, safe vector-store readiness schemas, homepage/status/KB readiness UI, focused read-only smoke/report files, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not expose connection strings, database credentials, provider tokens, raw health-check payloads, local DB contents, or vector records. Do not confuse PA SQLite business state with WeKnora authoritative vector/chunk storage.
+
+验收标准：
+PA status/report can distinguish embedding readiness, WeKnora vector-store readiness, KB binding readiness, unavailable vector store, and backlog/admin-jump state without leaking secrets.
+
+推荐验证命令/API/browser check：
+
+```bash
+test -f docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md
+rg -n "vector store|embedding|KB|binding|readiness|env|user|shared|unavailable|jump|blocked|backlog" docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md
+backend/.venv/bin/python backend/scripts/check_phase5_report_safety.py docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md
+```
+
+API/browser check: use focused PA status/API or browser status only when this backlog slice is explicitly activated.
+
+PASS 证据要求：
+PASS requires current read-only PA API/browser evidence or a deliberate `[b]` backlog decision. Sanitized readiness/state is acceptable; raw connection data is not.
+
+blocked/backlog 判定：
+Keep `[b]` by default unless user scope activates this slice. Mark `[!]` if native vector-store readiness cannot be queried safely or if response masking is insufficient.
+
+状态字段：
+Status source is Section 4.1 row `WF-P2-03`; update it only after validation or a real blocked/backlog decision.
+
+#### WF-P2-04: Advanced Wiki maintenance
+
+目标：
+Plan or expose WeKnora native Wiki maintenance capabilities such as lint, issues, graph filtering, auto-fix, and link rebuild without moving broad maintenance engines into PA.
+
+范围：
+Default slice is read-only lint/issues/graph status or native-admin jump. Auto-fix, rebuild-links, issue mutation, and maintenance scheduling require a separate explicit task and stronger safety review.
+
+输入：
+`docs/WEKNORA_FIRST_WIKI_NATIVE_BROWSE_REPORT.md` if available, WeKnora Wiki lint/issues/graph routes/services/types, PA Wiki/status frontend, and report safety rules.
+
+输出产物/报告文件：
+`docs/WEKNORA_FIRST_WIKI_MAINTENANCE_BACKLOG_REPORT.md`.
+
+可修改文件范围：
+Read-only Wiki status adapters, frontend Wiki maintenance status/jump surfaces, focused read-only smoke/report files, and sprint spec status/progress rows after validation.
+
+不可修改或不可做的事：
+Do not run auto-fix, rebuild-links, issue status mutation, or mass Wiki maintenance from PA unless explicitly rescoped. Do not create a PA-native graph/lint engine. Do not commit raw Wiki content or screenshots.
+
+验收标准：
+PA either exposes read-only maintenance readiness/jump status or records a clear backlog decision. Users can tell which advanced Wiki maintenance actions are native-owned, blocked, or deferred.
+
+推荐验证命令/API/browser check：
+
+```bash
+test -f docs/WEKNORA_FIRST_WIKI_MAINTENANCE_BACKLOG_REPORT.md
+rg -n "Wiki|lint|issues|graph|auto-fix|rebuild-links|read-only|jump|blocked|backlog" docs/WEKNORA_FIRST_WIKI_MAINTENANCE_BACKLOG_REPORT.md
+backend/.venv/bin/python backend/scripts/check_phase5_report_safety.py docs/WEKNORA_FIRST_WIKI_MAINTENANCE_BACKLOG_REPORT.md
+```
+
+Browser check: Wiki page maintenance status/jump only when this backlog slice is explicitly activated.
+
+PASS 证据要求：
+PASS requires current read-only PA API/browser evidence or a deliberate `[b]` backlog decision. Mutation actions require separate evidence and cannot be inferred from route existence.
+
+blocked/backlog 判定：
+Keep `[b]` until core Wiki browse/search/read is stable and the user explicitly scopes maintenance. Mark `[!]` if read-only maintenance routes are unavailable or unsafe to surface.
+
+状态字段：
+Status source is Section 4.1 row `WF-P2-04`; update it only after validation or a real blocked/backlog decision.
+
+### P3
+
+This sprint currently has no `WF-P3-*` rows in Section 4.1. Do not invent P3 implementation work during the five-day sprint. If future post-sprint work needs P3, first add explicit `WF-P3-*` rows to the task board and create a full task card with the same fields used by P0/P1/P2:
+
+- 目标
+- 范围
+- 输入
+- 输出产物/报告文件
+- 可修改文件范围
+- 不可修改或不可做的事
+- 验收标准
+- 推荐验证命令/API/browser check
+- PASS 证据要求
+- blocked/backlog 判定
+- 状态字段
+
+Future P3 should default to post-sprint backlog unless it is deliberately scoped, validated, and committed as one `WF-P3-*` task at a time.
 
 ## 6. Five-Day Roadmap
 
