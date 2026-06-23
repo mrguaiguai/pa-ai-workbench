@@ -36,6 +36,7 @@ REQUIRED_REPORTS = {
     "WNX-P0-02": DOCS_ROOT / "WEKNORA_NATIVE_STATUS_CENTER_REPORT.md",
     "WNX-P0-03": DOCS_ROOT / "WEKNORA_NATIVE_CAPABILITY_CENTER_BROWSER_REPORT.md",
     "WNX-P0-04": DOCS_ROOT / "WEKNORA_NATIVE_EXPANSION_ACCEPTANCE_HARNESS_REPORT.md",
+    "WNX-P0-05": DOCS_ROOT / "WEKNORA_NATIVE_DEPLOYMENT_READINESS_REPORT.md",
 }
 
 COMPLETED_PREREQUISITE_TASKS = (
@@ -45,12 +46,15 @@ COMPLETED_PREREQUISITE_TASKS = (
     "WNX-P0-01",
     "WNX-P0-02",
     "WNX-P0-03",
+    "WNX-P0-04",
+    "WNX-P0-05",
 )
 
 EVIDENCE_LABELS = (
     "live evidence",
     "live API evidence",
     "live browser evidence",
+    "live service/status evidence",
     "fixture evidence",
     "audit/map",
     "checker execution evidence",
@@ -336,7 +340,11 @@ def _parse_coverage(ledger: str) -> dict[str, float | int]:
         if in_table and line.startswith("| ") and not line.startswith("| ---"):
             group_count += 1
 
-    current_match = re.search(r"Current baseline score:\s*```text\s*([0-9.]+)\s*/\s*15\s*=\s*([0-9.]+)%", ledger, re.S)
+    current_match = re.search(
+        r"Current (?:baseline )?score:\s*```text\s*([0-9.]+)\s*/\s*15\s*=\s*([0-9.]+)%",
+        ledger,
+        re.S,
+    )
     target_match = re.search(
         r"Minimum internal production target:\s*```text\s*([0-9.]+)\s*/\s*15\s*=\s*([0-9.]+)%",
         ledger,
