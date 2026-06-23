@@ -1529,6 +1529,74 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if isinstance(item, dict)
         ]
 
+    def list_model_providers(self, model_type: str | None = None) -> list[dict]:
+        self._require_configured()
+        query = ""
+        if model_type:
+            query = f"?{urlencode({'model_type': model_type})}"
+        data = self._request_json("GET", f"/api/v1/models/providers{query}")
+        items = self._unwrap_items(data)
+        return [
+            self._model_provider_safe_dict(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+    def list_models(self) -> list[dict]:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/models")
+        items = self._unwrap_items(data)
+        return [
+            self._model_safe_dict(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+    def list_parser_engines(self) -> dict:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/system/parser-engines")
+        raw = data if isinstance(data, dict) else {}
+        payload = self._unwrap_data(data)
+        engines = payload if isinstance(payload, list) else None
+        if not isinstance(engines, list) and isinstance(payload, dict):
+            engines = payload.get("data")
+        if not isinstance(engines, list):
+            engines = self._unwrap_items(data)
+        return {
+            "engines": [
+                self._parser_engine_safe_dict(item)
+                for item in engines
+                if isinstance(item, dict)
+            ],
+            "connected": bool(raw.get("connected")),
+            "docreader_addr_configured": bool(_optional_str(raw.get("docreader_addr"))),
+            "docreader_transport": _optional_str(raw.get("docreader_transport")),
+            "source": "weknora_api",
+        }
+
+    def get_storage_engine_status(self) -> dict:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/system/storage-engine-status")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            payload = {}
+        engines = payload.get("engines")
+        if not isinstance(engines, list):
+            engines = []
+        allowed = payload.get("allowed_providers")
+        if not isinstance(allowed, list):
+            allowed = []
+        return {
+            "engines": [
+                self._storage_engine_safe_dict(item)
+                for item in engines
+                if isinstance(item, dict)
+            ],
+            "allowed_provider_count": len(allowed),
+            "minio_env_available": bool(payload.get("minio_env_available")),
+            "source": "weknora_api",
+        }
+
     def create_agent_session(
         self,
         title: str,
@@ -1958,6 +2026,76 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "source": _optional_str(item.get("source")) or "weknora_api",
             "readonly": bool(item.get("readonly")),
             "status": _optional_str(item.get("status")) or "available",
+        }
+
+    @staticmethod
+    def _model_provider_safe_dict(item: dict) -> dict:
+        model_types = item.get("modelTypes")
+        default_urls = item.get("defaultUrls")
+        safe_model_types = [str(value) for value in model_types if value] if isinstance(model_types, list) else []
+        safe_default_urls = default_urls if isinstance(default_urls, dict) else {}
+        return {
+            "value": _optional_str(item.get("value")),
+            "label": _optional_str(item.get("label")),
+            "model_types": safe_model_types,
+            "model_type_count": len(safe_model_types),
+            "default_url_type_count": len(safe_default_urls),
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _model_safe_dict(item: dict) -> dict:
+        parameters = item.get("parameters")
+        parameters = parameters if isinstance(parameters, dict) else {}
+        credentials = item.get("credentials")
+        credential_field_count = 0
+        configured_credential_field_count = 0
+        if isinstance(credentials, dict):
+            for field in credentials.values():
+                if isinstance(field, dict):
+                    credential_field_count += 1
+                    if field.get("configured"):
+                        configured_credential_field_count += 1
+        return {
+            "id": _optional_str(item.get("id")),
+            "name": _optional_str(item.get("name")),
+            "display_name": _optional_str(item.get("display_name")),
+            "type": _optional_str(item.get("type")),
+            "source": _optional_str(item.get("source")),
+            "provider": _optional_str(parameters.get("provider")),
+            "interface_type": _optional_str(parameters.get("interface_type")),
+            "base_url_configured": bool(_optional_str(parameters.get("base_url"))),
+            "is_default": bool(item.get("is_default")),
+            "is_builtin": bool(item.get("is_builtin")),
+            "status": _optional_str(item.get("status")) or "unknown",
+            "credential_field_count": credential_field_count,
+            "configured_credential_field_count": configured_credential_field_count,
+            "credentials_configured": configured_credential_field_count > 0,
+        }
+
+    @staticmethod
+    def _parser_engine_safe_dict(item: dict) -> dict:
+        file_types = item.get("FileTypes")
+        if not isinstance(file_types, list):
+            file_types = item.get("file_types")
+        safe_file_types = [str(value) for value in file_types if value] if isinstance(file_types, list) else []
+        return {
+            "name": _optional_str(item.get("Name") or item.get("name")),
+            "file_type_count": len(safe_file_types),
+            "available": bool(item.get("Available", item.get("available"))),
+            "unavailable_reason": _optional_str(
+                item.get("UnavailableReason") or item.get("unavailable_reason")
+            ),
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _storage_engine_safe_dict(item: dict) -> dict:
+        return {
+            "name": _optional_str(item.get("name")),
+            "allowed": bool(item.get("allowed")),
+            "available": bool(item.get("available")),
+            "source": "weknora_api",
         }
 
     @staticmethod

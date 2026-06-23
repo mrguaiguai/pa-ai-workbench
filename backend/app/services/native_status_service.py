@@ -5,6 +5,7 @@ from typing import Any
 from app.config import Settings
 from app.config import get_settings
 from app.services.mcp_service import native_mcp_overview
+from app.services.model_config_service import native_model_config_overview
 from app.services.model_status_service import get_model_status
 from app.services.runtime_status_service import get_weknora_status
 from app.services.vector_store_service import native_vector_store_overview
@@ -46,6 +47,10 @@ def native_status_center(limit: int = 5) -> dict[str, Any]:
     vector_store_overview = _call(
         "vector_store",
         lambda: native_vector_store_overview(limit=item_limit),
+    )
+    model_config_overview = _call(
+        "model_config",
+        lambda: native_model_config_overview(limit=item_limit),
     )
 
     groups["system_health_status_deployment"] = _system_group(settings, weknora_status)
@@ -158,6 +163,7 @@ def native_status_center(limit: int = 5) -> dict[str, Any]:
     groups["model_embedding_rerank_parser"] = _model_group(
         settings,
         model_status,
+        model_config_overview,
     )
     groups["data_sources_connectors"] = _baseline_group(
         capability_id="data_sources_connectors",
@@ -277,8 +283,22 @@ def _workspace_group(settings: Settings, weknora_status: dict[str, Any]) -> dict
     )
 
 
-def _model_group(settings: Settings, model_status: dict[str, Any]) -> dict[str, Any]:
-    if model_status.get("error"):
+def _model_group(
+    settings: Settings,
+    model_status: dict[str, Any],
+    model_config_overview: dict[str, Any],
+) -> dict[str, Any]:
+    if model_config_overview.get("error"):
+        status = "blocked"
+        summary = {"reason": model_config_overview["error"]}
+        configured = False
+    elif model_config_overview.get("value"):
+        overview = model_config_overview["value"]
+        surfaces = overview.get("surfaces") if isinstance(overview.get("surfaces"), dict) else {}
+        summary = _model_config_summary(overview)
+        configured = surfaces.get("pa_runtime", {}).get("status") == "live"
+        status = str(overview.get("status") or "blocked")
+    elif model_status.get("error"):
         status = "blocked"
         summary = {"reason": model_status["error"]}
         configured = False
@@ -304,16 +324,19 @@ def _model_group(settings: Settings, model_status: dict[str, Any]) -> dict[str, 
             },
             "native_model_catalog": "backlog",
             "native_parser_engines": "backlog",
-            "native_rerank_remote_check": "backlog",
+            "native_rerank_remote_check": "blocked_admin_only",
         }
     return _group(
         capability_id="model_embedding_rerank_parser",
         label="Model / embedding / rerank / parser",
         status=status,
         configured=configured,
-        source_endpoint="/api/model/status",
-        native_endpoint="/api/v1/models, /api/v1/system/parser-engines",
-        next_action="WNX-P2-01",
+        source_endpoint="/api/model/native/overview",
+        native_endpoint=(
+            "/api/v1/models, /api/v1/models/providers, "
+            "/api/v1/system/parser-engines, /api/v1/system/storage-engine-status"
+        ),
+        next_action="WNX-P3-02",
         summary=summary,
     )
 
@@ -494,6 +517,26 @@ def _vector_store_summary(overview: dict[str, Any]) -> dict[str, Any]:
         "embedding_provider": embedding.get("provider"),
         "embedding_mock": embedding.get("mock"),
         "mutations_status": mutations.get("status"),
+    }
+
+
+def _model_config_summary(overview: dict[str, Any]) -> dict[str, Any]:
+    surfaces = _surfaces(overview)
+    provider_catalog = surfaces.get("provider_catalog", {})
+    model_catalog = surfaces.get("model_catalog", {})
+    parser_engines = surfaces.get("parser_engines", {})
+    storage_engines = surfaces.get("storage_engines", {})
+    pa_runtime = surfaces.get("pa_runtime", {})
+    admin_tests = surfaces.get("admin_tests", {})
+    return {
+        "provider_count": int(provider_catalog.get("count") or 0),
+        "model_count": int(model_catalog.get("count") or 0),
+        "parser_engine_count": int(parser_engines.get("count") or 0),
+        "storage_engine_count": int(storage_engines.get("count") or 0),
+        "chat_provider": pa_runtime.get("chat_provider"),
+        "embedding_provider": pa_runtime.get("embedding_provider"),
+        "embedding_dimension": pa_runtime.get("embedding_dimension"),
+        "admin_tests": admin_tests.get("status"),
     }
 
 
