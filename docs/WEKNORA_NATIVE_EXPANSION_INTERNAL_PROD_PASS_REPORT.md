@@ -46,7 +46,7 @@ traceable native AgentQA citation evidence. This report therefore records
 | AgentQA/custom Agent | partial evidence and blocked evidence | Native answer/history workflow is live, but `WNX-P3-04` revalidated that citation references are still not traceable in the current live run. |
 | Native Wiki | live API/browser evidence | Complete for scoped read/search/workflow and confirmation-gated mutations. |
 | MCP, web search, vector store, model/config | partial evidence | Safe live readiness is visible; credential-heavy admin/test workflows remain backlog. |
-| Data source connectors | partial evidence and backlog evidence | Safe connector type/list visibility is live, but no configured connector exists for resources/validate/sync/log PASS. |
+| Data source connectors | partial evidence, blocked evidence, and backlog evidence | Safe connector type/list visibility is live, but `WNX-P3-05` revalidated that no configured connector exists for resources/validate/sync/log PASS. |
 | FAQ/tags/favorites/skills | partial evidence and backlog evidence | Tags, favorites, and skills visibility are live-partial; FAQ and mutations remain blocked/backlog. |
 | Product browser matrix | live browser evidence | Complete across seven routed views on desktop and mobile. |
 
@@ -81,8 +81,10 @@ The current WNX evidence does not justify both moves:
   correctly records citation blocking instead of fabricating citations.
 - Data sources/connectors moved only to `read-only` in the current live runtime
   because connector types were available but configured data sources were `0`.
-  Resources, validation, sync, pause, resume, and sync-log workflow PASS still
-  require a safe configured connector and confirmation/audit handling.
+  `WNX-P3-05` revalidated `connector_types.count=12`,
+  `data_sources.count=0`, and `credentials_configured=0`. Resources,
+  validation, sync, pause, resume, and sync-log workflow PASS still require a
+  safe configured connector and confirmation/audit handling.
 
 ## AgentQA Traceability Refresh
 
@@ -101,6 +103,28 @@ This confirms the AgentQA blocker is not a general PA citation persistence
 failure. Native knowledge-chat can still persist locatable citations in the
 same environment. AgentQA remains blocked because traceable native references
 are absent.
+
+## Data Source Connector Refresh
+
+`WNX-P3-05` audited the native data source connector routes and PA masked data
+source BFF path, then reran the live data source management smoke with browser
+validation.
+
+Current live evidence:
+
+```text
+coverage_state: read-only
+connector_types: status=live count=12
+data_sources: status=live count=0 credentials_configured=0
+connector_read: backlog detail=not_configured
+resources: backlog
+validation: backlog
+sync_control: overview=backlog blocked_path=backlog confirmed_path=not_requested
+```
+
+This confirms the Data sources/connectors blocker is not connector catalog
+visibility. The blocker is the absence of a safe configured connector in the
+current runtime.
 
 ## Live Status Refresh
 
@@ -179,7 +203,7 @@ and hidden fallback are not used as final PASS evidence.
 | --- | --- | --- |
 | Coverage below target | `75.0%`, target `80.0%` | Complete a real score-moving task or explicitly revise the target with governance approval. |
 | AgentQA citation traceability | `WNX-P3-04` revalidated live AgentQA with `references=0`, `saved_citations=0`, and `citation_blocked=true` | Make native AgentQA emit traceable references, document another stable native citation shape, or keep PA fail-closed citation blocker. |
-| Data source connector workflow | Connector catalog/list is live; configured data sources are `0` | Add a sanitized configured connector smoke or mark the workflow outside this internal production cut. |
+| Data source connector workflow | `WNX-P3-05` revalidated connector catalog `count=12`, but configured data sources are still `0` | Configure a safe native data source outside Codex output, then rerun sanitized connector detail/resources/validate/sync/log smoke. |
 
 ## Risk Register
 

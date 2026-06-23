@@ -288,6 +288,7 @@ Excluded or limited groups:
 | WNX-P3-02 | P3 | Internal production report | [!] | `docs/WEKNORA_NATIVE_EXPANSION_INTERNAL_PROD_PASS_REPORT.md` records blocked final PASS because current verified coverage is 75.0%, below the 80.0% internal production threshold. |
 | WNX-P3-03 | P3 | Deployment handoff prompt/runbook | [x] | Handoff runbook explains current blocked final PASS, local recovery commands, validation commands, and copy-paste continuation prompt. |
 | WNX-P3-04 | P3 | AgentQA citation traceability blocker refresh | [!] | `docs/WEKNORA_NATIVE_AGENTQA_CITATION_TRACEABILITY_REPORT.md` records live AgentQA/history smokes with `references=0`, `saved_citations=0`, and `citation_blocked=true`; no coverage upgrade is claimed. |
+| WNX-P3-05 | P3 | Configured data source connector smoke | [!] | `docs/WEKNORA_NATIVE_DATA_SOURCE_CONFIGURED_CONNECTOR_SMOKE_REPORT.md` records live API/browser evidence that connector catalog is live but current runtime still has `data_sources.count=0`; no coverage upgrade is claimed. |
 
 ## 7. Progress Log
 
@@ -318,6 +319,7 @@ Excluded or limited groups:
 | 2026-06-23 | WNX-P3-02 | [!] | `blocked evidence + checker execution evidence`: final internal production PASS is blocked because acceptance refresh still shows coverage current `11.25/15 = 75.0%` versus target `12.00/15 = 80.0%`, even though live status center validates `groups=15` and browser matrix passed. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_EXPANSION_INTERNAL_PROD_PASS_REPORT.md`; AgentQA/custom Agent remains `live-partial` due traceable citation gap, and Data sources/connectors remains `read-only` because the live runtime has no configured connector for resources/validate/sync/log workflow PASS. |
 | 2026-06-23 | WNX-P3-03 | [x] | `audit/map + documentation validation`: handoff runbook records the current blocked final PASS state, source-of-truth files, local recovery/status commands, validation commands, score-moving options, and a copy-paste new-chat prompt that tells future agents to trust local `git log --oneline` and the WNX spec/ledger/reports. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_EXPANSION_HANDOFF_RUNBOOK.md`; this task does not change coverage and does not claim internal production PASS while `WNX-P3-02` remains blocked at `75.0%`. |
 | 2026-06-23 | WNX-P3-04 | [!] | `audit/map + blocked evidence + live API evidence`: native AgentQA references path and PA parser path were re-audited; current live AgentQA smoke still reports `references=0`, `saved_citations=0`, `citation_blocked=true`, while native knowledge-chat still saves 2 locatable citations. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_CITATION_TRACEABILITY_REPORT.md`; AgentQA/custom Agent remains `live-partial`, coverage remains `11.25 / 15 = 75.0%`, and no Agent answer/tool text is accepted as citation PASS. |
+| 2026-06-23 | WNX-P3-05 | [!] | `live API/browser evidence + blocked evidence`: configured connector smoke revalidated the data source connector path; connector catalog remains live with 12 types, but active-KB data source count is still 0 and credentials configured count is 0. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_DATA_SOURCE_CONFIGURED_CONNECTOR_SMOKE_REPORT.md`; Data sources/connectors remains `read-only`, resources/validation/sync/pause/resume/log workflow PASS remains blocked/backlog, and coverage remains `11.25 / 15 = 75.0%`. |
 
 ## 8. Task Cards
 
@@ -856,6 +858,38 @@ Excluded or limited groups:
 - Blocked/backlog: mark `[!]` when AgentQA answer/history is live but native
   references remain absent or untraceable.
 - Status source: Section 6 row `WNX-P3-04`.
+
+### WNX-P3-05: Configured data source connector smoke
+
+- Goal: determine whether Data sources/connectors can move from `read-only` to
+  `live-partial` through a safe configured connector workflow.
+- Scope: native data source route/service/type audit, PA masked connector
+  overview/detail/log surfaces, live data source management smoke, and browser
+  status rendering.
+- Inputs: native data source routes/handlers/services/types, PA WeKnora
+  adapter, data source BFF service/API, data source smoke script, coverage
+  ledger, and final blocked report.
+- Output report:
+  `docs/WEKNORA_NATIVE_DATA_SOURCE_CONFIGURED_CONNECTOR_SMOKE_REPORT.md`.
+- Editable files: this spec, coverage ledger, final blocked report, and the
+  configured connector smoke report; PA code only if a safe configured
+  connector exists and current PA masking is insufficient.
+- Forbidden: printing or committing credentials, raw connector config, private
+  endpoints, raw resource names, raw sync logs, provider payloads, local
+  databases, logs, caches, or screenshots.
+- Acceptance: if a safe configured connector exists, PA validates sanitized
+  detail, sync-log summary, resources/validation status, and confirmation-gated
+  sync/pause/resume control; otherwise record `[!]` with current live blocker
+  evidence and no coverage upgrade.
+- Recommended validation: live data source management smoke with browser,
+  acceptance checker, report safety checker, `git diff --check`, and sensitive
+  scan.
+- PASS evidence: live API/browser evidence with a safe configured connector;
+  blocked evidence if no configured connector exists.
+- Blocked/backlog: mark `[!]` when data source list is live but configured
+  count is 0; keep credential-heavy setup and raw sync/resource inspection
+  backlog until explicitly authorized.
+- Status source: Section 6 row `WNX-P3-05`.
 
 ## 9. Evidence Classification Rules
 
