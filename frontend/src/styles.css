@@ -3461,6 +3461,331 @@ p {
   white-space: nowrap;
 }
 
+.capability-page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  margin-top: 24px;
+}
+
+.capability-summary-band {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(360px, 0.95fr);
+  gap: 14px;
+  align-items: stretch;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px;
+}
+
+.capability-summary-main {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.capability-summary-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.capability-summary-title svg {
+  flex: 0 0 auto;
+  color: #176b87;
+}
+
+.capability-summary-title span {
+  display: block;
+  color: #6b7a86;
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.capability-summary-title strong {
+  display: block;
+  margin-top: 2px;
+  color: #17212b;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.capability-summary-detail,
+.capability-card-meta,
+.capability-card-summary,
+.capability-warning-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.capability-summary-detail span,
+.capability-card-meta span,
+.capability-card-summary span,
+.capability-warning-list span {
+  min-height: 24px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f2f6f8;
+  color: #52636e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  padding: 4px 8px;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.capability-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.capability-count {
+  min-width: 0;
+  min-height: 72px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #f8fafb;
+  padding: 12px;
+}
+
+.capability-count span {
+  display: block;
+  overflow: hidden;
+  color: #6b7a86;
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.capability-count strong {
+  display: block;
+  margin-top: 10px;
+  color: #17212b;
+  font-size: 1.7rem;
+  line-height: 1;
+}
+
+.capability-count.live,
+.capability-card.live {
+  border-color: #bfd9cb;
+  background: #f4faf6;
+}
+
+.capability-count.partial,
+.capability-count.backlog,
+.capability-card.partial,
+.capability-card.backlog {
+  border-color: #edd8a8;
+  background: #fffaf0;
+}
+
+.capability-count.blocked,
+.capability-card.blocked {
+  border-color: #edc7c2;
+  background: #fff6f4;
+}
+
+.capability-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+
+.capability-matrix {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.capability-card,
+.capability-side-panel {
+  min-width: 0;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.capability-card {
+  display: grid;
+  gap: 12px;
+  min-height: 214px;
+}
+
+.capability-card-head {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: start;
+  min-width: 0;
+}
+
+.capability-card-head svg {
+  margin-top: 2px;
+  color: #176b87;
+}
+
+.capability-card-head span {
+  display: block;
+  color: #6b7a86;
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.capability-card-head strong {
+  display: block;
+  margin-top: 4px;
+  color: #17212b;
+  font-size: 0.98rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.capability-card-head em {
+  min-height: 24px;
+  max-width: 86px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #eef3f5;
+  color: #52636e;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 900;
+  padding: 4px 8px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capability-card.live .capability-card-head em {
+  background: #dff0e5;
+  color: #256340;
+}
+
+.capability-card.partial .capability-card-head em,
+.capability-card.backlog .capability-card-head em {
+  background: #fff1cb;
+  color: #7a5312;
+}
+
+.capability-card.blocked .capability-card-head em {
+  background: #ffe1dc;
+  color: #9b382d;
+}
+
+.capability-endpoints {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.capability-endpoints span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #52636e;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.capability-endpoints svg {
+  flex: 0 0 auto;
+  color: #176b87;
+}
+
+.capability-side {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.capability-side-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.capability-side-heading svg {
+  flex: 0 0 auto;
+  color: #176b87;
+}
+
+.capability-side-heading strong {
+  overflow: hidden;
+  color: #17212b;
+  font-size: 0.96rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capability-config-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.capability-config-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid #e4eaee;
+  border-radius: 8px;
+  background: #f8fafb;
+  padding: 10px;
+}
+
+.capability-config-row span,
+.capability-config-row strong,
+.capability-config-row em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capability-config-row span {
+  color: #6b7a86;
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.capability-config-row strong {
+  color: #17212b;
+  font-size: 0.9rem;
+}
+
+.capability-config-row em {
+  color: #52636e;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -3493,14 +3818,14 @@ p {
 
   .nav-list {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(48px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
     gap: 6px;
     overflow-x: auto;
   }
 
   .nav-link {
     justify-content: center;
-    min-width: 64px;
+    min-width: 0;
     padding: 0 8px;
   }
 
@@ -3531,6 +3856,9 @@ p {
   .home-grid,
   .library-summary,
   .library-grid,
+  .capability-summary-band,
+  .capability-layout,
+  .capability-matrix,
   .analysis-page,
   .rag-debug-page,
   .wiki-page,
@@ -3554,6 +3882,10 @@ p {
 
   .quick-grid {
     grid-template-columns: 1fr;
+  }
+
+  .capability-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .document-row {

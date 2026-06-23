@@ -3,6 +3,7 @@ import {
   BookOpenText,
   Database,
   FileClock,
+  Gauge,
   Home,
   Library,
   MessageSquareText,
@@ -14,12 +15,20 @@ import { useEffect, useMemo, useState } from "react";
 
 import { HomePage } from "./pages/HomePage";
 import { AnalysisPage } from "./pages/AnalysisPage";
+import { CapabilityCenterPage } from "./pages/CapabilityCenterPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { RagDebugPage } from "./pages/RagDebugPage";
 import { WikiPage } from "./pages/WikiPage";
 
-type RouteId = "/" | "/library" | "/analysis" | "/wiki" | "/history" | "/rag-debug";
+type RouteId =
+  | "/"
+  | "/library"
+  | "/analysis"
+  | "/wiki"
+  | "/history"
+  | "/rag-debug"
+  | "/capabilities";
 
 type NavItem = {
   id: RouteId;
@@ -34,6 +43,7 @@ const navItems: NavItem[] = [
   { id: "/rag-debug", label: "RAG 调试", icon: Search },
   { id: "/wiki", label: "Wiki", icon: BookOpenText },
   { id: "/history", label: "历史", icon: FileClock },
+  { id: "/capabilities", label: "能力中心", icon: Gauge },
 ];
 
 const pageMeta: Record<RouteId, { title: string; eyebrow: string; icon: typeof Home }> = {
@@ -43,6 +53,7 @@ const pageMeta: Record<RouteId, { title: string; eyebrow: string; icon: typeof H
   "/rag-debug": { title: "RAG 检索调试", eyebrow: "检索调试", icon: Search },
   "/wiki": { title: "Wiki 知识库", eyebrow: "Wiki", icon: Search },
   "/history": { title: "生成历史", eyebrow: "历史", icon: FileClock },
+  "/capabilities": { title: "能力中心", eyebrow: "配置状态", icon: Gauge },
 };
 
 function getHashRoute(): RouteId {
@@ -52,7 +63,8 @@ function getHashRoute(): RouteId {
     hash === "/analysis" ||
     hash === "/rag-debug" ||
     hash === "/wiki" ||
-    hash === "/history"
+    hash === "/history" ||
+    hash === "/capabilities"
   ) {
     return hash;
   }
@@ -144,6 +156,8 @@ export function App() {
             <WikiPage />
           ) : route === "/history" ? (
             <HistoryPage />
+          ) : route === "/capabilities" ? (
+            <CapabilityCenterPage />
           ) : (
             <div className="workspace-grid">
               <div className="workspace-panel primary-panel">

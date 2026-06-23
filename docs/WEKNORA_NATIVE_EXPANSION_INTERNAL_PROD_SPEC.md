@@ -268,7 +268,7 @@ Excluded or limited groups:
 | WNX-0-03 | Governance | Coverage ledger and 80% scoring baseline | [x] | `docs/WEKNORA_NATIVE_CAPABILITY_COVERAGE_LEDGER.md` with current/target states and scoring. |
 | WNX-P0-01 | P0 | Unified WeKnora native client | [x] | Adapter has shared config/error/timeout/retry/trace/normalization and smoke validation. |
 | WNX-P0-02 | P0 | Internal config/status center backend | [x] | PA API exposes masked native config/status for core platform areas. |
-| WNX-P0-03 | P0 | Capability center frontend shell | [ ] | Browser-validated capability center shows coverage, gaps, blocked/backlog, jump links. |
+| WNX-P0-03 | P0 | Capability center frontend shell | [x] | Browser-validated capability center shows coverage, gaps, blocked/backlog, jump links. |
 | WNX-P0-04 | P0 | Live acceptance harness | [ ] | Checker/smoke runner verifies live evidence, report safety, coverage score, browser matrix hooks. |
 | WNX-P0-05 | P0 | Internal deployment readiness | [ ] | Service/runbook validation proves recoverable backend/frontend/WeKnora/model/embedding/vector/parser. |
 | WNX-P1-01 | P1 | Knowledge base management | [ ] | PA can list/read/create/update/delete/pin/tag active KBs or record safe blockers. |
@@ -297,6 +297,7 @@ Excluded or limited groups:
 | 2026-06-22 | WNX-0-03 | [x] | `audit/map`: coverage ledger added with 15 eligible capability groups, current baseline `5.50 / 15 = 36.7%`, minimum target `12.00 / 15 = 80.0%`, evidence links, risks, and next `WNX-*` actions; validation includes diff check, keyword checks, and sensitive scan. | this commit on `weknora-first-mvp` | No product code changed and no new live capability PASS is claimed; future tasks must refresh live WNX evidence before final internal production PASS. |
 | 2026-06-23 | WNX-P0-01 | [x] | `live evidence` + `fixture evidence`: `WeKnoraNativeClient` added; MCP and vector-store native live smokes pass through PA; fixture contract proves health/MCP/vector paths share `backend.client.request_json`, status metadata is visible, and error redaction remains stable. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_CLIENT_REPORT.md`; unsafe MCP/vector mutations remain backlog for their own WNX tasks. |
 | 2026-06-23 | WNX-P0-02 | [x] | `live API evidence`: `/api/native/status` added as a masked PA BFF status center with 15 capability groups, unified `configured/masked/status/source_endpoint/next_action` fields, live MCP/web/vector/model status, and backlog markers for unimplemented/high-risk platform areas. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_STATUS_CENTER_REPORT.md`; this task does not upgrade coverage score or convert read-only visibility into workflow PASS. |
+| 2026-06-23 | WNX-P0-03 | [x] | `live browser evidence backed by live API response`: capability center route loads `/api/native/status`, renders 15 live capability groups, shows `live=7`, `partial=5`, `blocked=0`, `backlog=3`, and passes desktop/mobile Chrome DOM checks without horizontal overflow or suspicious secret-like text. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_CAPABILITY_CENTER_BROWSER_REPORT.md`; this task adds truthful frontend visibility only and does not upgrade backlog/read-only groups to workflow PASS. |
 
 ## 8. Task Cards
 

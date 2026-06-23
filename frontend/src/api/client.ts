@@ -213,6 +213,38 @@ export type NativeVectorStoreOverviewResponse = {
   >;
 };
 
+export type NativeStatusValue = "live" | "partial" | "blocked" | "backlog" | string;
+
+export type NativeCapabilityGroup = {
+  id: string;
+  label: string;
+  status: NativeStatusValue;
+  configured: boolean;
+  masked: boolean;
+  source_endpoint: string;
+  native_endpoint: string | null;
+  next_action: string;
+  summary: Record<string, unknown>;
+};
+
+export type NativeStatusCenterResponse = {
+  schema_version: string;
+  source: string;
+  status: NativeStatusValue;
+  evidence_type: string;
+  configured: boolean;
+  masked: boolean;
+  config: Record<string, unknown>;
+  groups: Record<string, NativeCapabilityGroup>;
+  group_count: number;
+  warnings: string[];
+  next_action: string;
+};
+
+export type NativeStatusCenterParams = {
+  limit?: number;
+};
+
 export type ModelProviderStatus = {
   provider: string;
   model: string;
@@ -771,6 +803,14 @@ function nativeVectorStoreOverviewParams(params: NativeVectorStoreOverviewParams
   return searchParams;
 }
 
+function nativeStatusCenterParams(params: NativeStatusCenterParams = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.limit) {
+    searchParams.set("limit", String(params.limit));
+  }
+  return searchParams;
+}
+
 export const apiClient = {
   baseUrl: API_BASE_URL,
   getStatus: () => request<StatusResponse>("/api/status"),
@@ -799,6 +839,11 @@ export const apiClient = {
     return request<NativeVectorStoreOverviewResponse>(
       `/api/vector-stores/native/overview${suffix}`,
     );
+  },
+  getNativeStatusCenter: (params: NativeStatusCenterParams = {}) => {
+    const searchParams = nativeStatusCenterParams(params);
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return request<NativeStatusCenterResponse>(`/api/native/status${suffix}`);
   },
   listDocuments: (filters: DocumentListFilters = {}) => {
     const params = documentFilterParams(filters);
