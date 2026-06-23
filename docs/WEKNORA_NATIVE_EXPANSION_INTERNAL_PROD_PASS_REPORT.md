@@ -43,7 +43,7 @@ traceable native AgentQA citation evidence. This report therefore records
 | Deployment readiness | live service/status evidence | Complete for local internal production recovery. |
 | KB/document/chunk lifecycle | live API/browser evidence | Complete for the scoped PA product contract. |
 | RAG and knowledge-chat | live API/browser evidence | Complete with traceable native citations where returned by WeKnora. |
-| AgentQA/custom Agent | partial evidence and blocked evidence | Native answer/history workflow is live, but `WNX-P3-04` revalidated that citation references are still not traceable in the current live run. |
+| AgentQA/custom Agent | partial evidence and blocked evidence | Native answer/history workflow is live, but `WNX-P3-04` and `WNX-P3-06` revalidated that citation references are still not traceable in the current live runtime. |
 | Native Wiki | live API/browser evidence | Complete for scoped read/search/workflow and confirmation-gated mutations. |
 | MCP, web search, vector store, model/config | partial evidence | Safe live readiness is visible; credential-heavy admin/test workflows remain backlog. |
 | Data source connectors | partial evidence, blocked evidence, and backlog evidence | Safe connector type/list visibility is live, but `WNX-P3-05` revalidated that no configured connector exists for resources/validate/sync/log PASS. |
@@ -103,6 +103,35 @@ This confirms the AgentQA blocker is not a general PA citation persistence
 failure. Native knowledge-chat can still persist locatable citations in the
 same environment. AgentQA remains blocked because traceable native references
 are absent.
+
+## AgentQA Reference Propagation Patch Refresh
+
+`WNX-P3-06` drafted a narrow local native patch that propagates structured
+`knowledge_search` results into standard native `references` events instead of
+parsing Agent answer text or free-form tool output.
+
+Patch draft files outside the PA git repository:
+
+```text
+internal/agent/engine.go
+internal/agent/act.go
+internal/agent/tools/knowledge_search.go
+internal/agent/act_references_test.go
+```
+
+The patch could not move coverage because the outer WeKnora source directory is
+not the active PA git repository, `go`/`gofmt` are unavailable in this shell,
+and the running live service did not absorb the local source patch.
+
+Current live validation after the patch draft still reports:
+
+```text
+agentqa: answer_events=186 references=0 saved_citations=0 citation_blocked=true
+knowledge_chat: saved_citations=2 traceable=2 locator=located
+agentqa history: saved_citations=0 traceable=0 citation_blocked=true
+```
+
+AgentQA/custom Agent therefore remains `live-partial`.
 
 ## Data Source Connector Refresh
 
@@ -202,7 +231,7 @@ and hidden fallback are not used as final PASS evidence.
 | Blocker | Current state | Required next step |
 | --- | --- | --- |
 | Coverage below target | `75.0%`, target `80.0%` | Complete a real score-moving task or explicitly revise the target with governance approval. |
-| AgentQA citation traceability | `WNX-P3-04` revalidated live AgentQA with `references=0`, `saved_citations=0`, and `citation_blocked=true` | Make native AgentQA emit traceable references, document another stable native citation shape, or keep PA fail-closed citation blocker. |
+| AgentQA citation traceability | `WNX-P3-06` drafted a native reference propagation patch but current live AgentQA still has `references=0`, `saved_citations=0`, and `citation_blocked=true` | Apply the patch in a commit-trackable native source repo, format/test with Go tooling, deploy/restart the live runtime, then rerun AgentQA/history citation smokes before claiming PASS. |
 | Data source connector workflow | `WNX-P3-05` revalidated connector catalog `count=12`, but configured data sources are still `0` | Configure a safe native data source outside Codex output, then rerun sanitized connector detail/resources/validate/sync/log smoke. |
 
 ## Risk Register

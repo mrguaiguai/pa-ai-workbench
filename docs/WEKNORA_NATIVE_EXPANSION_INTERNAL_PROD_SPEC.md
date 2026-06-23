@@ -289,6 +289,7 @@ Excluded or limited groups:
 | WNX-P3-03 | P3 | Deployment handoff prompt/runbook | [x] | Handoff runbook explains current blocked final PASS, local recovery commands, validation commands, and copy-paste continuation prompt. |
 | WNX-P3-04 | P3 | AgentQA citation traceability blocker refresh | [!] | `docs/WEKNORA_NATIVE_AGENTQA_CITATION_TRACEABILITY_REPORT.md` records live AgentQA/history smokes with `references=0`, `saved_citations=0`, and `citation_blocked=true`; no coverage upgrade is claimed. |
 | WNX-P3-05 | P3 | Configured data source connector smoke | [!] | `docs/WEKNORA_NATIVE_DATA_SOURCE_CONFIGURED_CONNECTOR_SMOKE_REPORT.md` records live API/browser evidence that connector catalog is live but current runtime still has `data_sources.count=0`; no coverage upgrade is claimed. |
+| WNX-P3-06 | P3 | AgentQA native reference propagation patch draft | [!] | `docs/WEKNORA_NATIVE_AGENTQA_REFERENCE_PROPAGATION_PATCH_REPORT.md` records a local native source patch draft, but the outer WeKnora source is not commit-trackable in this PA branch, Go tooling is unavailable, and live AgentQA still reports `references=0`; no coverage upgrade is claimed. |
 
 ## 7. Progress Log
 
@@ -320,6 +321,7 @@ Excluded or limited groups:
 | 2026-06-23 | WNX-P3-03 | [x] | `audit/map + documentation validation`: handoff runbook records the current blocked final PASS state, source-of-truth files, local recovery/status commands, validation commands, score-moving options, and a copy-paste new-chat prompt that tells future agents to trust local `git log --oneline` and the WNX spec/ledger/reports. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_EXPANSION_HANDOFF_RUNBOOK.md`; this task does not change coverage and does not claim internal production PASS while `WNX-P3-02` remains blocked at `75.0%`. |
 | 2026-06-23 | WNX-P3-04 | [!] | `audit/map + blocked evidence + live API evidence`: native AgentQA references path and PA parser path were re-audited; current live AgentQA smoke still reports `references=0`, `saved_citations=0`, `citation_blocked=true`, while native knowledge-chat still saves 2 locatable citations. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_CITATION_TRACEABILITY_REPORT.md`; AgentQA/custom Agent remains `live-partial`, coverage remains `11.25 / 15 = 75.0%`, and no Agent answer/tool text is accepted as citation PASS. |
 | 2026-06-23 | WNX-P3-05 | [!] | `live API/browser evidence + blocked evidence`: configured connector smoke revalidated the data source connector path; connector catalog remains live with 12 types, but active-KB data source count is still 0 and credentials configured count is 0. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_DATA_SOURCE_CONFIGURED_CONNECTOR_SMOKE_REPORT.md`; Data sources/connectors remains `read-only`, resources/validation/sync/pause/resume/log workflow PASS remains blocked/backlog, and coverage remains `11.25 / 15 = 75.0%`. |
+| 2026-06-23 | WNX-P3-06 | [!] | `native source patch draft + live API blocked evidence`: a narrow local native patch was drafted to propagate structured `knowledge_search` results into `EventAgentReferences`, but the outer WeKnora source is outside the PA git repository, Go tooling is unavailable, and current live AgentQA still reports `references=0`, `saved_citations=0`, `citation_blocked=true`. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_REFERENCE_PROPAGATION_PATCH_REPORT.md`; AgentQA/custom Agent remains `live-partial`, coverage remains `11.25 / 15 = 75.0%`, and the patch needs a commit-trackable native repo plus deployed runtime validation before it can count. |
 
 ## 8. Task Cards
 
@@ -890,6 +892,29 @@ Excluded or limited groups:
   count is 0; keep credential-heavy setup and raw sync/resource inspection
   backlog until explicitly authorized.
 - Status source: Section 6 row `WNX-P3-05`.
+
+### WNX-P3-06: AgentQA native reference propagation patch draft
+
+- Goal: draft and validate the smallest native AgentQA reference propagation
+  fix by converting structured native retrieval results into standard
+  `references` events.
+- Type: WeKnora native capability接入 + PA BFF/history/citation validation.
+- Inputs: `internal/agent/act.go`, `internal/agent/engine.go`,
+  `internal/agent/tools/knowledge_search.go`,
+  `internal/handler/session/agent_stream_handler.go`,
+  `knowledge_engine/backends/weknora_api_backend.py`,
+  `backend/app/services/native_agent_service.py`, and AgentQA/history smoke
+  scripts.
+- Output report:
+  `docs/WEKNORA_NATIVE_AGENTQA_REFERENCE_PROPAGATION_PATCH_REPORT.md`.
+- Acceptance: live PA AgentQA smoke must show `references > 0`,
+  `saved_citations > 0`, `citation_blocked=false`, and history citation locator
+  success before AgentQA/custom Agent can move to `live-full`.
+- Current decision: blocked. A local native patch draft exists, but the outer
+  WeKnora source directory is not the active PA git repository, `go`/`gofmt`
+  are unavailable, and the current live runtime still returns zero AgentQA
+  references.
+- Status source: Section 6 row `WNX-P3-06`.
 
 ## 9. Evidence Classification Rules
 
