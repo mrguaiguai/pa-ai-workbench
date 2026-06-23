@@ -1,0 +1,98 @@
+package agent
+
+import (
+	"testing"
+
+	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/types"
+)
+
+func TestExtractKnowledgeReferencesFromToolResult(t *testing.T) {
+	result := &types.ToolResult{
+		Success: true,
+		Data: map[string]interface{}{
+			"results": []map[string]interface{}{
+				{
+					"chunk_id":          "chunk-1",
+					"content":           "matched content",
+					"knowledge_id":      "doc-1",
+					"knowledge_title":   "Document 1",
+					"knowledge_base_id": "kb-1",
+					"chunk_index":       3,
+					"score":             0.91,
+					"match_type":        "vector",
+				},
+			},
+		},
+	}
+
+	refs := extractKnowledgeReferencesFromToolResult(agenttools.ToolKnowledgeSearch, result)
+	if len(refs) != 1 {
+		t.Fatalf("expected 1 reference, got %d", len(refs))
+	}
+	ref := refs[0]
+	if ref.ID != "chunk-1" || ref.KnowledgeID != "doc-1" || ref.KnowledgeBaseID != "kb-1" {
+		t.Fatalf("unexpected reference identity: %#v", ref)
+	}
+	if ref.ChunkIndex != 3 || ref.Score != 0.91 || ref.Content != "matched content" {
+		t.Fatalf("unexpected reference payload: %#v", ref)
+	}
+}
+
+func TestExtractWikiReferencesFromToolResult(t *testing.T) {
+	result := &types.ToolResult{
+		Success: true,
+		Data: map[string]interface{}{
+			"wiki_pages": []map[string]interface{}{
+				{
+					"source_type":       "wiki_page",
+					"wiki_page_id":      "wiki-1",
+					"wiki_page_slug":    "concept/rag",
+					"title":             "RAG",
+					"summary":           "Retrieval augmented generation.",
+					"page_type":         "concept",
+					"knowledge_base_id": "kb-1",
+				},
+			},
+		},
+	}
+
+	refs := extractKnowledgeReferencesFromToolResult(agenttools.ToolWikiSearch, result)
+	if len(refs) != 1 {
+		t.Fatalf("expected 1 wiki reference, got %d", len(refs))
+	}
+	ref := refs[0]
+	if ref.ID != "wiki-1" || ref.KnowledgeTitle != "RAG" || ref.KnowledgeBaseID != "kb-1" {
+		t.Fatalf("unexpected wiki reference identity: %#v", ref)
+	}
+	if ref.SourceType != "wiki_page" || ref.WikiPageID != "wiki-1" || ref.WikiPageSlug != "concept/rag" {
+		t.Fatalf("unexpected wiki reference fields: %#v", ref)
+	}
+	if ref.Metadata["source_type"] != "wiki_page" || ref.Metadata["weknora_slug"] != "concept/rag" {
+		t.Fatalf("unexpected wiki metadata: %#v", ref.Metadata)
+	}
+}
+
+func TestAppendUniqueKnowledgeReferences(t *testing.T) {
+	state := &types.AgentState{
+		KnowledgeRefs: []*types.SearchResult{
+			{ID: "chunk-1", KnowledgeID: "doc-1"},
+		},
+	}
+
+	added := appendUniqueKnowledgeReferences(state, []*types.SearchResult{
+		{ID: "chunk-1", KnowledgeID: "doc-1"},
+		{ID: "chunk-2", KnowledgeID: "doc-1"},
+		{ID: "", KnowledgeID: "doc-1"},
+	})
+
+	if len(added) != 1 {
+		t.Fatalf("expected 1 added reference, got %d", len(added))
+	}
+	if len(state.KnowledgeRefs) != 2 {
+		t.Fatalf("expected 2 state references, got %d", len(state.KnowledgeRefs))
+	}
+	if state.KnowledgeRefs[1].ID != "chunk-2" {
+		t.Fatalf("unexpected appended reference: %#v", state.KnowledgeRefs[1])
+	}
+}
