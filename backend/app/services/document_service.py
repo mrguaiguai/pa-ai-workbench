@@ -14,6 +14,7 @@ from app.models import DocumentChunk
 from app.models import DocumentProcessingEvent
 from app.models import utc_now
 from app.storage.file_store import save_upload_file
+from app.services.knowledge_base_service import active_knowledge_base_id
 from knowledge_engine.chunking import Chunker
 from knowledge_engine.chunking import DocumentChunkCandidate
 from knowledge_engine.chunking import ParagraphChunker
@@ -47,6 +48,7 @@ async def create_document(
     document_type: str | None = None,
     source: str | None = None,
     keywords_json: str | None = None,
+    knowledge_base_id: str | None = None,
 ) -> Document:
     stored_file = await save_upload_file(upload)
     settings = get_settings()
@@ -68,7 +70,8 @@ async def create_document(
     session.commit()
     session.refresh(document)
     if settings.knowledge_backend == "weknora_api":
-        _upload_document_to_weknora(session, document)
+        selected_kb_id = (knowledge_base_id or "").strip() or active_knowledge_base_id(session)
+        _upload_document_to_weknora(session, document, knowledge_base_id=selected_kb_id)
     return document
 
 
@@ -616,6 +619,7 @@ def _upload_document_to_weknora(
     document: Document,
     operation: str = "upload",
     prior_external_doc_id: str | None = None,
+    knowledge_base_id: str | None = None,
 ) -> None:
     step = "weknora_upload" if operation == "upload" else "weknora_retry"
     _record_event(
@@ -646,6 +650,7 @@ def _upload_document_to_weknora(
                     "keywords_json": document.keywords_json,
                     "file_name": document.file_name,
                     "mime_type": document.mime_type,
+                    "kb_id": knowledge_base_id,
                 },
             )
     except KnowledgeBackendUnavailableError as exc:

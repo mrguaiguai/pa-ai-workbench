@@ -37,6 +37,7 @@ REQUIRED_REPORTS = {
     "WNX-P0-03": DOCS_ROOT / "WEKNORA_NATIVE_CAPABILITY_CENTER_BROWSER_REPORT.md",
     "WNX-P0-04": DOCS_ROOT / "WEKNORA_NATIVE_EXPANSION_ACCEPTANCE_HARNESS_REPORT.md",
     "WNX-P0-05": DOCS_ROOT / "WEKNORA_NATIVE_DEPLOYMENT_READINESS_REPORT.md",
+    "WNX-P1-01": DOCS_ROOT / "WEKNORA_NATIVE_KB_MANAGEMENT_LIVE_REPORT.md",
 }
 
 COMPLETED_PREREQUISITE_TASKS = (
@@ -48,12 +49,14 @@ COMPLETED_PREREQUISITE_TASKS = (
     "WNX-P0-03",
     "WNX-P0-04",
     "WNX-P0-05",
+    "WNX-P1-01",
 )
 
 EVIDENCE_LABELS = (
     "live evidence",
     "live API evidence",
     "live browser evidence",
+    "live API/browser evidence",
     "live service/status evidence",
     "fixture evidence",
     "audit/map",

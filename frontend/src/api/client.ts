@@ -245,6 +245,65 @@ export type NativeStatusCenterParams = {
   limit?: number;
 };
 
+export type NativeKnowledgeBaseItem = {
+  id: string | null;
+  name: string | null;
+  description: string | null;
+  type: string | null;
+  is_temporary: boolean;
+  knowledge_count: number | null;
+  chunk_count: number | null;
+  processing_count: number | null;
+  share_count: number | null;
+  is_processing: boolean;
+  is_pinned: boolean;
+  creator_name: string | null;
+  my_permission: string | null;
+  vector_store: Record<string, unknown> | null;
+  source: string;
+};
+
+export type NativeKnowledgeBaseSelection = {
+  workspace_id: string | null;
+  kb_id: string | null;
+  name: string | null;
+  type: string | null;
+  selection_source: string | null;
+  mapping_name: string | null;
+  default_used: boolean;
+  validated: boolean;
+  snapshot_saved: boolean;
+  source: string;
+  vector_store: Record<string, unknown> | null;
+  created_at?: string | null;
+};
+
+export type NativeKnowledgeBaseOverviewResponse = {
+  schema_version: string;
+  source: string;
+  status: NativeStatusValue;
+  evidence_type: string;
+  masked: boolean;
+  workspace_id_configured: boolean;
+  default_kb_configured: boolean;
+  active_selection: NativeKnowledgeBaseSelection | null;
+  items: NativeKnowledgeBaseItem[];
+  total: number;
+  surfaces: Record<string, Record<string, unknown>>;
+  warnings: string[];
+  next_action: string;
+};
+
+export type ActiveKnowledgeBaseSelectionResponse = {
+  schema_version: string;
+  status: NativeStatusValue;
+  evidence_type: string;
+  source: string;
+  active_selection: NativeKnowledgeBaseSelection;
+  tags: Array<Record<string, unknown>>;
+  mutation_backlog: string[];
+};
+
 export type ModelProviderStatus = {
   provider: string;
   model: string;
@@ -305,6 +364,7 @@ export type DocumentUploadRequest = {
   document_type?: string;
   source?: string;
   keywords_json?: string;
+  knowledge_base_id?: string;
 };
 
 export type DocumentUploadResponse = {
@@ -845,6 +905,17 @@ export const apiClient = {
     const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
     return request<NativeStatusCenterResponse>(`/api/native/status${suffix}`);
   },
+  getNativeKnowledgeBaseOverview: (limit = 20) => {
+    const searchParams = new URLSearchParams({ limit: String(limit) });
+    return request<NativeKnowledgeBaseOverviewResponse>(
+      `/api/knowledge-bases/native/overview?${searchParams.toString()}`,
+    );
+  },
+  selectActiveKnowledgeBase: (kbId: string) =>
+    request<ActiveKnowledgeBaseSelectionResponse>("/api/knowledge-bases/native/active", {
+      method: "POST",
+      body: JSON.stringify({ kb_id: kbId }),
+    }),
   listDocuments: (filters: DocumentListFilters = {}) => {
     const params = documentFilterParams(filters);
     const suffix = params.toString() ? `?${params.toString()}` : "";
@@ -875,6 +946,9 @@ export const apiClient = {
     }
     if (payload.keywords_json) {
       formData.append("keywords_json", payload.keywords_json);
+    }
+    if (payload.knowledge_base_id) {
+      formData.append("knowledge_base_id", payload.knowledge_base_id);
     }
     return request<DocumentUploadResponse>("/api/documents", {
       method: "POST",

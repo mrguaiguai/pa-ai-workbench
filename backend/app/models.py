@@ -145,6 +145,21 @@ class Citation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now, nullable=False)
 
 
+class KnowledgeBaseSelectionSnapshot(TimestampMixin, table=True):
+    __tablename__ = "knowledge_base_selection_snapshots"
+
+    id: str = Field(default_factory=lambda: new_id("kbsel"), primary_key=True)
+    workspace_id: str | None = Field(default=None, index=True)
+    kb_id: str = Field(index=True)
+    selection_source: str = Field(default="pa_active_selection", index=True)
+    mapping_name: str | None = Field(default=None, index=True)
+    name: str | None = Field(default=None)
+    type: str | None = Field(default=None, index=True)
+    source: str = Field(default="weknora_api", index=True)
+    status: str = Field(default="active", index=True)
+    metadata_json: str | None = Field(default=None)
+
+
 class WikiPage(TimestampMixin, table=True):
     __tablename__ = "wiki_pages"
 

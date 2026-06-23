@@ -47,6 +47,7 @@ async def upload_document(
     document_type: Annotated[str | None, Form()] = None,
     source: Annotated[str | None, Form()] = None,
     keywords_json: Annotated[str | None, Form()] = None,
+    knowledge_base_id: Annotated[str | None, Form()] = None,
 ) -> DocumentUploadResponse:
     document = await create_document(
         session=session,
@@ -56,6 +57,7 @@ async def upload_document(
         document_type=document_type,
         source=source,
         keywords_json=keywords_json,
+        knowledge_base_id=knowledge_base_id,
     )
     return DocumentUploadResponse(document=_document_read(session, document))
 

@@ -512,6 +512,30 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "source": "weknora_api",
         }
 
+    def list_knowledge_bases(self) -> list[dict]:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/knowledge-bases")
+        payload = self._unwrap_data(data)
+        items = _items_from_payload(payload)
+        return [self._knowledge_base_safe_dict(item) for item in items if isinstance(item, dict)]
+
+    def list_knowledge_base_tags(self, kb_id: str, *, limit: int = 20) -> list[dict]:
+        self._require_configured()
+        resolved_kb_id = str(kb_id or "").strip()
+        if not resolved_kb_id:
+            raise KnowledgeBackendUnavailableError("knowledge base id is required for tag list")
+        safe_limit = max(min(int(limit or 20), 100), 1)
+        data = self._request_json(
+            "GET",
+            "/api/v1/knowledge-bases/{kb_id}/tags?{query}".format(
+                kb_id=quote(resolved_kb_id, safe=""),
+                query=urlencode({"page": 1, "page_size": safe_limit}),
+            ),
+        )
+        payload = self._unwrap_data(data)
+        tags = _items_from_payload(payload)
+        return [_knowledge_tag_safe_dict(tag) for tag in tags if isinstance(tag, dict)]
+
     def upload_document(self, file_path: str, metadata: dict) -> KnowledgeDocument:
         self._require_configured()
         target = self.kb_resolver.resolve_one(metadata, operation="upload_document")
@@ -1430,6 +1454,25 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "available": status == "available",
         }
 
+    def _knowledge_base_safe_dict(self, item: dict) -> dict:
+        return {
+            "id": _optional_str(item.get("id")),
+            "name": _optional_str(item.get("name") or item.get("title")),
+            "description": _optional_str(item.get("description")),
+            "type": _optional_str(item.get("type")),
+            "is_temporary": bool(item.get("is_temporary")),
+            "knowledge_count": _optional_int(item.get("knowledge_count")),
+            "chunk_count": _optional_int(item.get("chunk_count")),
+            "processing_count": _optional_int(item.get("processing_count")),
+            "share_count": _optional_int(item.get("share_count")),
+            "is_processing": bool(item.get("is_processing")),
+            "is_pinned": bool(item.get("is_pinned")),
+            "creator_name": _optional_str(item.get("creator_name")),
+            "my_permission": _optional_str(item.get("my_permission")),
+            "vector_store": self._knowledge_base_vector_store_safe_dict(item),
+            "source": "weknora_api",
+        }
+
     def _retrieve_payload(self, query: str, filters: dict) -> dict:
         payload: dict[str, object] = {"query": query}
         knowledge_ids = _knowledge_scope_filter(filters)
@@ -1960,6 +2003,37 @@ def _knowledge_scope_filter(filters: dict) -> list[str]:
         or filters.get("external_doc_ids")
         or filters.get("external_doc_id")
     )
+
+
+def _items_from_payload(payload: object) -> list[dict]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("items", "list", "records", "knowledge_bases", "tags"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    nested = payload.get("data")
+    if nested is not payload:
+        nested_items = _items_from_payload(nested)
+        if nested_items:
+            return nested_items
+    return [payload]
+
+
+def _knowledge_tag_safe_dict(item: dict) -> dict:
+    return {
+        "id": _optional_str(item.get("id")),
+        "seq_id": _optional_int(item.get("seq_id")),
+        "knowledge_base_id": _optional_str(item.get("knowledge_base_id")),
+        "name": _optional_str(item.get("name")),
+        "color": _optional_str(item.get("color")),
+        "sort_order": _optional_int(item.get("sort_order")),
+        "knowledge_count": _optional_int(item.get("knowledge_count")),
+        "chunk_count": _optional_int(item.get("chunk_count")),
+        "source": "weknora_api",
+    }
 
 
 def _multipart_body(boundary: str, file_path: Path, fields: dict[str, str]) -> bytes:

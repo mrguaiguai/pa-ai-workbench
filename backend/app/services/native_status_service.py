@@ -258,15 +258,20 @@ def _workspace_group(settings: Settings, weknora_status: dict[str, Any]) -> dict
             "selection_source": mapping.get("selection_source"),
             "default_used": mapping.get("default_used"),
             "mapping_configured": bool(mapping.get("mapping_configured")),
+            "management_endpoint": "/api/knowledge-bases/native/overview",
+            "unsafe_mutations": "backlog_until_confirmation_and_audit_trail",
         }
     return _group(
         capability_id="workspace_knowledge_base",
         label="Workspace / knowledge base",
         status=status,
         configured=bool(settings.weknora_workspace_id and settings.weknora_default_kb_id),
-        source_endpoint="/api/status",
-        native_endpoint="/api/v1/tenants/{workspace_id}, /api/v1/knowledge-bases/{kb_id}",
-        next_action="WNX-P1-01",
+        source_endpoint="/api/knowledge-bases/native/overview",
+        native_endpoint=(
+            "/api/v1/tenants/{workspace_id}, /api/v1/knowledge-bases, "
+            "/api/v1/knowledge-bases/{kb_id}, /api/v1/knowledge-bases/{kb_id}/tags"
+        ),
+        next_action="WNX-P3-02",
         summary=summary,
     )
 

@@ -1,7 +1,9 @@
 import {
+  Database,
   Eye,
   FileText,
   Loader2,
+  Pin,
   RefreshCw,
   RotateCcw,
   Upload,
@@ -14,6 +16,8 @@ import {
   Document,
   DocumentChunk,
   DocumentProcessingEvent,
+  NativeKnowledgeBaseItem,
+  NativeKnowledgeBaseOverviewResponse,
   apiClient,
 } from "../api/client";
 import {
@@ -39,6 +43,7 @@ type LibraryFilters = {
 type LoadState = "idle" | "loading" | "error";
 type ChunkLoadState = "idle" | "loading" | "error";
 type EventLoadState = "idle" | "loading" | "error";
+type KnowledgeBaseLoadState = "idle" | "loading" | "error";
 
 const initialForm: LibraryForm = {
   title: "",
@@ -238,6 +243,21 @@ function backendLabel(document: Document) {
   return document.knowledge_backend === "weknora_api" ? "WeKnora" : document.knowledge_backend;
 }
 
+function knowledgeBaseLabel(item: NativeKnowledgeBaseItem) {
+  const name = item.name || item.id || "未命名知识库";
+  const type = item.type ? ` · ${item.type}` : "";
+  const count = item.knowledge_count === null ? "" : ` · ${item.knowledge_count} 个资料`;
+  return `${name}${type}${count}`;
+}
+
+function activeKnowledgeBaseLabel(overview: NativeKnowledgeBaseOverviewResponse | null) {
+  const active = overview?.active_selection;
+  if (!active) {
+    return "未验证活动知识库";
+  }
+  return active.name || active.kb_id || "活动知识库";
+}
+
 function buildDocumentFilters(filters: LibraryFilters) {
   return {
     status: filters.status,
@@ -343,6 +363,11 @@ export function LibraryPage() {
   const [eventLoadState, setEventLoadState] = useState<EventLoadState>("idle");
   const [eventError, setEventError] = useState<string | null>(null);
   const [targetChunkId, setTargetChunkId] = useState<string | null>(null);
+  const [kbOverview, setKbOverview] = useState<NativeKnowledgeBaseOverviewResponse | null>(null);
+  const [kbLoadState, setKbLoadState] = useState<KnowledgeBaseLoadState>("idle");
+  const [kbError, setKbError] = useState<string | null>(null);
+  const [selectedKbId, setSelectedKbId] = useState("");
+  const [selectingKb, setSelectingKb] = useState(false);
 
   const indexedCount = useMemo(
     () => documents.filter((document) => document.status === "indexed").length,
@@ -359,6 +384,11 @@ export function LibraryPage() {
   const previewDocument = useMemo(
     () => documents.find((document) => document.id === previewDocumentId) ?? null,
     [documents, previewDocumentId],
+  );
+  const activeKbId = kbOverview?.active_selection?.kb_id ?? "";
+  const selectedKb = useMemo(
+    () => kbOverview?.items.find((item) => item.id === selectedKbId) ?? null,
+    [kbOverview, selectedKbId],
   );
 
   const applyHashTarget = (nextDocuments: Document[]) => {
@@ -395,9 +425,29 @@ export function LibraryPage() {
       });
   };
 
+  const loadKnowledgeBases = () => {
+    setKbLoadState("loading");
+    setKbError(null);
+    apiClient
+      .getNativeKnowledgeBaseOverview(50)
+      .then((response) => {
+        setKbOverview(response);
+        setSelectedKbId(response.active_selection?.kb_id ?? response.items[0]?.id ?? "");
+        setKbLoadState("idle");
+      })
+      .catch((loadError: unknown) => {
+        setKbError(errorMessage(loadError));
+        setKbLoadState("error");
+      });
+  };
+
   useEffect(() => {
     loadDocuments();
   }, [filters.status, filters.knowledgeBackend, filters.errorOnly]);
+
+  useEffect(() => {
+    loadKnowledgeBases();
+  }, []);
 
   useEffect(() => {
     const onLocate = () => {
@@ -454,6 +504,7 @@ export function LibraryPage() {
         business_area: form.businessArea.trim(),
         document_type: form.documentType.trim(),
         source: form.source.trim(),
+        knowledge_base_id: selectedKbId || undefined,
       })
       .then((response) => {
         setDocuments((current) => [response.document, ...current]);
@@ -462,6 +513,21 @@ export function LibraryPage() {
       })
       .catch((uploadError: unknown) => setError(errorMessage(uploadError)))
       .finally(() => setIsUploading(false));
+  };
+
+  const onSelectKnowledgeBase = () => {
+    if (!selectedKbId || selectedKbId === activeKbId) {
+      return;
+    }
+    setSelectingKb(true);
+    setKbError(null);
+    apiClient
+      .selectActiveKnowledgeBase(selectedKbId)
+      .then(() => {
+        loadKnowledgeBases();
+      })
+      .catch((selectError: unknown) => setKbError(errorMessage(selectError)))
+      .finally(() => setSelectingKb(false));
   };
 
   const loadPreview = (documentId: string, chunkId: string | null = null) => {
@@ -567,6 +633,45 @@ export function LibraryPage() {
             <span>上传</span>
             <strong>上传资料</strong>
           </div>
+
+          <section className="kb-selector" aria-label="知识库选择">
+            <div className="kb-selector-heading">
+              <Database size={16} aria-hidden="true" />
+              <div>
+                <span>活动知识库</span>
+                <strong>{activeKnowledgeBaseLabel(kbOverview)}</strong>
+              </div>
+            </div>
+            <label>
+              <span>上传目标</span>
+              <select
+                value={selectedKbId}
+                onChange={(event) => setSelectedKbId(event.target.value)}
+                disabled={kbLoadState === "loading" || selectingKb}
+              >
+                {kbOverview?.items.map((item) => (
+                  <option value={item.id ?? ""} key={item.id ?? item.name ?? "unknown"}>
+                    {knowledgeBaseLabel(item)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="kb-selector-meta">
+              <span>{kbLoadState === "loading" ? "加载中" : `${kbOverview?.total ?? 0} 个 KB`}</span>
+              <span>{selectedKb?.is_pinned ? "已置顶" : "未置顶"}</span>
+              <span>{selectedKb?.vector_store?.status ? `向量：${String(selectedKb.vector_store.status)}` : "向量：未知"}</span>
+            </div>
+            {kbError ? <ErrorState message={kbError} /> : null}
+            <button
+              className="secondary-action compact"
+              type="button"
+              onClick={onSelectKnowledgeBase}
+              disabled={!selectedKbId || selectedKbId === activeKbId || selectingKb}
+            >
+              {selectingKb ? <Loader2 size={16} aria-hidden="true" /> : <Pin size={16} />}
+              <span>{selectedKbId === activeKbId ? "当前活动" : "设为活动"}</span>
+            </button>
+          </section>
 
           <label className="file-drop">
             <input type="file" onChange={onFileChange} />
