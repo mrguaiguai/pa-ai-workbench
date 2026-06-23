@@ -48,6 +48,11 @@ REQUIRED_REPORTS = {
     "WNX-P2-02": DOCS_ROOT / "WEKNORA_NATIVE_MCP_MANAGEMENT_LIVE_REPORT.md",
     "WNX-P2-03": DOCS_ROOT / "WEKNORA_NATIVE_WEB_SEARCH_MANAGEMENT_LIVE_REPORT.md",
     "WNX-P2-04": DOCS_ROOT / "WEKNORA_NATIVE_VECTOR_STORE_MANAGEMENT_LIVE_REPORT.md",
+    "WNX-P2-05": DOCS_ROOT / "WEKNORA_NATIVE_DATA_SOURCE_CONNECTOR_LIVE_REPORT.md",
+    "WNX-P2-06": DOCS_ROOT / "WEKNORA_NATIVE_WORKBENCH_ORGANIZATION_LIVE_REPORT.md",
+    "WNX-P3-01": DOCS_ROOT / "WEKNORA_NATIVE_PRODUCT_BROWSER_MATRIX_REPORT.md",
+    "WNX-P3-02": DOCS_ROOT / "WEKNORA_NATIVE_EXPANSION_INTERNAL_PROD_PASS_REPORT.md",
+    "WNX-P3-03": DOCS_ROOT / "WEKNORA_NATIVE_EXPANSION_HANDOFF_RUNBOOK.md",
 }
 
 COMPLETED_PREREQUISITE_TASKS = (
@@ -70,6 +75,10 @@ COMPLETED_PREREQUISITE_TASKS = (
     "WNX-P2-02",
     "WNX-P2-03",
     "WNX-P2-04",
+    "WNX-P2-05",
+    "WNX-P2-06",
+    "WNX-P3-01",
+    "WNX-P3-03",
 )
 
 EVIDENCE_LABELS = (
@@ -260,14 +269,15 @@ def _run_static_checks() -> tuple[CheckSummary, list[Issue]]:
     if coverage["target_percent"] < 80:
         issues.append(Issue(LEDGER_PATH, "coverage_target_low", "target coverage is below 80%"))
 
+    final_blocked = _final_blocked_report_is_explicit(task_statuses)
     unfinished = [task for task, status in task_statuses.items() if status == "[ ]"]
     in_progress = bool(unfinished)
-    if coverage["current_percent"] < 80 and not in_progress:
+    if coverage["current_percent"] < 80 and not in_progress and not final_blocked:
         issues.append(
             Issue(
                 LEDGER_PATH,
                 "coverage_below_target",
-                "coverage is below target and the spec is not explicitly in progress",
+                "coverage is below target without an unfinished task or explicit final blocked report",
             )
         )
 
@@ -330,7 +340,43 @@ def _check_report_evidence(task_id: str, path: Path, text: str) -> list[Issue]:
         ):
             if required not in lower:
                 issues.append(Issue(path, "missing_harness_marker", f"missing harness marker {required}"))
+    if task_id == "WNX-P3-02":
+        for required in (
+            "Decision: `BLOCKED`",
+            "11.25 / 15 = 75.0%",
+            "12.00 / 15 = 80.0%",
+            "Mock evidence, fixture-only evidence, cached evidence",
+        ):
+            if required not in text:
+                issues.append(Issue(path, "missing_final_blocked_marker", f"missing final blocked marker {required}"))
+    if task_id == "WNX-P3-03":
+        for required in (
+            "Copy-Paste New-Chat Prompt",
+            "WNX-P3-02 是 [!] blocked",
+            "docs/PHASE5_B5_DIALOGUE_RETROSPECTIVE_CN.md",
+            "git log --oneline -5",
+        ):
+            if required not in text:
+                issues.append(Issue(path, "missing_handoff_marker", f"missing handoff marker {required}"))
     return issues
+
+
+def _final_blocked_report_is_explicit(task_statuses: dict[str, str]) -> bool:
+    if task_statuses.get("WNX-P3-02") != "[!]":
+        return False
+    try:
+        text = (DOCS_ROOT / "WEKNORA_NATIVE_EXPANSION_INTERNAL_PROD_PASS_REPORT.md").read_text(
+            encoding="utf-8"
+        )
+    except FileNotFoundError:
+        return False
+    required = (
+        "Decision: `BLOCKED`",
+        "coverage current: 11.25/15 = 75.0%",
+        "coverage target: 12.00/15 = 80.0%",
+        "The stage should not be called internal production PASS",
+    )
+    return all(marker in text for marker in required)
 
 
 def _parse_task_statuses(spec: str) -> dict[str, str]:
