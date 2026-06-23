@@ -49,7 +49,7 @@ Eligible capability groups: `15`.
 Current score:
 
 ```text
-10.25 / 15 = 68.3%
+10.50 / 15 = 70.0%
 ```
 
 Minimum internal production target:
@@ -78,7 +78,7 @@ safe limited workflows without leaking secrets or rebuilding WeKnora admin.
 | Native Wiki | `live-full` | 1.0 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_WIKI_NATIVE_BROWSE_REPORT.md`; `docs/WEKNORA_NATIVE_WIKI_WORKFLOW_LIVE_REPORT.md`; `docs/WEKNORA_NATIVE_HISTORY_CITATION_UNIFICATION_LIVE_REPORT.md`; WNX-P1-06 validated native Wiki pages/search/read/index/log/graph/stats/lint/issues, safe create/update/delete on a temporary page, and Wiki browser workflow; WNX-P1-07 normalizes Wiki citation deep links to `#/wiki?slug=...`. | `WNX-P1-06` live API/browser smoke with confirmation-gated native mutations; `WNX-P1-07` citation locator validation. | Global rebuild-links/auto-fix and issue-status mutation require operator confirmation and must not run from status-only refreshes. | `WNX-P3-02` |
 | MCP | `live-partial` | 0.5 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_MCP_VISIBILITY_REPORT.md`; `docs/WEKNORA_NATIVE_MCP_MANAGEMENT_LIVE_REPORT.md`; PA reads native MCP service list live, exposes sanitized service detail/test controls, renders Capability Center MCP management status, and records no configured service for current-run test/tool/resource probes. | `WNX-P2-02` live API/browser smoke, masked response checks, and sensitive scan. | Current tenant has no configured MCP service; credential forms, tool execution, approval mutation, service CRUD, and automatic external tool/resource probes remain backlog without explicit approval/audit design. | `WNX-P3-02` |
 | Web search | `live-partial` | 0.5 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_WEB_SEARCH_VISIBILITY_REPORT.md`; `docs/WEKNORA_NATIVE_WEB_SEARCH_MANAGEMENT_LIVE_REPORT.md`; PA reads native provider type catalog and configured-provider list live, exposes sanitized provider detail/test controls, renders Capability Center web search management status, and records no configured provider for current-run external tests or AgentQA web-search readiness. | `WNX-P2-03` live API/browser smoke, masked response checks, and sensitive scan. | Current tenant has no configured provider; credential forms, raw credential tests, raw search debugging, provider CRUD, and PA-owned web-search orchestration remain backlog without explicit approval/audit design. | `WNX-P3-02` |
-| Vector store | `read-only` | 0.25 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md`; PA read vector-store types/list, KB binding, and embedding readiness without raw config. | Live vector-store readiness/test where safe, KB binding check, sensitive scan. | CRUD, connection tests, raw config display, KB rebind mutation, and PA-owned vector administration remain backlog. | `WNX-P2-04` |
+| Vector store | `live-partial` | 0.5 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md`; `docs/WEKNORA_NATIVE_VECTOR_STORE_MANAGEMENT_LIVE_REPORT.md`; PA reads native vector-store types/list/detail, active KB binding, and embedding readiness without raw config or raw store IDs. | `WNX-P2-04` live API/browser smoke, masked response checks, blocked default test path, and sensitive scan. | Confirmed external vector-store test was not requested; CRUD, raw config/test display, KB rebind mutation, and PA-owned vector administration remain backlog. | `WNX-P3-02` |
 | Model/embedding/rerank/parser | `live-partial` | 0.5 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_STATUS_REPORT_GATES.md`; `docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md`; `docs/WEKNORA_NATIVE_MODEL_CONFIG_LIVE_REPORT.md`; WNX-P2-01 validated masked native provider catalog, model catalog, parser engines, storage engine status, and PA chat/embedding runtime. | `WNX-P2-01` live API/browser smoke with sanitized counts and `blocked_admin_only` active test boundaries. | Chat/embedding runtime and read-only native model/parser/storage visibility are live; remote model, embedding, rerank, parser, and storage active tests remain blocked until operator confirmation and secret-handling design exists. | `WNX-P3-02` |
 | Data sources/connectors | `backlog` | 0 | `live-partial` | 0.5 | `docs/WEKNORA_NATIVE_EXPANSION_ARCHITECTURE.md`; native data source routes identified for future safe status/sync slices. | Live connector type/status/resources/sync smoke with sanitized output. | Credential-heavy connector setup and sync logs may expose secrets; start with read-only or safe validate/resources. | `WNX-P2-05` |
 | FAQ/tags/favorites/skills | `backlog` | 0 | `live-partial` | 0.5 | `docs/WEKNORA_NATIVE_EXPANSION_ARCHITECTURE.md`; native FAQ/tags/favorites/skills route families identified. | Live API smoke for at least one organization primitive plus browser workflow. | Useful workbench polish, but not yet integrated into PA UX; avoid inventing a parallel taxonomy. | `WNX-P2-06` |
@@ -91,14 +91,13 @@ The minimum target plan reaches 80% by completing these state moves:
 | Move | Groups | Score gain |
 | --- | --- | ---: |
 | `live-partial` to `live-full` | AgentQA/custom Agent | +0.5 |
-| `read-only` to `live-partial` | Vector store | +0.25 |
 | `backlog` to `live-partial` | Data sources/connectors, FAQ/tags/favorites/skills | +1.0 |
 | Keep `live-partial` target | Model/embedding/rerank/parser | +0 |
 
 Planned target score:
 
 ```text
-10.25 current + 1.75 planned gain = 12.00 / 15 = 80.0%
+10.50 current + 1.50 planned gain = 12.00 / 15 = 80.0%
 ```
 
 Stretch target:
@@ -162,8 +161,8 @@ and `docs/WEKNORA_NATIVE_EXPANSION_ACCEPTANCE_HARNESS_REPORT.md`.
 
 The harness validates the ledger math and stage evidence boundaries:
 
-- the checker parses the current ledger score; after `WNX-P1-07` this is
-  `9.75 / 15 = 65.0%`;
+- the checker parses the current ledger score; after `WNX-P2-04` this is
+  `10.50 / 15 = 70.0%`;
 - target score remains `12.00 / 15 = 80.0%`;
 - current score below target is allowed only because the WNX stage is still in
   progress;

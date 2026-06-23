@@ -437,9 +437,11 @@ function statusStripDetails(state: WeKnoraFirstStatusStripState) {
     const stores = state.vectorStoreOverview.surfaces.stores;
     const kbBinding = state.vectorStoreOverview.surfaces.kb_binding;
     const embedding = state.vectorStoreOverview.surfaces.embedding;
+    const storeTest = state.vectorStoreOverview.surfaces.store_test;
     details.push(`vector_store=${state.vectorStoreOverview.status}`);
     details.push(`vector_store types=${surfaceCount(storeTypes)}`);
     details.push(`vector_store stores=${surfaceCount(stores)}`);
+    details.push(`vector_store store_test=${storeTest?.status ?? "unknown"}`);
     details.push(`vector_store KB=${kbBinding?.binding_status ?? kbBinding?.status ?? "unknown"}`);
     details.push(`embedding=${embedding?.status ?? "unknown"}`);
   }

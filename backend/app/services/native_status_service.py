@@ -510,10 +510,14 @@ def _vector_store_summary(overview: dict[str, Any]) -> dict[str, Any]:
     surfaces = _surfaces(value)
     store_types = surfaces.get("store_types", {})
     stores = surfaces.get("stores", {})
+    store_read = surfaces.get("store_read", {})
+    store_test = surfaces.get("store_test", {})
     kb_binding = surfaces.get("kb_binding", {})
     embedding = surfaces.get("embedding", {})
     mutations = surfaces.get("mutations", {})
     return {
+        "store_read_status": store_read.get("status"),
+        "store_test_status": store_test.get("status"),
         "store_types_status": store_types.get("status"),
         "store_type_count": int(store_types.get("count") or 0),
         "stores_status": stores.get("status"),

@@ -1582,15 +1582,40 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if isinstance(item, dict)
         ]
 
-    def list_vector_stores(self) -> list[dict]:
+    def list_vector_stores(self, *, include_internal_refs: bool = False) -> list[dict]:
         self._require_configured()
         data = self._request_json("GET", "/api/v1/vector-stores")
         items = self._unwrap_items(data)
-        return [
-            self._vector_store_safe_dict(item)
-            for item in items
-            if isinstance(item, dict)
-        ]
+        stores: list[dict] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            store = self._vector_store_safe_dict(item)
+            if include_internal_refs:
+                store["_native_store_id"] = _optional_str(item.get("id"))
+            stores.append(store)
+        return stores
+
+    def get_vector_store(self, store_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(store_id, safe="")
+        data = self._request_json("GET", f"/api/v1/vector-stores/{encoded_id}")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        return self._vector_store_safe_dict(payload)
+
+    def test_vector_store(self, store_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(store_id, safe="")
+        data = self._request_json("POST", f"/api/v1/vector-stores/{encoded_id}/test")
+        payload = data if isinstance(data, dict) else {}
+        version = _optional_str(payload.get("version"))
+        return {
+            "success": bool(payload.get("success")),
+            "version_detected": bool(version),
+            "source": "weknora_api",
+        }
 
     def list_model_providers(self, model_type: str | None = None) -> list[dict]:
         self._require_configured()
