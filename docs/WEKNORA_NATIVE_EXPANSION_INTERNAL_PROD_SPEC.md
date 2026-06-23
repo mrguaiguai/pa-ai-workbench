@@ -287,6 +287,7 @@ Excluded or limited groups:
 | WNX-P3-01 | P3 | Six-page product workflow browser matrix | [x] | Home, library, RAG, analysis, Wiki, history, capability center pass desktop/mobile browser checks. |
 | WNX-P3-02 | P3 | Internal production report | [!] | `docs/WEKNORA_NATIVE_EXPANSION_INTERNAL_PROD_PASS_REPORT.md` records blocked final PASS because current verified coverage is 75.0%, below the 80.0% internal production threshold. |
 | WNX-P3-03 | P3 | Deployment handoff prompt/runbook | [x] | Handoff runbook explains current blocked final PASS, local recovery commands, validation commands, and copy-paste continuation prompt. |
+| WNX-P3-04 | P3 | AgentQA citation traceability blocker refresh | [!] | `docs/WEKNORA_NATIVE_AGENTQA_CITATION_TRACEABILITY_REPORT.md` records live AgentQA/history smokes with `references=0`, `saved_citations=0`, and `citation_blocked=true`; no coverage upgrade is claimed. |
 
 ## 7. Progress Log
 
@@ -316,6 +317,7 @@ Excluded or limited groups:
 | 2026-06-23 | WNX-P3-01 | [x] | `live browser evidence`: temporary PA backend/frontend plus local Chrome headless verify home, library, analysis, RAG debug, Wiki, history, and capability center on desktop `1440x900` and mobile `390x844`, with `routes=7`, `viewport_checks=14`, `overflow=0`, and `visible_overlap=0`. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_PRODUCT_BROWSER_MATRIX_REPORT.md`; coverage remains `11.25 / 15 = 75.0%` because this task proves product workflow/browser coherence and does not upgrade backlog/read-only native capability groups. |
 | 2026-06-23 | WNX-P3-02 | [!] | `blocked evidence + checker execution evidence`: final internal production PASS is blocked because acceptance refresh still shows coverage current `11.25/15 = 75.0%` versus target `12.00/15 = 80.0%`, even though live status center validates `groups=15` and browser matrix passed. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_EXPANSION_INTERNAL_PROD_PASS_REPORT.md`; AgentQA/custom Agent remains `live-partial` due traceable citation gap, and Data sources/connectors remains `read-only` because the live runtime has no configured connector for resources/validate/sync/log workflow PASS. |
 | 2026-06-23 | WNX-P3-03 | [x] | `audit/map + documentation validation`: handoff runbook records the current blocked final PASS state, source-of-truth files, local recovery/status commands, validation commands, score-moving options, and a copy-paste new-chat prompt that tells future agents to trust local `git log --oneline` and the WNX spec/ledger/reports. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_EXPANSION_HANDOFF_RUNBOOK.md`; this task does not change coverage and does not claim internal production PASS while `WNX-P3-02` remains blocked at `75.0%`. |
+| 2026-06-23 | WNX-P3-04 | [!] | `audit/map + blocked evidence + live API evidence`: native AgentQA references path and PA parser path were re-audited; current live AgentQA smoke still reports `references=0`, `saved_citations=0`, `citation_blocked=true`, while native knowledge-chat still saves 2 locatable citations. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_CITATION_TRACEABILITY_REPORT.md`; AgentQA/custom Agent remains `live-partial`, coverage remains `11.25 / 15 = 75.0%`, and no Agent answer/tool text is accepted as citation PASS. |
 
 ## 8. Task Cards
 
@@ -825,6 +827,35 @@ Excluded or limited groups:
   runbook includes commands.
 - Blocked/backlog: mark `[!]` if required final reports are not available.
 - Status source: Section 6 row `WNX-P3-03`.
+
+### WNX-P3-04: AgentQA citation traceability blocker refresh
+
+- Goal: determine whether AgentQA/custom Agent can move from `live-partial` to
+  `live-full` through real traceable native references.
+- Scope: native AgentQA references emit path, PA AgentQA parser/citation path,
+  live AgentQA smoke, and history/citation smoke.
+- Inputs: WeKnora session/Agent/event/types files, PA WeKnora adapter, native
+  Agent service, AgentQA smoke, history/citation smoke, coverage ledger, and
+  final blocked report.
+- Output report:
+  `docs/WEKNORA_NATIVE_AGENTQA_CITATION_TRACEABILITY_REPORT.md`.
+- Editable files: this spec, coverage ledger, final blocked report, and the
+  traceability report; PA parser files only if live native references are
+  present but PA fails to parse them.
+- Forbidden: fabricating citations from Agent answer text, tool output text,
+  old reports, cached browser state, fixture-only output, or untraceable native
+  payloads.
+- Acceptance: if live native AgentQA emits traceable references, PA saves
+  citations and history locators; otherwise record `[!]` with current live
+  blocker evidence and no coverage upgrade.
+- Recommended validation: live AgentQA workflow smoke, live history/citation
+  smoke, acceptance checker, report safety checker, `git diff --check`, and
+  sensitive scan.
+- PASS evidence: live API/browser evidence with traceable references; blocked
+  evidence if native references remain absent.
+- Blocked/backlog: mark `[!]` when AgentQA answer/history is live but native
+  references remain absent or untraceable.
+- Status source: Section 6 row `WNX-P3-04`.
 
 ## 9. Evidence Classification Rules
 
