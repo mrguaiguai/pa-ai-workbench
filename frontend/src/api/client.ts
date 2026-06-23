@@ -637,6 +637,38 @@ export type RagDebugResponse = {
   } | null;
 };
 
+export type NativeKnowledgeChatRequest = {
+  query: string;
+  conversation_id?: string | null;
+  title?: string | null;
+  knowledge_base_ids?: string[];
+  knowledge_ids?: string[];
+  web_search_enabled?: boolean;
+  current_run?: Record<string, unknown>;
+};
+
+export type NativeKnowledgeChatRuntime = {
+  native_session_id: string | null;
+  event_counts: Record<string, unknown>;
+  reference_count: number;
+  saved_citation_count: number;
+  warnings: string[];
+  assistant_message_id: string | null;
+  user_message_id: string | null;
+  current_run_guard: Record<string, unknown>;
+  evidence_type: string;
+  source: string;
+};
+
+export type NativeKnowledgeChatResponse = {
+  conversation: Conversation;
+  messages: ConversationMessage[];
+  task: Task;
+  output: GeneratedOutput;
+  citations: Citation[];
+  runtime: NativeKnowledgeChatRuntime;
+};
+
 export type Task = {
   id: string;
   conversation_id: string | null;
@@ -1100,6 +1132,11 @@ export const apiClient = {
     }),
   debugRag: (payload: RagDebugRequest) =>
     request<RagDebugResponse>("/api/rag/debug", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  runNativeKnowledgeChat: (payload: NativeKnowledgeChatRequest) =>
+    request<NativeKnowledgeChatResponse>("/api/rag/knowledge-chat", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

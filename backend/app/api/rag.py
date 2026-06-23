@@ -3,14 +3,28 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import HTTPException
+from sqlmodel import Session
 
+from app.database import get_session
+from app.schemas import CitationRead
+from app.schemas import ConversationMessageRead
+from app.schemas import ConversationRead
 from app.schemas import EvidenceRead
+from app.schemas import GeneratedOutputRead
+from app.schemas import NativeKnowledgeChatRequest
+from app.schemas import NativeKnowledgeChatResponse
+from app.schemas import NativeKnowledgeChatRuntime
 from app.schemas import RagDebugError
 from app.schemas import RagDebugEvidenceRead
 from app.schemas import RagDebugRequest
 from app.schemas import RagDebugResponse
 from app.schemas import RagRetrieveRequest
 from app.schemas import RagRetrieveResponse
+from app.schemas import TaskRead
+from app.services.native_chat_service import NativeKnowledgeChatError
+from app.services.native_chat_service import run_native_knowledge_chat
 from app.services.rag_service import retrieve_evidence_with_context
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.errors import WeKnoraUnavailableError
@@ -186,6 +200,35 @@ def retrieve_rag_debug(request: RagDebugRequest) -> RagDebugResponse:
         items=items,
         total=len(items),
         warnings=warnings,
+    )
+
+
+@router.post("/knowledge-chat", response_model=NativeKnowledgeChatResponse)
+def run_knowledge_chat(
+    request: NativeKnowledgeChatRequest,
+    session: Session = Depends(get_session),
+) -> NativeKnowledgeChatResponse:
+    try:
+        conversation, messages, task, output, citations, runtime = run_native_knowledge_chat(
+            session=session,
+            query=request.query,
+            conversation_id=request.conversation_id,
+            title=request.title,
+            knowledge_base_ids=request.knowledge_base_ids,
+            knowledge_ids=request.knowledge_ids,
+            web_search_enabled=request.web_search_enabled,
+            current_run=request.current_run,
+        )
+    except NativeKnowledgeChatError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return NativeKnowledgeChatResponse(
+        conversation=ConversationRead.model_validate(conversation),
+        messages=[ConversationMessageRead.model_validate(message) for message in messages],
+        task=TaskRead.model_validate(task),
+        output=GeneratedOutputRead.model_validate(output),
+        citations=[CitationRead.model_validate(citation) for citation in citations],
+        runtime=NativeKnowledgeChatRuntime(**runtime),
     )
 
 

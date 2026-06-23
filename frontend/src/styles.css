@@ -2090,7 +2090,8 @@ p {
 }
 
 .rag-debug-controls,
-.rag-debug-output {
+.rag-debug-output,
+.rag-chat-panel {
   min-width: 0;
   border: 1px solid #d8e0e5;
   border-radius: 8px;
@@ -2100,6 +2101,70 @@ p {
 
 .rag-debug-controls {
   align-self: start;
+}
+
+.rag-chat-panel {
+  display: grid;
+  gap: 12px;
+  grid-column: 2;
+}
+
+.rag-chat-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rag-chat-heading div {
+  min-width: 0;
+}
+
+.rag-chat-heading span {
+  display: block;
+  color: #6b7a86;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.rag-chat-heading strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: #17212b;
+  font-size: 0.96rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rag-chat-heading .secondary-action {
+  width: auto;
+  min-width: 118px;
+  margin-top: 0;
+}
+
+.rag-chat-result {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rag-chat-answer {
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #f8fafb;
+  padding: 12px;
+}
+
+.rag-chat-answer p {
+  margin: 0;
+  color: #2f3d49;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .field-group {
@@ -4047,6 +4112,10 @@ p {
   .wiki-page,
   .history-page {
     grid-template-columns: 1fr;
+  }
+
+  .rag-chat-panel {
+    grid-column: auto;
   }
 
   .primary-panel {

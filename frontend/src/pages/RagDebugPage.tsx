@@ -12,11 +12,13 @@ import type { Dispatch, FormEvent, SetStateAction } from "react";
 import {
   ApiError,
   BackendCapabilitiesResponse,
+  NativeKnowledgeChatResponse,
   RagDebugEvidence,
   RagDebugResponse,
   apiClient,
 } from "../api/client";
 import {
+  CitationList,
   EmptyState,
   ErrorState,
   WarningList,
@@ -46,9 +48,12 @@ const initialForm: DebugForm = {
 export function RagDebugPage() {
   const [form, setForm] = useState<DebugForm>(initialForm);
   const [result, setResult] = useState<RagDebugResponse | null>(null);
+  const [chatResult, setChatResult] = useState<NativeKnowledgeChatResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [capabilities, setCapabilities] = useState<BackendCapabilitiesResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
 
   const filters = useMemo(() => buildFilters(form), [form]);
   const parsedTopK = Number.parseInt(form.topK, 10);
@@ -94,6 +99,35 @@ export function RagDebugPage() {
       setError(errorMessage(requestError));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runKnowledgeChat = async () => {
+    if (!canDebug) {
+      setChatError("当前后端不可用知识问答能力。");
+      return;
+    }
+    if (!form.query.trim()) {
+      setChatError("请输入问题。");
+      return;
+    }
+    setChatLoading(true);
+    setChatError(null);
+    setChatResult(null);
+    try {
+      const response = await apiClient.runNativeKnowledgeChat({
+        query: form.query.trim(),
+        title: form.query.trim(),
+        knowledge_base_ids: form.kbId.trim() ? [form.kbId.trim()] : [],
+        knowledge_ids: splitList(form.documentIds),
+        web_search_enabled: false,
+        current_run: currentRunGuardPayload(form),
+      });
+      setChatResult(response);
+    } catch (requestError) {
+      setChatError(errorMessage(requestError));
+    } finally {
+      setChatLoading(false);
     }
   };
 
@@ -211,6 +245,38 @@ export function RagDebugPage() {
           <EmptyState icon={FileSearch} text="暂无调试轨迹" />
         )}
       </section>
+
+      <section className="rag-chat-panel" aria-label="Native knowledge-chat">
+        <div className="rag-chat-heading">
+          <div>
+            <span>Knowledge-chat</span>
+            <strong>原生知识问答</strong>
+          </div>
+          <button
+            className={`secondary-action ${chatLoading ? "loading" : ""}`}
+            type="button"
+            onClick={runKnowledgeChat}
+            disabled={!canSubmit || chatLoading}
+          >
+            {chatLoading ? (
+              <Loader2 size={16} aria-hidden="true" />
+            ) : (
+              <Search size={16} aria-hidden="true" />
+            )}
+            <span>运行问答</span>
+          </button>
+        </div>
+
+        {chatLoading ? (
+          <EmptyState icon={Loader2} text="问答运行中" loading compact />
+        ) : chatError ? (
+          <ErrorState message={chatError} />
+        ) : chatResult ? (
+          <KnowledgeChatResult result={chatResult} />
+        ) : (
+          <EmptyState icon={FileSearch} text="暂无问答结果" compact />
+        )}
+      </section>
     </div>
   );
 }
@@ -279,6 +345,31 @@ function DebugItem({ item }: { item: RagDebugEvidence }) {
   );
 }
 
+function KnowledgeChatResult({ result }: { result: NativeKnowledgeChatResponse }) {
+  const guard = result.runtime.current_run_guard || {};
+  return (
+    <div className="rag-chat-result">
+      <div className="rag-debug-trace">
+        <span>{result.task.status}</span>
+        <strong>{result.output.id}</strong>
+        <span>{`引用：${result.runtime.saved_citation_count}`}</span>
+        <span>{`references=${result.runtime.reference_count}`}</span>
+        <span>{`guard=${String(guard.passed ?? "n/a")}`}</span>
+      </div>
+      <WarningList warnings={result.runtime.warnings} />
+      <article className="rag-chat-answer">
+        <p>{result.output.content_markdown || "无回答内容"}</p>
+      </article>
+      <div className="rag-debug-meta compact">
+        {Object.entries(result.runtime.event_counts).map(([key, value]) => (
+          <span key={key}>{`${key}:${formatValue(value)}`}</span>
+        ))}
+      </div>
+      <CitationList citations={result.citations} />
+    </div>
+  );
+}
+
 function buildFilters(form: DebugForm) {
   const filters: Record<string, unknown> = {};
   if (form.sourceType !== "all") {
@@ -298,6 +389,16 @@ function buildFilters(form: DebugForm) {
     filters.document_type = form.documentType.trim();
   }
   return filters;
+}
+
+function currentRunGuardPayload(form: DebugForm) {
+  const knowledgeIds = splitList(form.documentIds);
+  if (knowledgeIds.length === 0) {
+    return {};
+  }
+  return {
+    expected_external_doc_ids: knowledgeIds,
+  };
 }
 
 function splitList(value: string) {

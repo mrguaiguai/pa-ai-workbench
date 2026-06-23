@@ -671,6 +671,38 @@ class RagDebugResponse(BaseModel):
         return self
 
 
+class NativeKnowledgeChatRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    conversation_id: str | None = None
+    title: str | None = Field(default=None, max_length=300)
+    knowledge_base_ids: list[str] = Field(default_factory=list)
+    knowledge_ids: list[str] = Field(default_factory=list)
+    web_search_enabled: bool = False
+    current_run: dict = Field(default_factory=dict)
+
+
+class NativeKnowledgeChatRuntime(BaseModel):
+    native_session_id: str | None = None
+    event_counts: dict = Field(default_factory=dict)
+    reference_count: int = 0
+    saved_citation_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+    assistant_message_id: str | None = None
+    user_message_id: str | None = None
+    current_run_guard: dict = Field(default_factory=dict)
+    evidence_type: str = "live_api"
+    source: str = "weknora_api"
+
+
+class NativeKnowledgeChatResponse(BaseModel):
+    conversation: ConversationRead
+    messages: list[ConversationMessageRead]
+    task: TaskRead
+    output: GeneratedOutputRead
+    citations: list[CitationRead]
+    runtime: NativeKnowledgeChatRuntime
+
+
 class WikiPageSummaryRead(BaseModel):
     id: str | None = None
     slug: str

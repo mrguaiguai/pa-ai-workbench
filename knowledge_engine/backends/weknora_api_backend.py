@@ -1467,6 +1467,70 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "reference_count": len(reference_items),
         }
 
+    def run_knowledge_chat(
+        self,
+        *,
+        session_id: str,
+        query: str,
+        knowledge_base_ids: list[str] | None = None,
+        knowledge_ids: list[str] | None = None,
+        web_search_enabled: bool = False,
+        disable_title: bool = True,
+    ) -> dict:
+        self._require_configured()
+        payload = {
+            "query": query,
+            "knowledge_base_ids": knowledge_base_ids or [],
+            "knowledge_ids": knowledge_ids or [],
+            "web_search_enabled": web_search_enabled,
+            "disable_title": disable_title,
+        }
+        events = self._request_sse_json(
+            "POST",
+            f"/api/v1/knowledge-chat/{quote(session_id, safe='')}",
+            payload,
+        )
+        answer_parts: list[str] = []
+        reference_items: list[dict] = []
+        event_counts: dict[str, int] = {}
+        errors: list[str] = []
+        for event_item in events:
+            response_type = str(event_item.get("response_type") or "unknown")
+            event_counts[response_type] = event_counts.get(response_type, 0) + 1
+            if response_type == "answer":
+                answer_parts.append(str(event_item.get("content") or ""))
+            elif response_type == "references":
+                references = event_item.get("knowledge_references")
+                if isinstance(references, list):
+                    reference_items.extend(
+                        item for item in references if isinstance(item, dict)
+                    )
+            elif response_type == "error":
+                error_text = _optional_str(event_item.get("content"))
+                if error_text:
+                    errors.append(_shorten(_redact_sensitive_text(error_text), 240))
+
+        evidence_items = [
+            self._to_evidence(
+                item,
+                {
+                    "weknora_knowledge_chat_native": True,
+                    "weknora_knowledge_chat_session_id": session_id,
+                    "weknora_knowledge_chat_event_source": "references",
+                },
+                native_rank=native_rank,
+            )
+            for native_rank, item in enumerate(reference_items, start=1)
+        ]
+        return {
+            "session_id": session_id,
+            "answer": "".join(answer_parts),
+            "evidence_items": evidence_items,
+            "event_counts": event_counts,
+            "errors": errors,
+            "reference_count": len(reference_items),
+        }
+
     def _request_json(self, method: str, path: str, payload: dict | None = None) -> dict | list:
         return self.client.request_json(method, path, payload)
 
