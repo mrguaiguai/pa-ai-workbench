@@ -487,15 +487,20 @@ def _web_search_summary(overview: dict[str, Any]) -> dict[str, Any]:
     surfaces = _surfaces(value)
     provider_types = surfaces.get("provider_types", {})
     providers = surfaces.get("configured_providers", {})
+    provider_read = surfaces.get("provider_read", {})
+    provider_test = surfaces.get("provider_test", {})
     agentqa = surfaces.get("agentqa_dependency", {})
     mutations = surfaces.get("mutations", {})
     return {
-        "provider_types_status": provider_types.get("status"),
         "provider_type_count": int(provider_types.get("count") or 0),
+        "provider_test_status": provider_test.get("status"),
+        "provider_read_status": provider_read.get("status"),
+        "agentqa_dependency_status": agentqa.get("status"),
+        "provider_types_status": provider_types.get("status"),
         "configured_provider_count": int(providers.get("count") or 0),
         "default_provider_count": int(providers.get("default_count") or 0),
         "credentials_configured_count": int(providers.get("credentials_configured_count") or 0),
-        "agentqa_dependency_status": agentqa.get("status"),
+        "ready_provider_count": int(providers.get("ready_provider_count") or 0),
         "mutations_status": mutations.get("status"),
     }
 

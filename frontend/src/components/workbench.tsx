@@ -422,10 +422,12 @@ function statusStripDetails(state: WeKnoraFirstStatusStripState) {
     const providerTypes = state.webSearchOverview.surfaces.provider_types;
     const configuredProviders = state.webSearchOverview.surfaces.configured_providers;
     const agentqaDependency = state.webSearchOverview.surfaces.agentqa_dependency;
+    const providerTest = state.webSearchOverview.surfaces.provider_test;
     details.push(`web_search=${state.webSearchOverview.status}`);
     details.push(`web_search types=${surfaceCount(providerTypes)}`);
     details.push(`web_search providers=${surfaceCount(configuredProviders)}`);
     details.push(`web_search AgentQA=${agentqaDependency?.status ?? "unknown"}`);
+    details.push(`web_search provider_test=${providerTest?.status ?? "unknown"}`);
   }
   if (state.webSearchError) {
     details.push(`web_search blocked：${state.webSearchError}`);

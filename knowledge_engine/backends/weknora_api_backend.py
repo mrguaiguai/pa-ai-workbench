@@ -1552,6 +1552,26 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if isinstance(item, dict)
         ]
 
+    def get_web_search_provider(self, provider_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(provider_id, safe="")
+        data = self._request_json("GET", f"/api/v1/web-search-providers/{encoded_id}")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        return self._web_search_provider_safe_dict(payload)
+
+    def test_web_search_provider(self, provider_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(provider_id, safe="")
+        data = self._request_json("POST", f"/api/v1/web-search-providers/{encoded_id}/test")
+        payload = data if isinstance(data, dict) else {}
+        success = bool(payload.get("success"))
+        return {
+            "success": success,
+            "source": "weknora_api",
+        }
+
     def list_vector_store_types(self) -> list[dict]:
         self._require_configured()
         data = self._request_json("GET", "/api/v1/vector-stores/types")
