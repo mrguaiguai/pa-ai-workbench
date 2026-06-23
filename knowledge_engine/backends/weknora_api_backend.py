@@ -73,6 +73,298 @@ def _get_retry_backoff_seconds(default: float) -> float:
         return default
 
 
+class WeKnoraNativeClient:
+    """Shared low-level WeKnora client for native PA integration paths."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        service_token: str,
+        timeout: float,
+        retry_attempts: int,
+        retry_backoff_seconds: float,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.service_token = service_token
+        self.timeout = timeout
+        self.retry_attempts = max(retry_attempts, 0)
+        self.retry_backoff_seconds = max(retry_backoff_seconds, 0.0)
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.base_url)
+
+    def status(
+        self,
+        *,
+        workspace_id: str | None = None,
+        default_kb_id: str | None = None,
+    ) -> dict:
+        return {
+            "schema_version": "wnx-p0-01",
+            "source": "weknora_api",
+            "client": self.__class__.__name__,
+            "status": "configured" if self.configured else "missing_config",
+            "configured": self.configured,
+            "base_url_configured": bool(self.base_url),
+            "service_token_configured": bool(self.service_token),
+            "workspace_configured": bool(str(workspace_id or "").strip()),
+            "kb_configured": bool(str(default_kb_id or "").strip()),
+            "timeout_seconds": self.timeout,
+            "retry_attempts": self.retry_attempts,
+            "retry_backoff_seconds": self.retry_backoff_seconds,
+            "trace_id_supported": True,
+            "safe_error_shape": "WeKnoraUnavailableError.to_public_dict",
+        }
+
+    def request_json(self, method: str, path: str, payload: dict | None = None) -> dict | list:
+        body = None
+        headers = {"Accept": "application/json"}
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        self._apply_auth_headers(headers)
+
+        request = Request(
+            url=f"{self.base_url}{path}",
+            data=body,
+            headers=headers,
+            method=method,
+        )
+        return self._perform_json_request(request, operation=f"{method} {path}")
+
+    def request_multipart_json(
+        self,
+        path: str,
+        file_path: Path,
+        fields: dict[str, str],
+    ) -> dict | list:
+        boundary = f"----pa-weknora-{uuid4().hex}"
+        body = _multipart_body(boundary=boundary, file_path=file_path, fields=fields)
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        }
+        self._apply_auth_headers(headers)
+        request = Request(
+            url=f"{self.base_url}{path}",
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+        return self._perform_json_request(request, operation=f"POST {path}")
+
+    def request_sse_json(
+        self,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+    ) -> list[dict]:
+        body = None
+        headers = {"Accept": "text/event-stream"}
+        if payload is not None:
+            body = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        self._apply_auth_headers(headers)
+        request = Request(
+            url=f"{self.base_url}{path}",
+            data=body,
+            headers=headers,
+            method=method,
+        )
+        operation = _sanitize_operation(f"{method} {path}")
+        request_id = uuid4().hex
+        started = time.perf_counter()
+        events: list[dict] = []
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                status_code = getattr(response, "status", None) or response.getcode()
+                for raw_line in response:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    payload_text = line[5:].strip()
+                    if not payload_text or payload_text == "[DONE]":
+                        continue
+                    try:
+                        event_payload = json.loads(payload_text)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(event_payload, dict):
+                        events.append(event_payload)
+                        if event_payload.get("response_type") == "complete":
+                            break
+                _log_weknora_call(
+                    request_id=request_id,
+                    operation=operation,
+                    status="ok",
+                    status_code=status_code,
+                    duration_ms=_elapsed_ms(started),
+                    retry_count=0,
+                )
+        except HTTPError as exc:
+            body_text = exc.read().decode("utf-8", errors="replace")
+            error = _http_error_to_weknora_error(exc.code, body_text, operation)
+            _log_weknora_call(
+                request_id=request_id,
+                operation=operation,
+                status="error",
+                status_code=error.status_code,
+                duration_ms=_elapsed_ms(started),
+                retry_count=0,
+                error_code=error.error_code,
+                excerpt=error.message,
+            )
+            raise error from exc
+        except (TimeoutError, socket.timeout) as exc:
+            error = WeKnoraTimeoutError(
+                "WeKnora SSE request timed out",
+                error_code="weknora_timeout",
+                operation=operation,
+                retryable=True,
+            )
+            _log_weknora_call(
+                request_id=request_id,
+                operation=operation,
+                status="error",
+                duration_ms=_elapsed_ms(started),
+                retry_count=0,
+                error_code=error.error_code,
+                excerpt=error.message,
+            )
+            raise error from exc
+        except URLError as exc:
+            if _url_error_is_timeout(exc):
+                error = WeKnoraTimeoutError(
+                    "WeKnora SSE request timed out",
+                    error_code="weknora_timeout",
+                    operation=operation,
+                    retryable=True,
+                )
+            else:
+                error = WeKnoraNetworkError(
+                    "WeKnora SSE request failed",
+                    error_code="weknora_network_error",
+                    operation=operation,
+                    retryable=True,
+                )
+            _log_weknora_call(
+                request_id=request_id,
+                operation=operation,
+                status="error",
+                duration_ms=_elapsed_ms(started),
+                retry_count=0,
+                error_code=error.error_code,
+                excerpt=error.message,
+            )
+            raise error from exc
+        return events
+
+    def _perform_json_request(self, request: Request, operation: str) -> dict | list:
+        attempts = self.retry_attempts + 1
+        last_error: WeKnoraUnavailableError | None = None
+        request_id = uuid4().hex
+        started = time.perf_counter()
+        safe_operation = _sanitize_operation(operation)
+        for attempt in range(attempts):
+            try:
+                raw, status_code = self._read_response(request, safe_operation)
+                if not raw:
+                    _log_weknora_call(
+                        request_id=request_id,
+                        operation=safe_operation,
+                        status="ok",
+                        status_code=status_code,
+                        duration_ms=_elapsed_ms(started),
+                        retry_count=attempt,
+                    )
+                    return {}
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise WeKnoraResponseMappingError(
+                        "WeKnora returned invalid JSON",
+                        error_code="weknora_invalid_json",
+                        operation=safe_operation,
+                        retryable=False,
+                    ) from exc
+                _log_weknora_call(
+                    request_id=request_id,
+                    operation=safe_operation,
+                    status="ok",
+                    status_code=status_code,
+                    duration_ms=_elapsed_ms(started),
+                    retry_count=attempt,
+                    excerpt=_log_excerpt(raw),
+                )
+                return data
+            except WeKnoraUnavailableError as exc:
+                last_error = exc
+                if not exc.retryable or attempt >= attempts - 1:
+                    _log_weknora_call(
+                        request_id=request_id,
+                        operation=safe_operation,
+                        status="error",
+                        status_code=exc.status_code,
+                        duration_ms=_elapsed_ms(started),
+                        retry_count=attempt,
+                        error_code=exc.error_code,
+                        excerpt=exc.message,
+                    )
+                    raise
+                self._sleep_before_retry(attempt)
+        if last_error is not None:
+            raise last_error
+        raise WeKnoraUnavailableError(
+            "WeKnora request failed",
+            operation=_sanitize_operation(operation),
+            retryable=False,
+        )
+
+    def _read_response(self, request: Request, safe_operation: str) -> tuple[str, int | None]:
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                status_code = getattr(response, "status", None) or response.getcode()
+                return response.read().decode("utf-8", errors="replace"), status_code
+        except HTTPError as exc:
+            body_text = exc.read().decode("utf-8", errors="replace")
+            raise _http_error_to_weknora_error(exc.code, body_text, safe_operation) from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise WeKnoraTimeoutError(
+                "WeKnora request timed out",
+                error_code="weknora_timeout",
+                operation=safe_operation,
+                retryable=True,
+            ) from exc
+        except URLError as exc:
+            if _url_error_is_timeout(exc):
+                raise WeKnoraTimeoutError(
+                    "WeKnora request timed out",
+                    error_code="weknora_timeout",
+                    operation=safe_operation,
+                    retryable=True,
+                ) from exc
+            raise WeKnoraNetworkError(
+                "WeKnora network request failed",
+                error_code="weknora_network_error",
+                operation=safe_operation,
+                retryable=True,
+            ) from exc
+
+    def _sleep_before_retry(self, attempt: int) -> None:
+        if self.retry_backoff_seconds <= 0:
+            return
+        delay = min(self.retry_backoff_seconds * (2 ** attempt), 2.0)
+        time.sleep(delay)
+
+    def _apply_auth_headers(self, headers: dict[str, str]) -> None:
+        if not self.service_token:
+            return
+        headers["X-API-Key"] = self.service_token
+        headers["Authorization"] = f"Bearer {self.service_token}"
+
+
 class WeKnoraApiBackend(KnowledgeEngine):
     def __init__(
         self,
@@ -119,10 +411,23 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if retry_backoff_seconds is not None
             else _get_retry_backoff_seconds(0.25)
         )
+        self.client = WeKnoraNativeClient(
+            base_url=self.base_url,
+            service_token=self.service_token,
+            timeout=self.timeout,
+            retry_attempts=self.retry_attempts,
+            retry_backoff_seconds=self.retry_backoff_seconds,
+        )
 
     @property
     def configured(self) -> bool:
-        return bool(self.base_url)
+        return self.client.configured
+
+    def native_client_status(self) -> dict:
+        return self.client.status(
+            workspace_id=self.workspace_id,
+            default_kb_id=self.default_kb_id,
+        )
 
     def health(self) -> dict:
         if not self.configured:
@@ -131,6 +436,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
                 "backend": "weknora_api",
                 "configured": False,
                 "source": "weknora_api",
+                "native_client": self.native_client_status(),
             }
         try:
             data = self._request_json("GET", "/health")
@@ -141,6 +447,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
                 "configured": True,
                 "source": "weknora_api",
                 "error": str(exc),
+                "native_client": self.native_client_status(),
             }
         if not isinstance(data, dict):
             data = {}
@@ -149,6 +456,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "backend": "weknora_api",
             "configured": True,
             "source": "weknora_api",
+            "native_client": self.native_client_status(),
         }
 
     def active_kb_target(self) -> dict:
@@ -870,20 +1178,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
         }
 
     def _request_json(self, method: str, path: str, payload: dict | None = None) -> dict | list:
-        body = None
-        headers = {"Accept": "application/json"}
-        if payload is not None:
-            body = json.dumps(payload).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-        self._apply_auth_headers(headers)
-
-        request = Request(
-            url=f"{self.base_url}{path}",
-            data=body,
-            headers=headers,
-            method=method,
-        )
-        return self._perform_json_request(request, operation=f"{method} {path}")
+        return self.client.request_json(method, path, payload)
 
     def _request_multipart_json(
         self,
@@ -891,20 +1186,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
         file_path: Path,
         fields: dict[str, str],
     ) -> dict | list:
-        boundary = f"----pa-weknora-{uuid4().hex}"
-        body = _multipart_body(boundary=boundary, file_path=file_path, fields=fields)
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-        }
-        self._apply_auth_headers(headers)
-        request = Request(
-            url=f"{self.base_url}{path}",
-            data=body,
-            headers=headers,
-            method="POST",
-        )
-        return self._perform_json_request(request, operation=f"POST {path}")
+        return self.client.request_multipart_json(path, file_path, fields)
 
     def _request_sse_json(
         self,
@@ -912,169 +1194,23 @@ class WeKnoraApiBackend(KnowledgeEngine):
         path: str,
         payload: dict | None = None,
     ) -> list[dict]:
-        body = None
-        headers = {"Accept": "text/event-stream"}
-        if payload is not None:
-            body = json.dumps(payload).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-        self._apply_auth_headers(headers)
-        request = Request(
-            url=f"{self.base_url}{path}",
-            data=body,
-            headers=headers,
-            method=method,
-        )
-        operation = _sanitize_operation(f"{method} {path}")
-        events: list[dict] = []
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                for raw_line in response:
-                    line = raw_line.decode("utf-8", errors="replace").strip()
-                    if not line.startswith("data:"):
-                        continue
-                    payload_text = line[5:].strip()
-                    if not payload_text or payload_text == "[DONE]":
-                        continue
-                    try:
-                        event_payload = json.loads(payload_text)
-                    except json.JSONDecodeError:
-                        continue
-                    if isinstance(event_payload, dict):
-                        events.append(event_payload)
-                        if event_payload.get("response_type") == "complete":
-                            break
-        except HTTPError as exc:
-            body_text = exc.read().decode("utf-8", errors="replace")
-            raise _http_error_to_weknora_error(exc.code, body_text, operation) from exc
-        except (TimeoutError, socket.timeout) as exc:
-            raise WeKnoraTimeoutError(
-                "WeKnora SSE request timed out",
-                error_code="weknora_timeout",
-                operation=operation,
-                retryable=True,
-            ) from exc
-        except URLError as exc:
-            if _url_error_is_timeout(exc):
-                raise WeKnoraTimeoutError(
-                    "WeKnora SSE request timed out",
-                    error_code="weknora_timeout",
-                    operation=operation,
-                    retryable=True,
-                ) from exc
-            raise WeKnoraNetworkError(
-                "WeKnora SSE request failed",
-                error_code="weknora_network_error",
-                operation=operation,
-                retryable=True,
-            ) from exc
-        return events
+        return self.client.request_sse_json(method, path, payload)
 
     def _perform_json_request(self, request: Request, operation: str) -> dict | list:
-        attempts = self.retry_attempts + 1
-        last_error: WeKnoraUnavailableError | None = None
-        request_id = uuid4().hex
-        started = time.perf_counter()
-        safe_operation = _sanitize_operation(operation)
-        for attempt in range(attempts):
-            try:
-                raw, status_code = self._read_response(request, safe_operation)
-                if not raw:
-                    _log_weknora_call(
-                        request_id=request_id,
-                        operation=safe_operation,
-                        status="ok",
-                        status_code=status_code,
-                        duration_ms=_elapsed_ms(started),
-                        retry_count=attempt,
-                    )
-                    return {}
-                try:
-                    data = json.loads(raw)
-                except json.JSONDecodeError as exc:
-                    raise WeKnoraResponseMappingError(
-                        "WeKnora returned invalid JSON",
-                        error_code="weknora_invalid_json",
-                        operation=safe_operation,
-                        retryable=False,
-                    ) from exc
-                _log_weknora_call(
-                    request_id=request_id,
-                    operation=safe_operation,
-                    status="ok",
-                    status_code=status_code,
-                    duration_ms=_elapsed_ms(started),
-                    retry_count=attempt,
-                    excerpt=_log_excerpt(raw),
-                )
-                return data
-            except WeKnoraUnavailableError as exc:
-                last_error = exc
-                if not exc.retryable or attempt >= attempts - 1:
-                    _log_weknora_call(
-                        request_id=request_id,
-                        operation=safe_operation,
-                        status="error",
-                        status_code=exc.status_code,
-                        duration_ms=_elapsed_ms(started),
-                        retry_count=attempt,
-                        error_code=exc.error_code,
-                        excerpt=exc.message,
-                    )
-                    raise
-                self._sleep_before_retry(attempt)
-        if last_error is not None:
-            raise last_error
-        raise WeKnoraUnavailableError(
-            "WeKnora request failed",
-            operation=_sanitize_operation(operation),
-            retryable=False,
-        )
+        return self.client._perform_json_request(request, operation)
 
     def _read_response(self, request: Request, safe_operation: str) -> tuple[str, int | None]:
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                status_code = getattr(response, "status", None) or response.getcode()
-                return response.read().decode("utf-8", errors="replace"), status_code
-        except HTTPError as exc:
-            body_text = exc.read().decode("utf-8", errors="replace")
-            raise _http_error_to_weknora_error(exc.code, body_text, safe_operation) from exc
-        except (TimeoutError, socket.timeout) as exc:
-            raise WeKnoraTimeoutError(
-                "WeKnora request timed out",
-                error_code="weknora_timeout",
-                operation=safe_operation,
-                retryable=True,
-            ) from exc
-        except URLError as exc:
-            if _url_error_is_timeout(exc):
-                raise WeKnoraTimeoutError(
-                    "WeKnora request timed out",
-                    error_code="weknora_timeout",
-                    operation=safe_operation,
-                    retryable=True,
-                ) from exc
-            raise WeKnoraNetworkError(
-                "WeKnora network request failed",
-                error_code="weknora_network_error",
-                operation=safe_operation,
-                retryable=True,
-            ) from exc
+        return self.client._read_response(request, safe_operation)
 
     def _sleep_before_retry(self, attempt: int) -> None:
-        if self.retry_backoff_seconds <= 0:
-            return
-        delay = min(self.retry_backoff_seconds * (2 ** attempt), 2.0)
-        time.sleep(delay)
+        self.client._sleep_before_retry(attempt)
 
     def _require_configured(self) -> None:
         if not self.configured:
             raise KnowledgeBackendUnavailableError("WEKNORA_BASE_URL is not configured")
 
     def _apply_auth_headers(self, headers: dict[str, str]) -> None:
-        if not self.service_token:
-            return
-        headers["X-API-Key"] = self.service_token
-        headers["Authorization"] = f"Bearer {self.service_token}"
+        self.client._apply_auth_headers(headers)
 
     @staticmethod
     def _unwrap_data(value: dict | list) -> dict | list:

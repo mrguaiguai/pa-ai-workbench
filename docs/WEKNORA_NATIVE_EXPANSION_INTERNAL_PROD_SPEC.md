@@ -266,7 +266,7 @@ Excluded or limited groups:
 | WNX-0-01 | Governance | New native expansion spec + skill | [x] | Spec/skill created, skill frontmatter validates, diff/sensitive scans pass. |
 | WNX-0-02 | Governance | Architecture blueprint and module boundaries | [x] | `docs/WEKNORA_NATIVE_EXPANSION_ARCHITECTURE.md` with PA/WeKnora/DB/adapter/evidence/ops boundaries. |
 | WNX-0-03 | Governance | Coverage ledger and 80% scoring baseline | [x] | `docs/WEKNORA_NATIVE_CAPABILITY_COVERAGE_LEDGER.md` with current/target states and scoring. |
-| WNX-P0-01 | P0 | Unified WeKnora native client | [ ] | Adapter has shared config/error/timeout/retry/trace/normalization and smoke validation. |
+| WNX-P0-01 | P0 | Unified WeKnora native client | [x] | Adapter has shared config/error/timeout/retry/trace/normalization and smoke validation. |
 | WNX-P0-02 | P0 | Internal config/status center backend | [ ] | PA API exposes masked native config/status for core platform areas. |
 | WNX-P0-03 | P0 | Capability center frontend shell | [ ] | Browser-validated capability center shows coverage, gaps, blocked/backlog, jump links. |
 | WNX-P0-04 | P0 | Live acceptance harness | [ ] | Checker/smoke runner verifies live evidence, report safety, coverage score, browser matrix hooks. |
@@ -295,6 +295,7 @@ Excluded or limited groups:
 | 2026-06-22 | WNX-0-01 | [x] | `governance artifact`: native expansion spec and skill added; validation includes skill frontmatter, diff check, sensitive scan, and keyword checks. | this commit on `weknora-first-mvp` | No product code changed and no new live capability PASS is claimed. |
 | 2026-06-22 | WNX-0-02 | [x] | `audit/map`: architecture blueprint added with PA Frontend Shell, PA Backend BFF, WeKnora Native Adapter, PA Business DB, Evidence/Citation Layer, Validation/Ops Layer, and PA-native Professional Workflow Layer boundaries; validation includes diff check, keyword checks, and sensitive scan. | this commit on `weknora-first-mvp` | No product code changed and no new live capability PASS is claimed; the blueprint maps later `WNX-P0`, `WNX-P1`, and `WNX-P2` development landing zones. |
 | 2026-06-22 | WNX-0-03 | [x] | `audit/map`: coverage ledger added with 15 eligible capability groups, current baseline `5.50 / 15 = 36.7%`, minimum target `12.00 / 15 = 80.0%`, evidence links, risks, and next `WNX-*` actions; validation includes diff check, keyword checks, and sensitive scan. | this commit on `weknora-first-mvp` | No product code changed and no new live capability PASS is claimed; future tasks must refresh live WNX evidence before final internal production PASS. |
+| 2026-06-23 | WNX-P0-01 | [x] | `live evidence` + `fixture evidence`: `WeKnoraNativeClient` added; MCP and vector-store native live smokes pass through PA; fixture contract proves health/MCP/vector paths share `backend.client.request_json`, status metadata is visible, and error redaction remains stable. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_CLIENT_REPORT.md`; unsafe MCP/vector mutations remain backlog for their own WNX tasks. |
 
 ## 8. Task Cards
 
