@@ -118,13 +118,13 @@ def native_status_center(limit: int = 5) -> dict[str, Any]:
     groups["agentqa_custom_agent"] = _baseline_group(
         capability_id="agentqa_custom_agent",
         label="AgentQA / custom Agent",
-        status="partial",
+        status="live",
         configured=_weknora_core_configured(settings),
         source_endpoint="/api/v1/agent-chat/{session_id}",
-        next_action="WNX-P1-05",
+        next_action="WNX-P3-08",
         summary={
             "answer_history_path": "available",
-            "citation_status": "blocked_until_traceable_references",
+            "citation_status": "traceable_wiki_references_validated",
         },
     )
     groups["native_wiki"] = _baseline_group(

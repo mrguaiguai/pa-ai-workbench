@@ -19,7 +19,7 @@ The Native Expansion internal production stage is not ready for final PASS.
 Current verified coverage is:
 
 ```text
-11.25 / 15 = 75.0%
+11.75 / 15 = 78.3%
 ```
 
 The minimum internal production target is:
@@ -31,7 +31,7 @@ The minimum internal production target is:
 The blocker is real and should not be hidden: the current runtime has
 insufficient eligible coverage for a final internal production PASS. The
 remaining gap is primarily in configured connector workflow coverage and
-traceable native AgentQA citation evidence. This report therefore records
+no longer in traceable native AgentQA citation evidence. This report therefore records
 `WNX-P3-02` as blocked instead of claiming an unverified final PASS.
 
 ## Current Evidence Summary
@@ -43,7 +43,7 @@ traceable native AgentQA citation evidence. This report therefore records
 | Deployment readiness | live service/status evidence | Complete for local internal production recovery. |
 | KB/document/chunk lifecycle | live API/browser evidence | Complete for the scoped PA product contract. |
 | RAG and knowledge-chat | live API/browser evidence | Complete with traceable native citations where returned by WeKnora. |
-| AgentQA/custom Agent | partial evidence and blocked evidence | Native answer/history workflow is live, but `WNX-P3-04` and `WNX-P3-06` revalidated that citation references are still not traceable in the current live runtime. |
+| AgentQA/custom Agent | live API evidence | Native answer/history workflow and traceable Wiki citations are live after `WNX-P3-08`; Agent copy/update/delete remain backlog. |
 | Native Wiki | live API/browser evidence | Complete for scoped read/search/workflow and confirmation-gated mutations. |
 | MCP, web search, vector store, model/config | partial evidence | Safe live readiness is visible; credential-heavy admin/test workflows remain backlog. |
 | Data source connectors | partial evidence, blocked evidence, and backlog evidence | Safe connector type/list visibility is live, but `WNX-P3-05` revalidated that no configured connector exists for resources/validate/sync/log PASS. |
@@ -57,14 +57,14 @@ The current score comes from the committed coverage ledger:
 ```text
 live-full groups: system/deployment, workspace/KB, document lifecycle,
 chunk management, knowledge-search/RAG, knowledge-chat/session chat,
-Native Wiki, history/citation/product shell
+AgentQA/custom Agent, Native Wiki, history/citation/product shell
 
-live-partial groups: AgentQA/custom Agent, MCP, web search, vector store,
-model/embedding/rerank/parser, FAQ/tags/favorites/skills
+live-partial groups: MCP, web search, vector store, model/embedding/rerank/parser,
+FAQ/tags/favorites/skills
 
 read-only groups: data sources/connectors
 
-score: 11.25 / 15 = 75.0%
+score: 11.75 / 15 = 78.3%
 target: 12.00 / 15 = 80.0%
 ```
 
@@ -73,12 +73,12 @@ The ledger target plan expected two moves before final internal production:
 - AgentQA/custom Agent from `live-partial` to `live-full`, worth `+0.5`.
 - Data sources/connectors from `read-only` to `live-partial`, worth `+0.25`.
 
-The current WNX evidence does not justify both moves:
+The current WNX evidence justifies the AgentQA move but not the connector move:
 
-- AgentQA/custom Agent remains `live-partial` because native AgentQA did not
-  emit traceable references in the live run. `WNX-P3-04` revalidated
-  `references=0`, `saved_citations=0`, and `citation_blocked=true`, so PA
-  correctly records citation blocking instead of fabricating citations.
+- AgentQA/custom Agent is now `live-full`. `WNX-P3-08` traced the live selected
+  Agent path to Wiki tools, added structured Wiki references, and validated
+  `references=12`, `saved_citations=12`, `citation_blocked=false`, plus AgentQA
+  history citations with locator success.
 - Data sources/connectors moved only to `read-only` in the current live runtime
   because connector types were available but configured data sources were `0`.
   `WNX-P3-05` revalidated `connector_types.count=12`,
@@ -133,7 +133,28 @@ knowledge_chat: saved_citations=2 traceable=2 locator=located
 agentqa history: saved_citations=0 traceable=0 citation_blocked=true
 ```
 
-AgentQA/custom Agent therefore remains `live-partial`.
+At the `WNX-P3-07` checkpoint, AgentQA/custom Agent still remained
+`live-partial`. That conclusion is superseded by the `WNX-P3-08` Wiki reference
+fix below.
+
+## AgentQA Wiki Reference Live Fix
+
+`WNX-P3-08` found that the live selected AgentQA path uses Wiki tools rather
+than `knowledge_search`. Native `wiki_search` and `wiki_read_page` now expose
+structured Wiki page references, the stream conversion preserves
+`source_type=wiki_page`, and PA history/status classify traceable WeKnora
+citations correctly.
+
+Current live validation after the Wiki reference fix reports:
+
+```text
+agentqa: answer_events=167 references=12 saved_citations=12 citation_blocked=false
+knowledge_chat: saved_citations=2 traceable=2 locator=located
+agentqa history: saved_citations=15 traceable=15 citation_blocked=false
+```
+
+AgentQA/custom Agent is now `live-full`; total coverage is
+`11.75 / 15 = 78.3%`.
 
 ## Data Source Connector Refresh
 
@@ -164,17 +185,24 @@ native status center validation:
 
 ```text
 WeKnora native expansion acceptance check passed
-- reports checked: 18
-- completed prerequisite tasks: 19
-- coverage current: 11.25/15 = 75.0%
+- reports checked: 28
+- completed prerequisite tasks: 24
+- coverage current: 11.75/15 = 78.3%
 - coverage target: 12.00/15 = 80.0%
-- stage in progress: True
+- stage in progress: False
 - browser hooks: desktop/mobile capability center report present
-- live status center: live_api groups=15 live=5 partial=9 blocked=0 backlog=1
+- live status center: live_api groups=15 live=6 partial=8 blocked=0 backlog=1
 ```
 
-This confirms the guardrails and live status center still work, but it does not
-close the coverage gap.
+This still does not close the coverage gap because Data sources/connectors
+remains `read-only`.
+
+Current final blocked marker:
+
+```text
+- coverage current: 11.75/15 = 78.3%
+- coverage target: 12.00/15 = 80.0%
+```
 
 ## Browser Evidence
 
@@ -212,7 +240,6 @@ Audit/map evidence used:
 
 Partial evidence used:
 
-- AgentQA/custom Agent answer/history without traceable native citations;
 - platform management surfaces that safely expose readiness but not credential
   or mutation workflows;
 - organization surfaces with FAQ blocked and mutations deferred.
@@ -232,8 +259,7 @@ and hidden fallback are not used as final PASS evidence.
 
 | Blocker | Current state | Required next step |
 | --- | --- | --- |
-| Coverage below target | `75.0%`, target `80.0%` | Complete a real score-moving task or explicitly revise the target with governance approval. |
-| AgentQA citation traceability | `WNX-P3-06` drafted a native reference propagation patch but current live AgentQA still has `references=0`, `saved_citations=0`, and `citation_blocked=true` | Apply the patch in a commit-trackable native source repo, format/test with Go tooling, deploy/restart the live runtime, then rerun AgentQA/history citation smokes before claiming PASS. |
+| Coverage below target | `78.3%`, target `80.0%` | Complete a real Data sources/connectors score-moving task or explicitly revise the target with governance approval. |
 | Data source connector workflow | `WNX-P3-05` revalidated connector catalog `count=12`, but configured data sources are still `0` | Configure a safe native data source outside Codex output, then rerun sanitized connector detail/resources/validate/sync/log smoke. |
 
 ## Risk Register
@@ -241,7 +267,7 @@ and hidden fallback are not used as final PASS evidence.
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | Inflating read-only readiness into workflow PASS | Would overstate internal production readiness | Keep ledger at `read-only` or `live-partial` only when validated by live workflow evidence. |
-| Treating AgentQA answer text as citation evidence | Would break PA citation contract | Keep `citation_blocked` visible until native references are traceable. |
+| Treating AgentQA answer text as citation evidence | Would break PA citation contract | `WNX-P3-08` passes through structured Wiki references only; keep this rule for future Agent paths. |
 | Running credential-heavy admin tests without confirmation | Could leak or mutate provider configuration | Keep these surfaces backlog until explicit confirmation, masking, and audit trail exist. |
 | Final report filename implies PASS | Could mislead future agents | This report states `Decision: BLOCKED` and the spec row is marked `[!]`. |
 

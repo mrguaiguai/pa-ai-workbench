@@ -74,7 +74,7 @@ existence as capability PASS.
 | Chunk management | Partial/read path baseline. | Mutations remain `WNX-P1-03`. |
 | Knowledge-search/RAG | Live baseline from existing native adapter path. | Knowledge-chat remains separate in `WNX-P1-04`. |
 | Knowledge-chat/session chat | Backlog. | PA path not integrated yet. |
-| AgentQA/custom Agent | Partial. | Citation remains blocked until traceable native references. |
+| AgentQA/custom Agent | Live after `WNX-P3-08`. | Current live AgentQA Wiki references are traceable and saved as PA citations. |
 | Native Wiki | Partial. | Read-only surfaces exist; mutations remain backlog. |
 | MCP | Live read-only status. | CRUD, credentials, tool execution, approval mutation remain `WNX-P2-02`. |
 | Web search | Live read-only status. | Provider CRUD/test and credential flow remain `WNX-P2-03`. |

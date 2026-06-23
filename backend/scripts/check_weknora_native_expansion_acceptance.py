@@ -53,6 +53,11 @@ REQUIRED_REPORTS = {
     "WNX-P3-01": DOCS_ROOT / "WEKNORA_NATIVE_PRODUCT_BROWSER_MATRIX_REPORT.md",
     "WNX-P3-02": DOCS_ROOT / "WEKNORA_NATIVE_EXPANSION_INTERNAL_PROD_PASS_REPORT.md",
     "WNX-P3-03": DOCS_ROOT / "WEKNORA_NATIVE_EXPANSION_HANDOFF_RUNBOOK.md",
+    "WNX-P3-04": DOCS_ROOT / "WEKNORA_NATIVE_AGENTQA_CITATION_TRACEABILITY_REPORT.md",
+    "WNX-P3-05": DOCS_ROOT / "WEKNORA_NATIVE_DATA_SOURCE_CONFIGURED_CONNECTOR_SMOKE_REPORT.md",
+    "WNX-P3-06": DOCS_ROOT / "WEKNORA_NATIVE_AGENTQA_REFERENCE_PROPAGATION_PATCH_REPORT.md",
+    "WNX-P3-07": DOCS_ROOT / "WEKNORA_NATIVE_AGENTQA_RUNTIME_VALIDATION_REPORT.md",
+    "WNX-P3-08": DOCS_ROOT / "WEKNORA_NATIVE_AGENTQA_WIKI_REFERENCE_LIVE_REPORT.md",
 }
 
 COMPLETED_PREREQUISITE_TASKS = (
@@ -79,6 +84,7 @@ COMPLETED_PREREQUISITE_TASKS = (
     "WNX-P2-06",
     "WNX-P3-01",
     "WNX-P3-03",
+    "WNX-P3-08",
 )
 
 EVIDENCE_LABELS = (
@@ -343,7 +349,7 @@ def _check_report_evidence(task_id: str, path: Path, text: str) -> list[Issue]:
     if task_id == "WNX-P3-02":
         for required in (
             "Decision: `BLOCKED`",
-            "11.25 / 15 = 75.0%",
+            "11.75 / 15 = 78.3%",
             "12.00 / 15 = 80.0%",
             "Mock evidence, fixture-only evidence, cached evidence",
         ):
@@ -372,7 +378,7 @@ def _final_blocked_report_is_explicit(task_statuses: dict[str, str]) -> bool:
         return False
     required = (
         "Decision: `BLOCKED`",
-        "coverage current: 11.25/15 = 75.0%",
+        "coverage current: 11.75/15 = 78.3%",
         "coverage target: 12.00/15 = 80.0%",
         "The stage should not be called internal production PASS",
     )

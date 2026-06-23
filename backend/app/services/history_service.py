@@ -57,7 +57,7 @@ def history_output_summary(session: Session, output: GeneratedOutput) -> History
     citations = list_output_citations(session, output.id)
     warnings = _warning_messages(output.warnings_json)
     citation_blocker = _citation_blocker(warnings)
-    weknora_count = sum(1 for citation in citations if _citation_source(citation) == "weknora_api")
+    weknora_count = sum(1 for citation in citations if _is_weknora_citation(citation))
     mock_count = sum(1 for citation in citations if _citation_source(citation) == "mock")
     document_count = sum(1 for citation in citations if _citation_source_type(citation) == "document_chunk")
     wiki_count = sum(1 for citation in citations if _citation_source_type(citation) == "wiki_page")
@@ -213,6 +213,15 @@ def _citation_source(citation: Citation) -> str:
     value = binding.get("source") or metadata.get("source") or citation.source
     normalized = str(value or "").strip().lower()
     return normalized or "unknown"
+
+
+def _is_weknora_citation(citation: Citation) -> bool:
+    source = _citation_source(citation)
+    if source in {"weknora", "weknora_api"}:
+        return True
+    if source == "mock":
+        return False
+    return _citation_traceable(citation)
 
 
 def _citation_source_type(citation: Citation) -> str:
