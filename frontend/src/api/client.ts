@@ -267,6 +267,22 @@ export type NativeVectorStoreOverviewResponse = {
   >;
 };
 
+export type NativeDataSourceOverviewResponse = {
+  schema_version: string;
+  status: "live" | "partial" | "blocked" | "backlog" | string;
+  source: string;
+  warnings: string[];
+  surfaces: Record<
+    string,
+    {
+      status: "live" | "partial" | "blocked" | "backlog" | string;
+      reason?: string;
+      count?: number;
+      [key: string]: unknown;
+    }
+  >;
+};
+
 export type NativeStatusValue = "live" | "partial" | "blocked" | "backlog" | string;
 
 export type NativeCapabilityGroup = {
@@ -481,6 +497,10 @@ export type NativeWebSearchOverviewParams = {
 };
 
 export type NativeVectorStoreOverviewParams = {
+  limit?: number;
+};
+
+export type NativeDataSourceOverviewParams = {
   limit?: number;
 };
 
@@ -1076,6 +1096,14 @@ function nativeVectorStoreOverviewParams(params: NativeVectorStoreOverviewParams
   return searchParams;
 }
 
+function nativeDataSourceOverviewParams(params: NativeDataSourceOverviewParams = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.limit) {
+    searchParams.set("limit", String(params.limit));
+  }
+  return searchParams;
+}
+
 function nativeStatusCenterParams(params: NativeStatusCenterParams = {}) {
   const searchParams = new URLSearchParams();
   if (params.limit) {
@@ -1198,6 +1226,13 @@ export const apiClient = {
     const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
     return request<NativeVectorStoreOverviewResponse>(
       `/api/vector-stores/native/overview${suffix}`,
+    );
+  },
+  getNativeDataSourceOverview: (params: NativeDataSourceOverviewParams = {}) => {
+    const searchParams = nativeDataSourceOverviewParams(params);
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return request<NativeDataSourceOverviewResponse>(
+      `/api/data-sources/native/overview${suffix}`,
     );
   },
   getNativeStatusCenter: (params: NativeStatusCenterParams = {}) => {

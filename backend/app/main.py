@@ -5,6 +5,7 @@ from app import pathing as _pathing  # noqa: F401
 from app.api.analysis import router as analysis_router
 from app.api.citations import router as citations_router
 from app.api.conversations import router as conversations_router
+from app.api.data_source import router as data_source_router
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
 from app.api.history import router as history_router
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
     app.include_router(documents_router)
     app.include_router(citations_router)
     app.include_router(conversations_router)
+    app.include_router(data_source_router)
     app.include_router(analysis_router)
     app.include_router(history_router)
     app.include_router(knowledge_bases_router)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.data_source_service import native_data_source_overview
 from app.config import Settings
 from app.config import get_settings
 from app.services.mcp_service import native_mcp_overview
@@ -51,6 +52,10 @@ def native_status_center(limit: int = 5) -> dict[str, Any]:
     model_config_overview = _call(
         "model_config",
         lambda: native_model_config_overview(limit=item_limit),
+    )
+    data_source_overview = _call(
+        "data_source",
+        lambda: native_data_source_overview(limit=item_limit),
     )
 
     groups["system_health_status_deployment"] = _system_group(settings, weknora_status)
@@ -165,17 +170,15 @@ def native_status_center(limit: int = 5) -> dict[str, Any]:
         model_status,
         model_config_overview,
     )
-    groups["data_sources_connectors"] = _baseline_group(
+    groups["data_sources_connectors"] = _overview_group(
         capability_id="data_sources_connectors",
         label="Data sources / connectors",
-        status="backlog",
-        configured=False,
-        source_endpoint="/api/v1/datasource/types",
+        overview=data_source_overview,
+        configured=_data_source_configured(data_source_overview),
+        source_endpoint="/api/data-sources/native/overview",
+        native_endpoint="/api/v1/datasource",
         next_action="WNX-P2-05",
-        summary={
-            "safe_read_endpoint_exists": True,
-            "credential_and_sync_flows": "backlog",
-        },
+        summary=_data_source_summary(data_source_overview),
     )
     groups["faq_tags_favorites_skills"] = _baseline_group(
         capability_id="faq_tags_favorites_skills",
@@ -533,6 +536,34 @@ def _vector_store_summary(overview: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _data_source_summary(overview: dict[str, Any]) -> dict[str, Any]:
+    value = overview.get("value") or {}
+    surfaces = _surfaces(value)
+    connector_types = surfaces.get("connector_types", {})
+    data_sources = surfaces.get("data_sources", {})
+    connector_read = surfaces.get("connector_read", {})
+    sync_logs = surfaces.get("sync_logs", {})
+    resources = surfaces.get("resources", {})
+    validation = surfaces.get("validation", {})
+    sync_control = surfaces.get("sync_control", {})
+    mutations = surfaces.get("mutations", {})
+    return {
+        "connector_type_count": int(connector_types.get("count") or 0),
+        "data_source_count": int(data_sources.get("count") or 0),
+        "sync_control_status": sync_control.get("status"),
+        "resources_status": resources.get("status"),
+        "connector_type_status": connector_types.get("status"),
+        "data_sources_status": data_sources.get("status"),
+        "connector_read_status": connector_read.get("status"),
+        "sync_logs_status": sync_logs.get("status"),
+        "validation_status": validation.get("status"),
+        "credential_required_count": int(connector_types.get("credential_required_count") or 0),
+        "credential_configured_count": int(data_sources.get("credential_configured_count") or 0),
+        "scheduled_count": int(data_sources.get("scheduled_count") or 0),
+        "mutations_status": mutations.get("status"),
+    }
+
+
 def _model_config_summary(overview: dict[str, Any]) -> dict[str, Any]:
     surfaces = _surfaces(overview)
     provider_catalog = surfaces.get("provider_catalog", {})
@@ -566,6 +597,11 @@ def _web_search_configured(overview: dict[str, Any]) -> bool:
 def _vector_store_configured(overview: dict[str, Any]) -> bool:
     stores = _surfaces(overview.get("value") or {}).get("stores", {})
     return int(stores.get("count") or 0) > 0
+
+
+def _data_source_configured(overview: dict[str, Any]) -> bool:
+    data_sources = _surfaces(overview.get("value") or {}).get("data_sources", {})
+    return int(data_sources.get("count") or 0) > 0
 
 
 def _surfaces(value: dict[str, Any]) -> dict[str, Any]:

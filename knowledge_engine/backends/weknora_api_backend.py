@@ -1617,6 +1617,85 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "source": "weknora_api",
         }
 
+    def list_data_source_connector_types(self) -> list[dict]:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/datasource/types")
+        items = self._unwrap_items(data)
+        return [
+            self._data_source_connector_type_safe_dict(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+    def list_data_sources(self, kb_id: str | None = None, *, include_internal_refs: bool = False) -> list[dict]:
+        self._require_configured()
+        resolved_kb_id = str(kb_id or self.default_kb_id or "").strip()
+        if not resolved_kb_id:
+            raise KnowledgeBackendUnavailableError(
+                "knowledge base id is required for data source list",
+                error_code="data_source_kb_id_required",
+                operation="data_source_list",
+            )
+        data = self._request_json("GET", f"/api/v1/datasource?{urlencode({'kb_id': resolved_kb_id})}")
+        items = self._unwrap_items(data)
+        data_sources: list[dict] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            data_source = self._data_source_safe_dict(item)
+            if include_internal_refs:
+                data_source["_native_data_source_id"] = _optional_str(item.get("id"))
+            data_sources.append(data_source)
+        return data_sources
+
+    def get_data_source(self, data_source_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(data_source_id, safe="")
+        data = self._request_json("GET", f"/api/v1/datasource/{encoded_id}")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        return self._data_source_safe_dict(payload)
+
+    def list_data_source_sync_logs(self, data_source_id: str, *, limit: int = 5) -> list[dict]:
+        self._require_configured()
+        encoded_id = quote(data_source_id, safe="")
+        query = urlencode({"limit": max(min(int(limit or 5), 10), 1), "offset": 0})
+        data = self._request_json("GET", f"/api/v1/datasource/{encoded_id}/logs?{query}")
+        items = self._unwrap_items(data)
+        return [
+            self._data_source_sync_log_safe_dict(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+    def manual_sync_data_source(self, data_source_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(data_source_id, safe="")
+        data = self._request_json("POST", f"/api/v1/datasource/{encoded_id}/sync")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            payload = data if isinstance(data, dict) else {}
+        return self._data_source_sync_log_safe_dict(payload)
+
+    def pause_data_source(self, data_source_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(data_source_id, safe="")
+        data = self._request_json("POST", f"/api/v1/datasource/{encoded_id}/pause")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            payload = data if isinstance(data, dict) else {}
+        return {"status": _optional_str(payload.get("status")) or "paused", "source": "weknora_api"}
+
+    def resume_data_source(self, data_source_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(data_source_id, safe="")
+        data = self._request_json("POST", f"/api/v1/datasource/{encoded_id}/resume")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            payload = data if isinstance(data, dict) else {}
+        return {"status": _optional_str(payload.get("status")) or "active", "source": "weknora_api"}
+
     def list_model_providers(self, model_type: str | None = None) -> list[dict]:
         self._require_configured()
         query = ""
@@ -2114,6 +2193,78 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "source": _optional_str(item.get("source")) or "weknora_api",
             "readonly": bool(item.get("readonly")),
             "status": _optional_str(item.get("status")) or "available",
+        }
+
+    @staticmethod
+    def _data_source_connector_type_safe_dict(item: dict) -> dict:
+        capabilities = item.get("capabilities")
+        safe_capabilities = [str(value) for value in capabilities if value] if isinstance(capabilities, list) else []
+        return {
+            "type": _optional_str(item.get("type")),
+            "name": _optional_str(item.get("name")),
+            "priority": _optional_int(item.get("priority")),
+            "auth_type": _optional_str(item.get("auth_type")),
+            "capability_count": len(safe_capabilities),
+            "capabilities": safe_capabilities[:5],
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _data_source_safe_dict(item: dict) -> dict:
+        credentials = item.get("credentials")
+        credential_configured = False
+        if isinstance(credentials, dict):
+            credentials_meta = credentials.get("credentials")
+            if isinstance(credentials_meta, dict):
+                credential_configured = bool(credentials_meta.get("configured"))
+        latest = item.get("latest_sync_log")
+        latest_log = (
+            WeKnoraApiBackend._data_source_sync_log_safe_dict(latest)
+            if isinstance(latest, dict)
+            else None
+        )
+        config = item.get("config")
+        resource_count = 0
+        settings_count = 0
+        if isinstance(config, dict):
+            resources = config.get("resource_ids")
+            settings = config.get("settings")
+            resource_count = len(resources) if isinstance(resources, list) else 0
+            settings_count = len(settings) if isinstance(settings, dict) else 0
+        return {
+            "id": _optional_str(item.get("id")),
+            "knowledge_base_id_configured": bool(_optional_str(item.get("knowledge_base_id"))),
+            "name": _optional_str(item.get("name")),
+            "type": _optional_str(item.get("type")),
+            "status": _optional_str(item.get("status")) or "unknown",
+            "sync_mode": _optional_str(item.get("sync_mode")),
+            "sync_schedule_configured": bool(_optional_str(item.get("sync_schedule"))),
+            "sync_deletions": bool(item.get("sync_deletions")),
+            "credential_configured": credential_configured,
+            "resource_count": resource_count,
+            "settings_count": settings_count,
+            "last_sync_at_configured": bool(_optional_str(item.get("last_sync_at"))),
+            "last_sync_result_configured": bool(item.get("last_sync_result")),
+            "total_items_synced": _optional_int(item.get("total_items_synced")) or 0,
+            "latest_sync_log": latest_log,
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _data_source_sync_log_safe_dict(item: dict) -> dict:
+        return {
+            "status": _optional_str(item.get("status")) or "unknown",
+            "started_at_configured": bool(_optional_str(item.get("started_at"))),
+            "finished_at_configured": bool(_optional_str(item.get("finished_at"))),
+            "items_total": _optional_int(item.get("items_total")) or 0,
+            "items_created": _optional_int(item.get("items_created")) or 0,
+            "items_updated": _optional_int(item.get("items_updated")) or 0,
+            "items_deleted": _optional_int(item.get("items_deleted")) or 0,
+            "items_skipped": _optional_int(item.get("items_skipped")) or 0,
+            "items_failed": _optional_int(item.get("items_failed")) or 0,
+            "has_error": bool(_optional_str(item.get("error_message"))),
+            "result_configured": bool(item.get("result")),
+            "source": "weknora_api",
         }
 
     @staticmethod
