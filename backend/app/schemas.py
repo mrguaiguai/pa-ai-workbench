@@ -461,6 +461,86 @@ class AnalysisRunResponse(BaseModel):
     citations: list[CitationRead]
 
 
+class NativeAgentItem(BaseModel):
+    id: str | None = None
+    name: str
+    description: str | None = None
+    avatar: str | None = None
+    is_builtin: bool = False
+    creator_name: str | None = None
+    runnable_by_viewer: bool = True
+    agent_mode: str
+    agent_type: str | None = None
+    allowed_tools: list[str] = Field(default_factory=list)
+    knowledge_base_count: int = 0
+    model_configured: bool = False
+    rerank_configured: bool = False
+    web_search_enabled: bool = False
+    suggested_prompt_count: int = 0
+
+
+class NativeAgentPreset(BaseModel):
+    agent_type: str | None = None
+    name: str | None = None
+    description: str | None = None
+    allowed_tools: list[str] = Field(default_factory=list)
+
+
+class NativeAgentSuggestedQuestion(BaseModel):
+    question: str | None = None
+    source: str | None = None
+    knowledge_base_id: str | None = None
+
+
+class NativeAgentCatalogResponse(BaseModel):
+    schema_version: str
+    source: str
+    status: str
+    agents: list[NativeAgentItem]
+    presets: list[NativeAgentPreset] = Field(default_factory=list)
+    placeholder_groups: dict[str, int] = Field(default_factory=dict)
+    suggested_questions: list[NativeAgentSuggestedQuestion] = Field(default_factory=list)
+    selected_agent_id: str | None = None
+    active_knowledge_base_id: str | None = None
+    surfaces: dict[str, str] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class NativeAgentQaRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    agent_id: str | None = Field(default=None, max_length=120)
+    conversation_id: str | None = None
+    title: str | None = Field(default=None, max_length=300)
+    knowledge_base_ids: list[str] = Field(default_factory=list)
+    knowledge_ids: list[str] = Field(default_factory=list)
+    web_search_enabled: bool = False
+
+
+class NativeAgentQaRuntime(BaseModel):
+    native_session_id: str | None = None
+    agent_id: str | None = None
+    agent_name: str | None = None
+    event_counts: dict = Field(default_factory=dict)
+    tool_names: list[str] = Field(default_factory=list)
+    reference_count: int = 0
+    saved_citation_count: int = 0
+    citation_blocked: bool = False
+    warnings: list[str] = Field(default_factory=list)
+    assistant_message_id: str | None = None
+    user_message_id: str | None = None
+    evidence_type: str = "live_api"
+    source: str = "weknora_api"
+
+
+class NativeAgentQaResponse(BaseModel):
+    conversation: ConversationRead
+    messages: list[ConversationMessageRead]
+    task: TaskRead
+    output: GeneratedOutputRead
+    citations: list[CitationRead]
+    runtime: NativeAgentQaRuntime
+
+
 class WeKnoraStatus(BaseModel):
     mode: str
     status: str

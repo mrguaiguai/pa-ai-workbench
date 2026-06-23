@@ -1,4 +1,5 @@
 import {
+  Bot,
   BookOpenText,
   FileSearch,
   FilePlus2,
@@ -19,6 +20,9 @@ import {
   Conversation,
   ConversationMessage,
   GeneratedOutput,
+  NativeAgentCatalogResponse,
+  NativeAgentItem,
+  NativeAgentQaResponse,
   RetrievalScope,
   Task,
   WikiPage,
@@ -216,6 +220,11 @@ export function AnalysisPage() {
   const [draftState, setDraftState] = useState<LoadState>("idle");
   const [draftError, setDraftError] = useState<string | null>(null);
   const [createdDraft, setCreatedDraft] = useState<WikiPage | null>(null);
+  const [agentCatalog, setAgentCatalog] = useState<NativeAgentCatalogResponse | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>("");
+  const [agentState, setAgentState] = useState<LoadState>("idle");
+  const [agentRun, setAgentRun] = useState<NativeAgentQaResponse | null>(null);
+  const [agentRunState, setAgentRunState] = useState<LoadState>("idle");
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -241,6 +250,10 @@ export function AnalysisPage() {
     };
   }, [latestCitations, warnings]);
   const activeTask = taskOptions.find((option) => option.id === taskType) ?? taskOptions[0];
+  const selectedAgent = useMemo(
+    () => agentCatalog?.agents.find((agent) => agent.id === selectedAgentId) ?? null,
+    [agentCatalog, selectedAgentId],
+  );
 
   const loadConversations = () => {
     setConversationState("loading");
@@ -254,6 +267,21 @@ export function AnalysisPage() {
       .catch((loadError: unknown) => {
         setError(errorMessage(loadError));
         setConversationState("error");
+      });
+  };
+
+  const loadNativeAgents = () => {
+    setAgentState("loading");
+    apiClient
+      .listNativeAgents()
+      .then((catalog) => {
+        setAgentCatalog(catalog);
+        setSelectedAgentId((current) => current || catalog.selected_agent_id || catalog.agents[0]?.id || "");
+        setAgentState("idle");
+      })
+      .catch((loadError: unknown) => {
+        setAgentState("error");
+        setError(errorMessage(loadError));
       });
   };
 
@@ -274,6 +302,7 @@ export function AnalysisPage() {
 
   useEffect(() => {
     loadConversations();
+    loadNativeAgents();
   }, []);
 
   const selectConversation = (conversation: Conversation) => {
@@ -285,6 +314,7 @@ export function AnalysisPage() {
     setCreatedDraft(null);
     setDraftError(null);
     setDraftState("idle");
+    setAgentRun(null);
     loadMessages(conversation);
   };
 
@@ -297,6 +327,7 @@ export function AnalysisPage() {
     setCreatedDraft(null);
     setDraftError(null);
     setDraftState("idle");
+    setAgentRun(null);
     setForm(initialForm);
     setError(null);
   };
@@ -337,6 +368,43 @@ export function AnalysisPage() {
       })
       .catch((runError: unknown) => setError(errorMessage(runError)))
       .finally(() => setIsRunning(false));
+  };
+
+  const runNativeAgent = () => {
+    const query = form.query.trim();
+    if (!query) {
+      setError("请输入问题或分析主题");
+      return;
+    }
+    if (!selectedAgentId) {
+      setError("请选择原生 Agent");
+      return;
+    }
+
+    setAgentRunState("loading");
+    setError(null);
+    apiClient
+      .runNativeAgentQa({
+        conversation_id: selectedConversation?.id ?? null,
+        query,
+        agent_id: selectedAgentId,
+        title: form.title.trim() || null,
+      })
+      .then((response) => {
+        setAgentRun(response);
+        setSelectedConversation(response.conversation);
+        setMessages(response.messages);
+        setLatestOutput(response.output);
+        setLatestCitations(response.citations);
+        setLatestTask(response.task);
+        setCreatedDraft(null);
+        setDraftError(null);
+        setDraftState("idle");
+        setForm((current) => ({ ...current, query: "", title: "" }));
+        loadConversations();
+      })
+      .catch((runError: unknown) => setError(errorMessage(runError)))
+      .finally(() => setAgentRunState("idle"));
   };
 
   const createWikiDraft = () => {
@@ -548,6 +616,56 @@ export function AnalysisPage() {
 
         {latestTask ? <TaskProgress task={latestTask} /> : null}
 
+        <section className="native-agent-panel" aria-label="原生 AgentQA">
+          <div className="analysis-panel-heading">
+            <span>原生 AgentQA</span>
+            <strong>{selectedAgent?.name ?? "未选择"}</strong>
+          </div>
+
+          {agentState === "loading" ? (
+            <EmptyState text="加载 Agent" loading compact />
+          ) : agentState === "error" ? (
+            <ErrorState message="原生 Agent 列表不可用" />
+          ) : (
+            <>
+              <AgentPicker
+                agents={agentCatalog?.agents ?? []}
+                selectedAgentId={selectedAgentId}
+                onSelect={setSelectedAgentId}
+              />
+              <NativeAgentStatus catalog={agentCatalog} selectedAgent={selectedAgent} />
+            </>
+          )}
+
+          <button
+            className="secondary-action"
+            type="button"
+            disabled={agentRunState === "loading" || !selectedAgentId}
+            onClick={runNativeAgent}
+          >
+            {agentRunState === "loading" ? (
+              <Loader2 size={16} aria-hidden="true" />
+            ) : (
+              <Bot size={16} aria-hidden="true" />
+            )}
+            <span>{agentRunState === "loading" ? "运行中" : "运行原生 Agent"}</span>
+          </button>
+
+          {agentRun ? (
+            <div className="native-agent-result">
+              <span>{agentRun.runtime.source}</span>
+              <strong>
+                references {agentRun.runtime.reference_count} / citations{" "}
+                {agentRun.runtime.saved_citation_count}
+              </strong>
+              <p>{agentRun.runtime.citation_blocked ? "Citation blocker 已记录" : "Citation 已绑定"}</p>
+              {agentRun.runtime.tool_names.length > 0 ? (
+                <small>{agentRun.runtime.tool_names.join(", ")}</small>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+
         <section className="wiki-draft-action" aria-label="Wiki 草稿">
           <div className="analysis-panel-heading">
             <span>Wiki 草稿</span>
@@ -618,6 +736,63 @@ export function AnalysisPage() {
           <CitationList citations={latestCitations} />
         </section>
       </aside>
+    </div>
+  );
+}
+
+function AgentPicker({
+  agents,
+  selectedAgentId,
+  onSelect,
+}: {
+  agents: NativeAgentItem[];
+  selectedAgentId: string;
+  onSelect: (agentId: string) => void;
+}) {
+  if (agents.length === 0) {
+    return <EmptyState icon={Bot} text="暂无可用原生 Agent" compact />;
+  }
+  return (
+    <div className="native-agent-list" role="listbox" aria-label="原生 Agent">
+      {agents.slice(0, 6).map((agent) => (
+        <button
+          className={agent.id === selectedAgentId ? "native-agent-option active" : "native-agent-option"}
+          key={agent.id ?? agent.name}
+          type="button"
+          role="option"
+          aria-selected={agent.id === selectedAgentId}
+          onClick={() => onSelect(agent.id ?? "")}
+        >
+          <Bot size={16} aria-hidden="true" />
+          <span>
+            <strong>{agent.name}</strong>
+            <small>{agent.agent_mode}</small>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function NativeAgentStatus({
+  catalog,
+  selectedAgent,
+}: {
+  catalog: NativeAgentCatalogResponse | null;
+  selectedAgent: NativeAgentItem | null;
+}) {
+  if (!catalog) {
+    return null;
+  }
+  return (
+    <div className="native-agent-status">
+      <span>{catalog.status}</span>
+      <span>agents {catalog.agents.length}</span>
+      <span>presets {catalog.presets.length}</span>
+      <span>copy {catalog.surfaces.copy ?? "backlog"}</span>
+      {selectedAgent ? (
+        <span>{selectedAgent.allowed_tools.length} tools</span>
+      ) : null}
     </div>
   );
 }

@@ -1279,6 +1279,53 @@ class WeKnoraApiBackend(KnowledgeEngine):
         items = self._unwrap_items(data)
         return [item for item in items if isinstance(item, dict)]
 
+    def list_agent_type_presets(self) -> list[dict]:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/agents/type-presets")
+        payload = self._unwrap_data(data)
+        items = _items_from_payload(payload)
+        return [item for item in items if isinstance(item, dict)]
+
+    def list_agent_placeholders(self) -> dict:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/agents/placeholders")
+        payload = self._unwrap_data(data)
+        return payload if isinstance(payload, dict) else {}
+
+    def get_agent_suggested_questions(
+        self,
+        *,
+        agent_id: str,
+        knowledge_base_ids: list[str] | None = None,
+        knowledge_ids: list[str] | None = None,
+        limit: int = 6,
+    ) -> list[dict]:
+        self._require_configured()
+        normalized_agent_id = str(agent_id or "").strip()
+        if not normalized_agent_id:
+            raise KnowledgeBackendUnavailableError("agent id is required")
+        params = {
+            "limit": max(min(int(limit or 6), 20), 1),
+        }
+        if knowledge_base_ids:
+            params["knowledge_base_ids"] = ",".join(str(item) for item in knowledge_base_ids if item)
+        if knowledge_ids:
+            params["knowledge_ids"] = ",".join(str(item) for item in knowledge_ids if item)
+        data = self._request_json(
+            "GET",
+            "/api/v1/agents/{agent_id}/suggested-questions?{query}".format(
+                agent_id=quote(normalized_agent_id, safe=""),
+                query=urlencode(params),
+            ),
+        )
+        payload = self._unwrap_data(data)
+        if isinstance(payload, dict):
+            questions = payload.get("questions")
+        else:
+            questions = payload
+        items = questions if isinstance(questions, list) else []
+        return [item for item in items if isinstance(item, dict)]
+
     def list_mcp_services(self) -> list[dict]:
         self._require_configured()
         data = self._request_json("GET", "/api/v1/mcp-services")

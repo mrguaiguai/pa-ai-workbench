@@ -729,6 +729,82 @@ export type AnalysisRunResponse = {
   citations: Citation[];
 };
 
+export type NativeAgentItem = {
+  id: string | null;
+  name: string;
+  description: string | null;
+  avatar: string | null;
+  is_builtin: boolean;
+  creator_name: string | null;
+  runnable_by_viewer: boolean;
+  agent_mode: string;
+  agent_type: string | null;
+  allowed_tools: string[];
+  knowledge_base_count: number;
+  model_configured: boolean;
+  rerank_configured: boolean;
+  web_search_enabled: boolean;
+  suggested_prompt_count: number;
+};
+
+export type NativeAgentCatalogResponse = {
+  schema_version: string;
+  source: string;
+  status: string;
+  agents: NativeAgentItem[];
+  presets: Array<{
+    agent_type: string | null;
+    name: string | null;
+    description: string | null;
+    allowed_tools: string[];
+  }>;
+  placeholder_groups: Record<string, number>;
+  suggested_questions: Array<{
+    question: string | null;
+    source: string | null;
+    knowledge_base_id: string | null;
+  }>;
+  selected_agent_id: string | null;
+  active_knowledge_base_id: string | null;
+  surfaces: Record<string, string>;
+  warnings: string[];
+};
+
+export type NativeAgentQaRequest = {
+  query: string;
+  agent_id?: string | null;
+  conversation_id?: string | null;
+  title?: string | null;
+  knowledge_base_ids?: string[];
+  knowledge_ids?: string[];
+  web_search_enabled?: boolean;
+};
+
+export type NativeAgentQaRuntime = {
+  native_session_id: string | null;
+  agent_id: string | null;
+  agent_name: string | null;
+  event_counts: Record<string, unknown>;
+  tool_names: string[];
+  reference_count: number;
+  saved_citation_count: number;
+  citation_blocked: boolean;
+  warnings: string[];
+  assistant_message_id: string | null;
+  user_message_id: string | null;
+  evidence_type: string;
+  source: string;
+};
+
+export type NativeAgentQaResponse = {
+  conversation: Conversation;
+  messages: ConversationMessage[];
+  task: Task;
+  output: GeneratedOutput;
+  citations: Citation[];
+  runtime: NativeAgentQaRuntime;
+};
+
 export type WikiPageSummary = {
   id?: string | null;
   slug: string;
@@ -1112,6 +1188,12 @@ export const apiClient = {
     request<ListResponse<ConversationMessage>>(`/api/conversations/${conversationId}/messages`),
   runAnalysis: (payload: AnalysisRunRequest) =>
     request<AnalysisRunResponse>("/api/analysis/run", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listNativeAgents: () => request<NativeAgentCatalogResponse>("/api/analysis/native-agents"),
+  runNativeAgentQa: (payload: NativeAgentQaRequest) =>
+    request<NativeAgentQaResponse>("/api/analysis/native-agentqa", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

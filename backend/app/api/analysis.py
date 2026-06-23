@@ -12,6 +12,10 @@ from app.schemas import CitationRead
 from app.schemas import ConversationMessageRead
 from app.schemas import ConversationRead
 from app.schemas import GeneratedOutputRead
+from app.schemas import NativeAgentCatalogResponse
+from app.schemas import NativeAgentQaRequest
+from app.schemas import NativeAgentQaResponse
+from app.schemas import NativeAgentQaRuntime
 from app.schemas import OutputDetailResponse
 from app.schemas import TaskRead
 from app.services.analysis_service import AnalysisRunError
@@ -19,8 +23,50 @@ from app.services.analysis_service import run_analysis
 from app.services.generation_service import get_output
 from app.services.generation_service import get_task
 from app.services.generation_service import list_output_citations
+from app.services.native_agent_service import NativeAgentError
+from app.services.native_agent_service import native_agent_catalog
+from app.services.native_agent_service import run_native_agent_qa
 
 router = APIRouter(prefix="/api", tags=["analysis"])
+
+
+@router.get("/analysis/native-agents", response_model=NativeAgentCatalogResponse)
+def list_native_agents(
+    session: Annotated[Session, Depends(get_session)],
+) -> NativeAgentCatalogResponse:
+    try:
+        return NativeAgentCatalogResponse.model_validate(native_agent_catalog(session))
+    except NativeAgentError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/analysis/native-agentqa", response_model=NativeAgentQaResponse)
+def run_native_agentqa_task(
+    payload: NativeAgentQaRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> NativeAgentQaResponse:
+    try:
+        conversation, messages, task, output, citations, runtime = run_native_agent_qa(
+            session=session,
+            query=payload.query,
+            agent_id=payload.agent_id,
+            conversation_id=payload.conversation_id,
+            title=payload.title,
+            knowledge_base_ids=payload.knowledge_base_ids,
+            knowledge_ids=payload.knowledge_ids,
+            web_search_enabled=payload.web_search_enabled,
+        )
+    except NativeAgentError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return NativeAgentQaResponse(
+        conversation=ConversationRead.model_validate(conversation),
+        messages=[ConversationMessageRead.model_validate(message) for message in messages],
+        task=TaskRead.model_validate(task),
+        output=GeneratedOutputRead.model_validate(output),
+        citations=[CitationRead.model_validate(citation) for citation in citations],
+        runtime=NativeAgentQaRuntime.model_validate(runtime),
+    )
 
 
 @router.post("/analysis/run", response_model=AnalysisRunResponse)
