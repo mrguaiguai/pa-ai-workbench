@@ -1444,6 +1444,49 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if isinstance(item, dict)
         ]
 
+    def get_mcp_service(self, service_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        data = self._request_json("GET", f"/api/v1/mcp-services/{encoded_id}")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        return self._mcp_service_safe_dict(payload)
+
+    def test_mcp_service(self, service_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        data = self._request_json("POST", f"/api/v1/mcp-services/{encoded_id}/test")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {"success": False, "tool_count": 0, "resource_count": 0}
+        tools = payload.get("tools")
+        resources = payload.get("resources")
+        tool_items = tools if isinstance(tools, list) else []
+        resource_items = resources if isinstance(resources, list) else []
+        return {
+            "success": bool(payload.get("success")),
+            "tool_count": len([item for item in tool_items if isinstance(item, dict)]),
+            "resource_count": len([item for item in resource_items if isinstance(item, dict)]),
+            "sample_tools": [
+                {
+                    "name": _optional_str(item.get("name")),
+                    "require_approval": bool(item.get("require_approval")),
+                }
+                for item in tool_items[:5]
+                if isinstance(item, dict)
+            ],
+            "sample_resources": [
+                {
+                    "name": _optional_str(item.get("name")),
+                    "mime_type": _optional_str(item.get("mimeType") or item.get("mime_type")),
+                }
+                for item in resource_items[:5]
+                if isinstance(item, dict)
+            ],
+            "source": "weknora_api",
+        }
+
     def get_mcp_service_tools(self, service_id: str) -> list[dict]:
         self._require_configured()
         encoded_id = quote(service_id, safe="")

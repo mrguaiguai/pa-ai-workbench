@@ -407,11 +407,13 @@ function statusStripDetails(state: WeKnoraFirstStatusStripState) {
     const tools = state.mcpOverview.surfaces.tools;
     const resources = state.mcpOverview.surfaces.resources;
     const approval = state.mcpOverview.surfaces.approval;
+    const safeTest = state.mcpOverview.surfaces.safe_test;
     details.push(`mcp=${state.mcpOverview.status}`);
     details.push(`mcp services=${surfaceCount(services)}`);
     details.push(`mcp tools=${surfaceCount(tools)}`);
     details.push(`mcp resources=${surfaceCount(resources)}`);
     details.push(`mcp approvals=${surfaceCount(approval)}`);
+    details.push(`mcp safe_test=${safeTest?.status ?? "unknown"}`);
   }
   if (state.mcpError) {
     details.push(`mcp blocked：${state.mcpError}`);

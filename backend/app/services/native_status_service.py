@@ -463,10 +463,15 @@ def _mcp_summary(overview: dict[str, Any]) -> dict[str, Any]:
     tools = surfaces.get("tools", {})
     resources = surfaces.get("resources", {})
     approval = surfaces.get("approval", {})
+    service_read = surfaces.get("service_read", {})
+    safe_test = surfaces.get("safe_test", {})
     mutations = surfaces.get("mutations", {})
     return {
-        "services_status": services.get("status"),
         "services_count": int(services.get("count") or 0),
+        "safe_test_status": safe_test.get("status"),
+        "service_read_status": service_read.get("status"),
+        "mutations_status": mutations.get("status"),
+        "services_status": services.get("status"),
         "enabled_count": int(services.get("enabled_count") or 0),
         "tools_status": tools.get("status"),
         "tools_count": int(tools.get("count") or 0),
@@ -474,7 +479,6 @@ def _mcp_summary(overview: dict[str, Any]) -> dict[str, Any]:
         "resources_count": int(resources.get("count") or 0),
         "approval_status": approval.get("status"),
         "approval_count": int(approval.get("count") or 0),
-        "mutations_status": mutations.get("status"),
     }
 
 
