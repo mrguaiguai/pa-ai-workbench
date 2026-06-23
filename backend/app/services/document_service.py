@@ -870,6 +870,204 @@ def list_document_chunks(session: Session, document_id: str) -> list[DocumentChu
     return _list_local_document_chunks(session, document_id)
 
 
+def read_document_chunk(session: Session, document: Document, chunk_id: str) -> DocumentChunk:
+    normalized_chunk_id = str(chunk_id or "").strip()
+    if not normalized_chunk_id:
+        raise DocumentWorkflowError("Chunk ID is required.")
+    if document.knowledge_backend == "weknora_api" and document.external_doc_id:
+        try:
+            with _document_weknora_log_context(document):
+                raw_chunk = _weknora_backend().get_document_chunk_by_id(normalized_chunk_id)
+        except KnowledgeBackendUnavailableError as exc:
+            _record_event(
+                session=session,
+                document=document,
+                step="weknora_chunk_detail",
+                status="failed",
+                message="WeKnora chunk detail read failed.",
+                metadata={"chunk_id": normalized_chunk_id},
+                error_message=str(exc)[:MAX_ERROR_MESSAGE_CHARS],
+            )
+            session.commit()
+            raise DocumentWorkflowError(str(exc)) from exc
+        chunk = _weknora_raw_chunk_to_model(document, raw_chunk, index=0)
+        _require_chunk_document_match(document, chunk)
+        return chunk
+
+    chunk = session.get(DocumentChunk, normalized_chunk_id)
+    if chunk is None or chunk.document_id != document.id:
+        raise DocumentWorkflowError("Chunk not found.")
+    return chunk
+
+
+def set_native_document_chunk_enabled(
+    session: Session,
+    document: Document,
+    chunk_id: str,
+    is_enabled: bool,
+    *,
+    confirm: bool,
+    reason: str | None = None,
+) -> DocumentChunk:
+    if not confirm:
+        raise DocumentWorkflowError("Chunk toggle requires explicit confirmation.")
+    _require_weknora_document(document)
+    current_chunk = read_document_chunk(session, document, chunk_id)
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_chunk_toggle",
+        status="started",
+        message="WeKnora chunk toggle requested.",
+        metadata={
+            "chunk_id": current_chunk.id,
+            "is_enabled": is_enabled,
+            "reason": _safe_reason(reason),
+        },
+    )
+    session.commit()
+    try:
+        with _document_weknora_log_context(document):
+            raw_chunk = _weknora_backend().update_document_chunk(
+                document.external_doc_id or "",
+                current_chunk.id,
+                content=current_chunk.content,
+                is_enabled=is_enabled,
+            )
+    except KnowledgeBackendUnavailableError as exc:
+        _record_event(
+            session=session,
+            document=document,
+            step="weknora_chunk_toggle",
+            status="failed",
+            message="WeKnora chunk toggle failed.",
+            metadata={"chunk_id": current_chunk.id, "is_enabled": is_enabled},
+            error_message=str(exc)[:MAX_ERROR_MESSAGE_CHARS],
+        )
+        session.commit()
+        raise DocumentWorkflowError(str(exc)) from exc
+
+    updated_chunk = _weknora_raw_chunk_to_model(document, raw_chunk, index=current_chunk.chunk_index)
+    _require_chunk_document_match(document, updated_chunk)
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_chunk_toggle",
+        status="succeeded",
+        message="WeKnora chunk toggle completed.",
+        metadata={"chunk_id": updated_chunk.id, "is_enabled": is_enabled},
+    )
+    session.commit()
+    return updated_chunk
+
+
+def delete_native_document_chunk(
+    session: Session,
+    document: Document,
+    chunk_id: str,
+    *,
+    confirm: bool,
+    reason: str | None = None,
+) -> str:
+    if not confirm:
+        raise DocumentWorkflowError("Chunk delete requires explicit confirmation.")
+    _require_weknora_document(document)
+    chunk = read_document_chunk(session, document, chunk_id)
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_chunk_delete",
+        status="started",
+        message="WeKnora chunk delete requested.",
+        metadata={"chunk_id": chunk.id, "reason": _safe_reason(reason)},
+    )
+    session.commit()
+    try:
+        with _document_weknora_log_context(document):
+            _weknora_backend().delete_document_chunk(document.external_doc_id or "", chunk.id)
+    except KnowledgeBackendUnavailableError as exc:
+        _record_event(
+            session=session,
+            document=document,
+            step="weknora_chunk_delete",
+            status="failed",
+            message="WeKnora chunk delete failed.",
+            metadata={"chunk_id": chunk.id},
+            error_message=str(exc)[:MAX_ERROR_MESSAGE_CHARS],
+        )
+        session.commit()
+        raise DocumentWorkflowError(str(exc)) from exc
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_chunk_delete",
+        status="succeeded",
+        message="WeKnora chunk delete completed.",
+        metadata={"chunk_id": chunk.id},
+    )
+    session.commit()
+    return "WeKnora chunk delete completed."
+
+
+def delete_native_generated_question(
+    session: Session,
+    document: Document,
+    chunk_id: str,
+    question_id: str,
+    *,
+    confirm: bool,
+    reason: str | None = None,
+) -> DocumentChunk:
+    if not confirm:
+        raise DocumentWorkflowError("Generated question delete requires explicit confirmation.")
+    normalized_question_id = str(question_id or "").strip()
+    if not normalized_question_id:
+        raise DocumentWorkflowError("Question ID is required.")
+    _require_weknora_document(document)
+    chunk = read_document_chunk(session, document, chunk_id)
+    question_ids = _generated_question_ids(chunk)
+    if normalized_question_id not in question_ids:
+        raise DocumentWorkflowError("Generated question not found on this chunk.")
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_chunk_question_delete",
+        status="started",
+        message="WeKnora generated question delete requested.",
+        metadata={
+            "chunk_id": chunk.id,
+            "question_id": normalized_question_id,
+            "reason": _safe_reason(reason),
+        },
+    )
+    session.commit()
+    try:
+        with _document_weknora_log_context(document):
+            _weknora_backend().delete_generated_question(chunk.id, normalized_question_id)
+    except KnowledgeBackendUnavailableError as exc:
+        _record_event(
+            session=session,
+            document=document,
+            step="weknora_chunk_question_delete",
+            status="failed",
+            message="WeKnora generated question delete failed.",
+            metadata={"chunk_id": chunk.id, "question_id": normalized_question_id},
+            error_message=str(exc)[:MAX_ERROR_MESSAGE_CHARS],
+        )
+        session.commit()
+        raise DocumentWorkflowError(str(exc)) from exc
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_chunk_question_delete",
+        status="succeeded",
+        message="WeKnora generated question delete completed.",
+        metadata={"chunk_id": chunk.id, "question_id": normalized_question_id},
+    )
+    session.commit()
+    return read_document_chunk(session, document, chunk.id)
+
+
 def _list_local_document_chunks(session: Session, document_id: str) -> list[DocumentChunk]:
     statement = (
         select(DocumentChunk)
@@ -882,38 +1080,74 @@ def _list_local_document_chunks(session: Session, document_id: str) -> list[Docu
 def _list_weknora_document_chunks(document: Document) -> list[DocumentChunk]:
     with _document_weknora_log_context(document):
         raw_chunks = _weknora_backend().list_document_chunks(document.external_doc_id or "")
-    now = utc_now()
-    chunks: list[DocumentChunk] = []
-    for index, raw in enumerate(raw_chunks):
-        metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
-        chunks.append(
-            DocumentChunk(
-                id=str(raw.get("id") or f"weknora_chunk_{document.id}_{index}"),
-                document_id=document.id,
-                external_doc_id=str(raw.get("external_doc_id") or document.external_doc_id or ""),
-                chunk_index=int(raw.get("chunk_index") or index),
-                title=raw.get("title") or document.title,
-                content=str(raw.get("content") or ""),
-                content_hash=str(raw.get("content_hash") or ""),
-                token_count=int(raw.get("token_count") or 0),
-                char_count=int(raw.get("char_count") or len(str(raw.get("content") or ""))),
-                start_char=raw.get("start_char"),
-                end_char=raw.get("end_char"),
-                page_number=raw.get("page_number"),
-                section_path=_to_json(raw.get("section_path")) if raw.get("section_path") else None,
-                paragraph_start_index=raw.get("paragraph_start_index"),
-                paragraph_end_index=raw.get("paragraph_end_index"),
-                business_area=document.business_area,
-                document_type=document.document_type,
-                source=str(raw.get("source") or "weknora_api"),
-                metadata_json=_to_json(metadata),
-                embedding_status=str(raw.get("embedding_status") or "indexed"),
-                vector_id=raw.get("vector_id"),
-                created_at=now,
-                updated_at=now,
-            )
-        )
+    chunks = [
+        _weknora_raw_chunk_to_model(document, raw, index)
+        for index, raw in enumerate(raw_chunks)
+    ]
     return sorted(chunks, key=lambda chunk: chunk.chunk_index)
+
+
+def _weknora_raw_chunk_to_model(
+    document: Document,
+    raw: dict,
+    index: int = 0,
+) -> DocumentChunk:
+    now = utc_now()
+    metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+    return DocumentChunk(
+        id=str(raw.get("id") or f"weknora_chunk_{document.id}_{index}"),
+        document_id=document.id,
+        external_doc_id=str(raw.get("external_doc_id") or document.external_doc_id or ""),
+        chunk_index=int(raw.get("chunk_index") or index),
+        title=raw.get("title") or document.title,
+        content=str(raw.get("content") or ""),
+        content_hash=str(raw.get("content_hash") or ""),
+        token_count=int(raw.get("token_count") or 0),
+        char_count=int(raw.get("char_count") or len(str(raw.get("content") or ""))),
+        start_char=raw.get("start_char"),
+        end_char=raw.get("end_char"),
+        page_number=raw.get("page_number"),
+        section_path=_to_json(raw.get("section_path")) if raw.get("section_path") else None,
+        paragraph_start_index=raw.get("paragraph_start_index"),
+        paragraph_end_index=raw.get("paragraph_end_index"),
+        business_area=document.business_area,
+        document_type=document.document_type,
+        source=str(raw.get("source") or "weknora_api"),
+        metadata_json=_to_json(metadata),
+        embedding_status=str(raw.get("embedding_status") or "indexed"),
+        vector_id=raw.get("vector_id"),
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _require_weknora_document(document: Document) -> None:
+    if document.knowledge_backend != "weknora_api" or not document.external_doc_id:
+        raise DocumentWorkflowError("Native chunk operations require a WeKnora document.")
+
+
+def _require_chunk_document_match(document: Document, chunk: DocumentChunk) -> None:
+    if chunk.external_doc_id != document.external_doc_id:
+        raise DocumentWorkflowError("Chunk does not belong to this document.")
+
+
+def _safe_reason(reason: str | None) -> str | None:
+    value = str(reason or "").strip()
+    return value[:160] if value else None
+
+
+def _generated_question_ids(chunk: DocumentChunk) -> set[str]:
+    metadata = _from_json(chunk.metadata_json)
+    if not isinstance(metadata, dict):
+        return set()
+    questions = metadata.get("generated_questions")
+    if not isinstance(questions, list):
+        return set()
+    question_ids: set[str] = set()
+    for question in questions:
+        if isinstance(question, dict) and question.get("id"):
+            question_ids.add(str(question["id"]))
+    return question_ids
 
 
 def list_document_events(session: Session, document_id: str) -> list[DocumentProcessingEvent]:

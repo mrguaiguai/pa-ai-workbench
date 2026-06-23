@@ -89,6 +89,15 @@ class DocumentLifecycleActionResponse(BaseModel):
     source: str = "weknora_api"
 
 
+class DocumentChunkMutationRequest(BaseModel):
+    confirm: bool = False
+    reason: str | None = Field(default=None, max_length=300)
+
+
+class DocumentChunkEnabledRequest(DocumentChunkMutationRequest):
+    is_enabled: bool
+
+
 class DocumentSpansResponse(BaseModel):
     source: str
     external_doc_id: str | None = None
@@ -131,6 +140,16 @@ class DocumentChunkRead(BaseModel):
     vector_id: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class DocumentChunkActionResponse(BaseModel):
+    document: DocumentRead
+    chunk: DocumentChunkRead | None = None
+    action: str
+    message: str
+    evidence_type: str = "live_api"
+    source: str = "weknora_api"
+    audit_step: str
 
 
 class DocumentChunkListResponse(BaseModel):

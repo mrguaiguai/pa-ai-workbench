@@ -1513,7 +1513,9 @@ p {
 }
 
 .chunk-preview-title,
-.chunk-preview-meta {
+.chunk-preview-meta,
+.chunk-preview-actions,
+.chunk-generated-questions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -1527,8 +1529,11 @@ p {
 
 .chunk-preview-title span,
 .chunk-preview-meta span,
-.chunk-preview-meta a {
+.chunk-preview-meta a,
+.chunk-generated-questions span {
   min-height: 22px;
+  max-width: 100%;
+  overflow: hidden;
   border-radius: 8px;
   background: #f2f6f8;
   color: #52636e;
@@ -1536,6 +1541,22 @@ p {
   font-weight: 800;
   padding: 3px 7px;
   text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chunk-generated-questions span {
+  background: #f4f1e8;
+  color: #6b5b2c;
+}
+
+.chunk-preview-actions {
+  justify-content: flex-end;
+}
+
+.chunk-preview-actions .icon-button {
+  width: 30px;
+  height: 30px;
 }
 
 .chunk-preview-item p {

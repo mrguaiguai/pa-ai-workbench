@@ -9,6 +9,8 @@ import {
   Pin,
   RefreshCw,
   RotateCcw,
+  ToggleLeft,
+  ToggleRight,
   Trash2,
   Upload,
   XCircle,
@@ -332,6 +334,36 @@ function chunkLocation(chunk: DocumentChunk) {
   return parts.length ? parts.join(" · ") : "无位置偏移";
 }
 
+function chunkMetadata(chunk: DocumentChunk): Record<string, unknown> {
+  if (!chunk.metadata_json) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(chunk.metadata_json) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function chunkIsEnabled(chunk: DocumentChunk) {
+  const metadata = chunkMetadata(chunk);
+  return metadata.weknora_is_enabled !== false && chunk.embedding_status !== "disabled";
+}
+
+function generatedQuestions(chunk: DocumentChunk) {
+  const metadata = chunkMetadata(chunk);
+  const questions = metadata.generated_questions;
+  if (!Array.isArray(questions)) {
+    return [];
+  }
+  return questions
+    .filter((question) => question && typeof question === "object")
+    .map((question) => question as { id?: string; question?: string });
+}
+
 function chunkEmptyText(document: Document) {
   if (document.status === "failed") {
     return "处理失败，暂无分块";
@@ -383,6 +415,7 @@ export function LibraryPage() {
   const [eventLoadState, setEventLoadState] = useState<EventLoadState>("idle");
   const [eventError, setEventError] = useState<string | null>(null);
   const [targetChunkId, setTargetChunkId] = useState<string | null>(null);
+  const [chunkActionId, setChunkActionId] = useState<string | null>(null);
   const [kbOverview, setKbOverview] = useState<NativeKnowledgeBaseOverviewResponse | null>(null);
   const [kbLoadState, setKbLoadState] = useState<KnowledgeBaseLoadState>("idle");
   const [kbError, setKbError] = useState<string | null>(null);
@@ -650,6 +683,57 @@ export function LibraryPage() {
         document.id === nextDocument.id ? nextDocument : document,
       ),
     );
+  };
+
+  const onRefreshChunk = (documentId: string, chunkId: string) => {
+    setChunkActionId(chunkId);
+    setChunkError(null);
+    apiClient
+      .getDocumentChunk(documentId, chunkId)
+      .then((chunk) => {
+        setChunks((current) =>
+          current.map((item) => (item.id === chunk.id ? chunk : item)),
+        );
+        setTargetChunkId(chunk.id);
+      })
+      .catch((chunkErrorResponse: unknown) => setChunkError(errorMessage(chunkErrorResponse)))
+      .finally(() => setChunkActionId(null));
+  };
+
+  const onToggleChunk = (documentId: string, chunk: DocumentChunk) => {
+    const nextEnabled = !chunkIsEnabled(chunk);
+    setChunkActionId(chunk.id);
+    setChunkError(null);
+    apiClient
+      .setDocumentChunkEnabled(documentId, chunk.id, nextEnabled)
+      .then((response) => {
+        updateDocument(response.document);
+        if (response.chunk) {
+          setChunks((current) =>
+            current.map((item) => (item.id === response.chunk?.id ? response.chunk : item)),
+          );
+        }
+        loadPreview(documentId, chunk.id);
+      })
+      .catch((chunkErrorResponse: unknown) => setChunkError(errorMessage(chunkErrorResponse)))
+      .finally(() => setChunkActionId(null));
+  };
+
+  const onDeleteChunk = (documentId: string, chunk: DocumentChunk) => {
+    if (!window.confirm("确认删除这个 WeKnora 分块？")) {
+      return;
+    }
+    setChunkActionId(chunk.id);
+    setChunkError(null);
+    apiClient
+      .deleteDocumentChunk(documentId, chunk.id)
+      .then((response) => {
+        updateDocument(response.document);
+        setChunks((current) => current.filter((item) => item.id !== chunk.id));
+        loadPreview(documentId);
+      })
+      .catch((chunkErrorResponse: unknown) => setChunkError(errorMessage(chunkErrorResponse)))
+      .finally(() => setChunkActionId(null));
   };
 
   const onLifecycleAction = (
@@ -1148,9 +1232,22 @@ export function LibraryPage() {
                       <div className="chunk-preview-title">
                         <strong>#{chunk.chunk_index}</strong>
                         <span>{chunk.embedding_status}</span>
+                        <span>{chunkIsEnabled(chunk) ? "已启用" : "已禁用"}</span>
                         <span>{chunk.source}</span>
+                        <span>{`生成问题：${generatedQuestions(chunk).length}`}</span>
                       </div>
                       <p>{chunkExcerpt(chunk.content)}</p>
+                      {generatedQuestions(chunk).length > 0 ? (
+                        <div className="chunk-generated-questions">
+                          {generatedQuestions(chunk)
+                            .slice(0, 3)
+                            .map((question) => (
+                              <span key={question.id || question.question}>
+                                {question.question || question.id}
+                              </span>
+                            ))}
+                        </div>
+                      ) : null}
                       <div className="chunk-preview-meta">
                         <span>{chunkLocation(chunk)}</span>
                         <span>{chunk.token_count} 个词元</span>
@@ -1162,6 +1259,45 @@ export function LibraryPage() {
                         >
                           定位
                         </a>
+                      </div>
+                      <div className="chunk-preview-actions" aria-label="分块操作">
+                        <button
+                          className="icon-button"
+                          type="button"
+                          onClick={() => onRefreshChunk(previewDocument.id, chunk.id)}
+                          disabled={chunkActionId === chunk.id}
+                          title="读取分块详情"
+                        >
+                          <RefreshCw size={15} aria-hidden="true" />
+                        </button>
+                        <button
+                          className="icon-button"
+                          type="button"
+                          onClick={() => onToggleChunk(previewDocument.id, chunk)}
+                          disabled={
+                            chunkActionId === chunk.id ||
+                            previewDocument.knowledge_backend !== "weknora_api"
+                          }
+                          title={chunkIsEnabled(chunk) ? "禁用分块" : "启用分块"}
+                        >
+                          {chunkIsEnabled(chunk) ? (
+                            <ToggleRight size={16} aria-hidden="true" />
+                          ) : (
+                            <ToggleLeft size={16} aria-hidden="true" />
+                          )}
+                        </button>
+                        <button
+                          className="icon-button danger"
+                          type="button"
+                          onClick={() => onDeleteChunk(previewDocument.id, chunk)}
+                          disabled={
+                            chunkActionId === chunk.id ||
+                            previewDocument.knowledge_backend !== "weknora_api"
+                          }
+                          title="删除分块"
+                        >
+                          <Trash2 size={15} aria-hidden="true" />
+                        </button>
                       </div>
                     </article>
                   ))}

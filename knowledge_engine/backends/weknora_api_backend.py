@@ -821,6 +821,66 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if isinstance(item, dict)
         ]
 
+    def get_document_chunk_by_id(self, chunk_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(str(chunk_id or "").strip(), safe="")
+        if not encoded_id:
+            raise KnowledgeBackendUnavailableError("chunk id is required")
+        data = self._request_json("GET", f"/api/v1/chunks/by-id/{encoded_id}")
+        item = self._unwrap_data(data)
+        if not isinstance(item, dict):
+            raise WeKnoraResponseMappingError("WeKnora chunk response did not contain an object")
+        external_doc_id = str(item.get("knowledge_id") or "")
+        return self._to_document_chunk_preview(item, external_doc_id)
+
+    def update_document_chunk(
+        self,
+        external_doc_id: str,
+        chunk_id: str,
+        *,
+        content: str | None = None,
+        is_enabled: bool,
+    ) -> dict:
+        self._require_configured()
+        encoded_doc_id = quote(str(external_doc_id or "").strip(), safe="")
+        encoded_chunk_id = quote(str(chunk_id or "").strip(), safe="")
+        if not encoded_doc_id or not encoded_chunk_id:
+            raise KnowledgeBackendUnavailableError("document id and chunk id are required")
+        payload: dict[str, object] = {"is_enabled": is_enabled}
+        if content is not None:
+            payload["content"] = content
+        data = self._request_json(
+            "PUT",
+            f"/api/v1/chunks/{encoded_doc_id}/{encoded_chunk_id}",
+            payload,
+        )
+        item = self._unwrap_data(data)
+        if not isinstance(item, dict):
+            return self.get_document_chunk_by_id(chunk_id)
+        return self._to_document_chunk_preview(item, external_doc_id)
+
+    def delete_document_chunk(self, external_doc_id: str, chunk_id: str) -> dict:
+        self._require_configured()
+        encoded_doc_id = quote(str(external_doc_id or "").strip(), safe="")
+        encoded_chunk_id = quote(str(chunk_id or "").strip(), safe="")
+        if not encoded_doc_id or not encoded_chunk_id:
+            raise KnowledgeBackendUnavailableError("document id and chunk id are required")
+        data = self._request_json("DELETE", f"/api/v1/chunks/{encoded_doc_id}/{encoded_chunk_id}")
+        return self._document_action_result(data, external_doc_id, action="delete_chunk")
+
+    def delete_generated_question(self, chunk_id: str, question_id: str) -> dict:
+        self._require_configured()
+        encoded_chunk_id = quote(str(chunk_id or "").strip(), safe="")
+        normalized_question_id = str(question_id or "").strip()
+        if not encoded_chunk_id or not normalized_question_id:
+            raise KnowledgeBackendUnavailableError("chunk id and question id are required")
+        data = self._request_json(
+            "DELETE",
+            f"/api/v1/chunks/by-id/{encoded_chunk_id}/questions",
+            {"question_id": normalized_question_id},
+        )
+        return self._document_action_result(data, chunk_id, action="delete_generated_question")
+
     def retrieve(
         self,
         query: str,

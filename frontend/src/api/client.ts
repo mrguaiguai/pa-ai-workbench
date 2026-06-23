@@ -477,6 +477,16 @@ export type DocumentChunkListResponse = {
   total: number;
 };
 
+export type DocumentChunkActionResponse = {
+  document: Document;
+  chunk: DocumentChunk | null;
+  action: string;
+  message: string;
+  evidence_type: string;
+  source: string;
+  audit_step: string;
+};
+
 export type DocumentProcessingEvent = {
   id: string;
   document_id: string;
@@ -1036,6 +1046,33 @@ export const apiClient = {
     request<DocumentSpansResponse>(`/api/documents/${documentId}/spans`),
   listDocumentChunks: (documentId: string) =>
     request<DocumentChunkListResponse>(`/api/documents/${documentId}/chunks`),
+  getDocumentChunk: (documentId: string, chunkId: string) =>
+    request<DocumentChunk>(
+      `/api/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}`,
+    ),
+  setDocumentChunkEnabled: (documentId: string, chunkId: string, isEnabled: boolean) =>
+    request<DocumentChunkActionResponse>(
+      `/api/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}/enabled`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          confirm: true,
+          is_enabled: isEnabled,
+          reason: "library_chunk_control",
+        }),
+      },
+    ),
+  deleteDocumentChunk: (documentId: string, chunkId: string) =>
+    request<DocumentChunkActionResponse>(
+      `/api/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({
+          confirm: true,
+          reason: "library_chunk_control",
+        }),
+      },
+    ),
   listDocumentEvents: (documentId: string) =>
     request<ListResponse<DocumentProcessingEvent>>(`/api/documents/${documentId}/events`),
   listConversations: () => request<ListResponse<Conversation>>("/api/conversations"),

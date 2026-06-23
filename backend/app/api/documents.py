@@ -12,9 +12,12 @@ from sqlmodel import Session
 
 from app.database import get_session
 from app.schemas import DocumentBulkRefreshResponse
+from app.schemas import DocumentChunkActionResponse
+from app.schemas import DocumentChunkEnabledRequest
 from app.schemas import DocumentLifecycleActionResponse
 from app.schemas import DocumentListResponse
 from app.schemas import DocumentChunkListResponse
+from app.schemas import DocumentChunkMutationRequest
 from app.schemas import DocumentChunkRead
 from app.schemas import DocumentIndexResponse
 from app.schemas import DocumentManualCreateRequest
@@ -30,6 +33,8 @@ from app.services.document_service import cancel_native_document_parse
 from app.services.document_service import create_document
 from app.services.document_service import create_document_from_url
 from app.services.document_service import create_manual_document
+from app.services.document_service import delete_native_document_chunk
+from app.services.document_service import delete_native_generated_question
 from app.services.document_service import delete_native_document
 from app.services.document_service import DocumentWorkflowError
 from app.services.document_service import get_document
@@ -40,11 +45,13 @@ from app.services.document_service import list_document_events
 from app.services.document_service import list_documents
 from app.services.document_service import parse_document_file
 from app.services.document_service import read_native_document_file
+from app.services.document_service import read_document_chunk
 from app.services.document_service import recover_document_processing
 from app.services.document_service import reparse_native_document
 from app.services.document_service import reindex_document_chunks
 from app.services.document_service import refresh_document_statuses
 from app.services.document_service import retry_index_document
+from app.services.document_service import set_native_document_chunk_enabled
 from app.services.document_service import document_processing_summary
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -241,6 +248,110 @@ def read_document_chunks(
     )
 
 
+@router.get("/{document_id}/chunks/{chunk_id}", response_model=DocumentChunkRead)
+def read_document_chunk_detail(
+    document_id: str,
+    chunk_id: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> DocumentChunkRead:
+    document = _require_document(session, document_id)
+    try:
+        chunk = read_document_chunk(session, document, chunk_id)
+    except DocumentWorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return DocumentChunkRead.model_validate(chunk)
+
+
+@router.patch("/{document_id}/chunks/{chunk_id}/enabled", response_model=DocumentChunkActionResponse)
+def set_document_chunk_enabled(
+    document_id: str,
+    chunk_id: str,
+    payload: DocumentChunkEnabledRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> DocumentChunkActionResponse:
+    document = _require_document(session, document_id)
+    try:
+        chunk = set_native_document_chunk_enabled(
+            session=session,
+            document=document,
+            chunk_id=chunk_id,
+            is_enabled=payload.is_enabled,
+            confirm=payload.confirm,
+            reason=payload.reason,
+        )
+    except DocumentWorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _chunk_action_response(
+        session=session,
+        document=document,
+        chunk=chunk,
+        action="toggle",
+        audit_step="weknora_chunk_toggle",
+        message="WeKnora chunk toggle completed.",
+    )
+
+
+@router.delete("/{document_id}/chunks/{chunk_id}", response_model=DocumentChunkActionResponse)
+def delete_document_chunk_record(
+    document_id: str,
+    chunk_id: str,
+    payload: DocumentChunkMutationRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> DocumentChunkActionResponse:
+    document = _require_document(session, document_id)
+    try:
+        message = delete_native_document_chunk(
+            session=session,
+            document=document,
+            chunk_id=chunk_id,
+            confirm=payload.confirm,
+            reason=payload.reason,
+        )
+    except DocumentWorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _chunk_action_response(
+        session=session,
+        document=document,
+        chunk=None,
+        action="delete_chunk",
+        audit_step="weknora_chunk_delete",
+        message=message,
+    )
+
+
+@router.delete(
+    "/{document_id}/chunks/{chunk_id}/questions/{question_id}",
+    response_model=DocumentChunkActionResponse,
+)
+def delete_document_chunk_generated_question(
+    document_id: str,
+    chunk_id: str,
+    question_id: str,
+    payload: DocumentChunkMutationRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> DocumentChunkActionResponse:
+    document = _require_document(session, document_id)
+    try:
+        chunk = delete_native_generated_question(
+            session=session,
+            document=document,
+            chunk_id=chunk_id,
+            question_id=question_id,
+            confirm=payload.confirm,
+            reason=payload.reason,
+        )
+    except DocumentWorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _chunk_action_response(
+        session=session,
+        document=document,
+        chunk=chunk,
+        action="delete_generated_question",
+        audit_step="weknora_chunk_question_delete",
+        message="WeKnora generated question delete completed.",
+    )
+
+
 @router.get("/{document_id}/events", response_model=DocumentProcessingEventListResponse)
 def read_document_events(
     document_id: str,
@@ -395,6 +506,23 @@ def _lifecycle_action_response(
         document=_document_read(session, document),
         action=action,
         message=message,
+    )
+
+
+def _chunk_action_response(
+    session: Session,
+    document,
+    chunk,
+    action: str,
+    message: str,
+    audit_step: str,
+) -> DocumentChunkActionResponse:
+    return DocumentChunkActionResponse(
+        document=_document_read(session, document),
+        chunk=DocumentChunkRead.model_validate(chunk) if chunk is not None else None,
+        action=action,
+        message=message,
+        audit_step=audit_step,
     )
 
 
