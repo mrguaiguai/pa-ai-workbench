@@ -1696,6 +1696,60 @@ class WeKnoraApiBackend(KnowledgeEngine):
             payload = data if isinstance(data, dict) else {}
         return {"status": _optional_str(payload.get("status")) or "active", "source": "weknora_api"}
 
+    def list_faq_entries(self, kb_id: str | None = None, *, limit: int = 5) -> list[dict]:
+        self._require_configured()
+        resolved_kb_id = str(kb_id or self.default_kb_id or "").strip()
+        if not resolved_kb_id:
+            raise KnowledgeBackendUnavailableError(
+                "knowledge base id is required for FAQ entries",
+                error_code="faq_kb_id_required",
+                operation="faq_entries",
+            )
+        query = urlencode({"page": 1, "page_size": max(min(int(limit or 5), 10), 1)})
+        data = self._request_json(
+            "GET",
+            f"/api/v1/knowledge-bases/{quote(resolved_kb_id, safe='')}/faq/entries?{query}",
+        )
+        items = self._unwrap_items(data)
+        return [
+            self._faq_entry_safe_dict(item)
+            for item in items
+            if isinstance(item, dict) and item.get("standard_question")
+        ]
+
+    def list_user_favorites(self, resource_type: str) -> list[dict]:
+        self._require_configured()
+        normalized_type = str(resource_type or "").strip()
+        if normalized_type not in {"kb", "agent"}:
+            raise KnowledgeBackendUnavailableError(
+                "unsupported favorite resource type",
+                error_code="favorite_type_unsupported",
+                operation="favorites",
+            )
+        data = self._request_json("GET", f"/api/v1/user/favorites?{urlencode({'type': normalized_type})}")
+        items = self._unwrap_items(data)
+        return [
+            self._favorite_safe_dict(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+    def list_skills(self) -> dict:
+        self._require_configured()
+        data = self._request_json("GET", "/api/v1/skills")
+        payload = data if isinstance(data, dict) else {}
+        items = self._unwrap_items(payload)
+        skills = [
+            self._skill_safe_dict(item)
+            for item in items
+            if isinstance(item, dict) and item.get("name")
+        ]
+        return {
+            "skills": skills,
+            "skills_available": bool(payload.get("skills_available")),
+            "source": "weknora_api",
+        }
+
     def list_model_providers(self, model_type: str | None = None) -> list[dict]:
         self._require_configured()
         query = ""
@@ -2264,6 +2318,42 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "items_failed": _optional_int(item.get("items_failed")) or 0,
             "has_error": bool(_optional_str(item.get("error_message"))),
             "result_configured": bool(item.get("result")),
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _faq_entry_safe_dict(item: dict) -> dict:
+        similar_questions = item.get("similar_questions")
+        answers = item.get("answers")
+        negative_questions = item.get("negative_questions")
+        return {
+            "id_present": bool(_optional_int(item.get("id")) or _optional_str(item.get("chunk_id"))),
+            "knowledge_id_present": bool(_optional_str(item.get("knowledge_id"))),
+            "knowledge_base_id_present": bool(_optional_str(item.get("knowledge_base_id"))),
+            "tag_configured": bool(_optional_int(item.get("tag_id")) or _optional_str(item.get("tag_name"))),
+            "enabled": bool(item.get("is_enabled")),
+            "recommended": bool(item.get("is_recommended")),
+            "similar_question_count": len(similar_questions) if isinstance(similar_questions, list) else 0,
+            "negative_question_count": len(negative_questions) if isinstance(negative_questions, list) else 0,
+            "answer_count": len(answers) if isinstance(answers, list) else 0,
+            "chunk_type": _optional_str(item.get("chunk_type")),
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _favorite_safe_dict(item: dict) -> dict:
+        return {
+            "resource_type": _optional_str(item.get("resource_type")) or _optional_str(item.get("type")),
+            "resource_id_present": bool(_optional_str(item.get("resource_id")) or _optional_str(item.get("id"))),
+            "created_at_present": bool(_optional_str(item.get("created_at"))),
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _skill_safe_dict(item: dict) -> dict:
+        return {
+            "name": _optional_str(item.get("name")),
+            "description_present": bool(_optional_str(item.get("description"))),
             "source": "weknora_api",
         }
 

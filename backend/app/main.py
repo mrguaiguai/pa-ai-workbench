@@ -13,6 +13,7 @@ from app.api.knowledge_bases import router as knowledge_bases_router
 from app.api.mcp import router as mcp_router
 from app.api.model import router as model_router
 from app.api.native_status import router as native_status_router
+from app.api.organization import router as organization_router
 from app.api.rag import router as rag_router
 from app.api.vector_store import router as vector_store_router
 from app.api.web_search import router as web_search_router
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
     app.include_router(mcp_router)
     app.include_router(model_router)
     app.include_router(native_status_router)
+    app.include_router(organization_router)
     app.include_router(rag_router)
     app.include_router(vector_store_router)
     app.include_router(web_search_router)

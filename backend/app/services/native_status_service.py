@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.services.mcp_service import native_mcp_overview
 from app.services.model_config_service import native_model_config_overview
 from app.services.model_status_service import get_model_status
+from app.services.organization_service import native_workbench_organization_overview
 from app.services.runtime_status_service import get_weknora_status
 from app.services.vector_store_service import native_vector_store_overview
 from app.services.web_search_service import native_web_search_overview
@@ -56,6 +57,10 @@ def native_status_center(limit: int = 5) -> dict[str, Any]:
     data_source_overview = _call(
         "data_source",
         lambda: native_data_source_overview(limit=item_limit),
+    )
+    organization_overview = _call(
+        "organization",
+        lambda: native_workbench_organization_overview(limit=item_limit),
     )
 
     groups["system_health_status_deployment"] = _system_group(settings, weknora_status)
@@ -180,21 +185,15 @@ def native_status_center(limit: int = 5) -> dict[str, Any]:
         next_action="WNX-P2-05",
         summary=_data_source_summary(data_source_overview),
     )
-    groups["faq_tags_favorites_skills"] = _baseline_group(
+    groups["faq_tags_favorites_skills"] = _overview_group(
         capability_id="faq_tags_favorites_skills",
         label="FAQ / tags / favorites / skills",
-        status="backlog",
-        configured=False,
-        source_endpoint=(
-            "/api/v1/knowledge-bases/{kb_id}/faq, "
-            "/api/v1/knowledge-bases/{kb_id}/tags, "
-            "/api/v1/user/favorites, /api/v1/skills"
-        ),
+        overview=organization_overview,
+        configured=_organization_configured(organization_overview),
+        source_endpoint="/api/organization/native/overview",
+        native_endpoint="/api/v1/knowledge-bases/{kb_id}/tags, /api/v1/skills",
         next_action="WNX-P2-06",
-        summary={
-            "safe_read_endpoints_exist": True,
-            "pa_workbench_workflow": "not_integrated",
-        },
+        summary=_organization_summary(organization_overview),
     )
     groups["history_citation_product_shell"] = _baseline_group(
         capability_id="history_citation_product_shell",
@@ -564,6 +563,28 @@ def _data_source_summary(overview: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _organization_summary(overview: dict[str, Any]) -> dict[str, Any]:
+    value = overview.get("value") or {}
+    surfaces = _surfaces(value)
+    tags = surfaces.get("tags", {})
+    faq = surfaces.get("faq", {})
+    favorites = surfaces.get("favorites", {})
+    skills = surfaces.get("skills", {})
+    mutations = surfaces.get("mutations", {})
+    return {
+        "skills_status": skills.get("status"),
+        "skills_count": int(skills.get("count") or 0),
+        "tags_status": tags.get("status"),
+        "tags_count": int(tags.get("count") or 0),
+        "faq_status": faq.get("status"),
+        "faq_count": int(faq.get("count") or 0),
+        "favorites_status": favorites.get("status"),
+        "favorites_count": int(favorites.get("count") or 0),
+        "skills_available": skills.get("skills_available"),
+        "mutations_status": mutations.get("status"),
+    }
+
+
 def _model_config_summary(overview: dict[str, Any]) -> dict[str, Any]:
     surfaces = _surfaces(overview)
     provider_catalog = surfaces.get("provider_catalog", {})
@@ -602,6 +623,13 @@ def _vector_store_configured(overview: dict[str, Any]) -> bool:
 def _data_source_configured(overview: dict[str, Any]) -> bool:
     data_sources = _surfaces(overview.get("value") or {}).get("data_sources", {})
     return int(data_sources.get("count") or 0) > 0
+
+
+def _organization_configured(overview: dict[str, Any]) -> bool:
+    surfaces = _surfaces(overview.get("value") or {})
+    tags = surfaces.get("tags", {})
+    skills = surfaces.get("skills", {})
+    return tags.get("status") == "live" or skills.get("status") == "live"
 
 
 def _surfaces(value: dict[str, Any]) -> dict[str, Any]:
