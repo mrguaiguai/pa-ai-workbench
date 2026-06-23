@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+sqlmodel
+python-dotenv
+requests
+pydantic
+python-multipart
+pypdf
+python-docx
+chromadb

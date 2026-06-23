@@ -1,0 +1,211 @@
+{
+  "schema_version": "p3-m3-c2",
+  "fixture_kind": "sanitized_retrieval_quality_golden_set",
+  "sensitivity": "synthetic_sanitized_no_real_records",
+  "source": "golden_fixture",
+  "description": "Synthetic public-affairs retrieval cases for PA Evidence and citation quality regression.",
+  "cases": [
+    {
+      "id": "gq-001-retention-controls",
+      "task_type": "knowledge_qa",
+      "query": "What evidence is needed for quarterly retention control review?",
+      "top_k": 3,
+      "expected_citation_conditions": {
+        "min_evidence": 2,
+        "source_types": ["document_chunk"],
+        "required_terms": ["quarterly review", "owner approval", "exception register"],
+        "min_distinct_titles": 1,
+        "requires_traceable_citations": true
+      },
+      "human_note": "A usable answer should cite the review cadence, owner approval, and exception handling evidence.",
+      "fixture_evidence": [
+        {
+          "evidence_id": "document_chunk:gq-001-retention-controls",
+          "source": "golden_fixture",
+          "source_type": "document_chunk",
+          "document_id": "pa-doc-golden-retention",
+          "external_doc_id": "fixture-doc-retention",
+          "chunk_id": "gq-001-retention-controls",
+          "wiki_page_id": null,
+          "title": "Retention Control Runbook",
+          "text": "Retention controls require quarterly review, named owner approval, and a link to the exception register before a policy update is accepted.",
+          "score": 0.94,
+          "metadata": {
+            "fixture": "retrieval_quality_golden_m3",
+            "business_area": "records",
+            "citation_source_type": "document_chunk"
+          }
+        },
+        {
+          "evidence_id": "document_chunk:gq-001-audit-sample",
+          "source": "golden_fixture",
+          "source_type": "document_chunk",
+          "document_id": "pa-doc-golden-retention",
+          "external_doc_id": "fixture-doc-retention",
+          "chunk_id": "gq-001-audit-sample",
+          "wiki_page_id": null,
+          "title": "Retention Control Runbook",
+          "text": "The audit sample should include the review date, approving owner, impacted record class, and any exception register reference.",
+          "score": 0.88,
+          "metadata": {
+            "fixture": "retrieval_quality_golden_m3",
+            "business_area": "records",
+            "citation_source_type": "document_chunk"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gq-002-incident-exception",
+      "task_type": "policy_analysis",
+      "query": "Summarize the policy exception evidence needed after a service incident.",
+      "top_k": 4,
+      "expected_citation_conditions": {
+        "min_evidence": 2,
+        "source_types": ["document_chunk", "wiki_page"],
+        "required_terms": ["timeline", "policy exception", "follow-up owner"],
+        "min_distinct_titles": 2,
+        "requires_traceable_citations": true
+      },
+      "human_note": "A policy analysis answer should combine the incident runbook with the published exception wiki page.",
+      "fixture_evidence": [
+        {
+          "evidence_id": "document_chunk:gq-002-incident-runbook",
+          "source": "golden_fixture",
+          "source_type": "document_chunk",
+          "document_id": "pa-doc-golden-incident",
+          "external_doc_id": "fixture-doc-incident",
+          "chunk_id": "gq-002-incident-runbook",
+          "wiki_page_id": null,
+          "title": "Incident Review Runbook",
+          "text": "Incident review notes must record a timeline, impacted service summary, policy exception marker, and follow-up owner.",
+          "score": 0.93,
+          "metadata": {
+            "fixture": "retrieval_quality_golden_m3",
+            "business_area": "operations",
+            "citation_source_type": "document_chunk"
+          }
+        },
+        {
+          "evidence_id": "wiki_page:gq-002-exception-wiki",
+          "source": "golden_fixture",
+          "source_type": "wiki_page",
+          "document_id": null,
+          "external_doc_id": null,
+          "chunk_id": null,
+          "wiki_page_id": "wiki-golden-exception-review",
+          "title": "Policy Exception Review",
+          "text": "The published wiki page states that each policy exception must name the decision owner and link the follow-up owner before closure.",
+          "score": 0.86,
+          "metadata": {
+            "fixture": "retrieval_quality_golden_m3",
+            "slug": "policy-exception-review",
+            "citation_source_type": "wiki_page",
+            "wiki_page_id": "wiki-golden-exception-review"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gq-003-case-follow-up",
+      "task_type": "case_review",
+      "query": "Which follow-up checks should be cited for a reopened public service case?",
+      "top_k": 3,
+      "expected_citation_conditions": {
+        "min_evidence": 2,
+        "source_types": ["document_chunk"],
+        "required_terms": ["reopen reason", "contact log", "resolution criteria"],
+        "min_distinct_titles": 1,
+        "requires_traceable_citations": true
+      },
+      "human_note": "A case review answer should cite only procedural facts, not invent case-specific personal details.",
+      "fixture_evidence": [
+        {
+          "evidence_id": "document_chunk:gq-003-reopen-checklist",
+          "source": "golden_fixture",
+          "source_type": "document_chunk",
+          "document_id": "pa-doc-golden-case-review",
+          "external_doc_id": "fixture-doc-case-review",
+          "chunk_id": "gq-003-reopen-checklist",
+          "wiki_page_id": null,
+          "title": "Case Review Checklist",
+          "text": "A reopened case review records the reopen reason, contact log summary, and current resolution criteria.",
+          "score": 0.91,
+          "metadata": {
+            "fixture": "retrieval_quality_golden_m3",
+            "business_area": "service",
+            "citation_source_type": "document_chunk"
+          }
+        },
+        {
+          "evidence_id": "document_chunk:gq-003-quality-gate",
+          "source": "golden_fixture",
+          "source_type": "document_chunk",
+          "document_id": "pa-doc-golden-case-review",
+          "external_doc_id": "fixture-doc-case-review",
+          "chunk_id": "gq-003-quality-gate",
+          "wiki_page_id": null,
+          "title": "Case Review Checklist",
+          "text": "The quality gate requires a follow-up owner, next review date, and citation to the resolution criteria before closure.",
+          "score": 0.85,
+          "metadata": {
+            "fixture": "retrieval_quality_golden_m3",
+            "business_area": "service",
+            "citation_source_type": "document_chunk"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gq-004-wiki-draft-sources",
+      "task_type": "wiki_draft",
+      "query": "Draft source notes for a public meeting preparation wiki page.",
+      "top_k": 4,
+      "expected_citation_conditions": {
+        "min_evidence": 2,
+        "source_types": ["wiki_page", "document_chunk"],
+        "required_terms": ["agenda topics", "stakeholder questions", "source notes"],
+        "min_distinct_titles": 2,
+        "requires_traceable_citations": true
+      },
+      "human_note": "A wiki draft workflow should preserve both the existing wiki context and the supporting source-note document.",
+      "fixture_evidence": [
+        {
+          "evidence_id": "wiki_page:gq-004-meeting-wiki",
+          "source": "golden_fixture",
+          "source_type": "wiki_page",
+          "document_id": null,
+          "external_doc_id": null,
+          "chunk_id": null,
+          "wiki_page_id": "wiki-golden-meeting-prep",
+          "title": "Public Meeting Preparation",
+          "text": "The wiki page tracks agenda topics, stakeholder questions, and decisions that need source notes before publication.",
+          "score": 0.9,
+          "metadata": {
+            "fixture": "retrieval_quality_golden_m3",
+            "slug": "public-meeting-preparation",
+            "citation_source_type": "wiki_page",
+            "wiki_page_id": "wiki-golden-meeting-prep"
+          }
+        },
+        {
+          "evidence_id": "document_chunk:gq-004-source-notes",
+          "source": "golden_fixture",
+          "source_type": "document_chunk",
+          "document_id": "pa-doc-golden-meeting-notes",
+          "external_doc_id": "fixture-doc-meeting-notes",
+          "chunk_id": "gq-004-source-notes",
+          "wiki_page_id": null,
+          "title": "Meeting Source Notes",
+          "text": "Source notes identify the agenda topics, neutral stakeholder questions, and the published material used for each draft section.",
+          "score": 0.84,
+          "metadata": {
+            "fixture": "retrieval_quality_golden_m3",
+            "business_area": "engagement",
+            "citation_source_type": "document_chunk"
+          }
+        }
+      ]
+    }
+  ]
+}

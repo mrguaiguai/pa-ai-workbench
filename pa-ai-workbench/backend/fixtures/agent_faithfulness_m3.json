@@ -1,0 +1,58 @@
+{
+  "schema_version": "p3-m3-c4",
+  "fixture_kind": "agent_faithfulness_regression",
+  "sensitivity": "synthetic_sanitized_no_real_records",
+  "source": "golden_fixture",
+  "golden_set": "retrieval_quality_golden_m3.json",
+  "description": "Synthetic Agent-output faithfulness cases for QA, policy analysis, and case review regression.",
+  "coverage": {
+    "workflows": ["knowledge_qa", "policy_analysis", "case_review"],
+    "checks": [
+      "citation_coverage",
+      "traceable_citations",
+      "no_evidence_warning",
+      "unsupported_claim_warning"
+    ]
+  },
+  "cases": [
+    {
+      "id": "faith-qa-retention-controls",
+      "golden_case_id": "gq-001-retention-controls",
+      "workflow": "knowledge_qa",
+      "required_terms": ["quarterly review", "owner approval", "exception register"],
+      "unsupported_terms": ["same-day approval", "automatic archival deletion"],
+      "expected_min_citation_coverage": 1.0
+    },
+    {
+      "id": "faith-policy-incident-exception",
+      "golden_case_id": "gq-002-incident-exception",
+      "workflow": "policy_analysis",
+      "required_terms": ["timeline", "policy exception", "follow-up owner"],
+      "unsupported_terms": ["executive waiver", "closed without owner"],
+      "expected_min_citation_coverage": 1.0
+    },
+    {
+      "id": "faith-case-follow-up",
+      "golden_case_id": "gq-003-case-follow-up",
+      "workflow": "case_review",
+      "required_terms": ["reopen reason", "contact log", "resolution criteria"],
+      "unsupported_terms": ["resident identity verified", "refund approved"],
+      "expected_min_citation_coverage": 1.0
+    }
+  ],
+  "negative_cases": [
+    {
+      "id": "faith-no-evidence-warning",
+      "workflow": "knowledge_qa",
+      "query": "No evidence scoped faithfulness fixture",
+      "expected_warning_code": "NO_EVIDENCE"
+    },
+    {
+      "id": "faith-unsupported-claim-warning",
+      "golden_case_id": "gq-001-retention-controls",
+      "workflow": "knowledge_qa",
+      "unsupported_terms": ["same-day approval"],
+      "expected_warning_code": "UNSUPPORTED_CLAIM"
+    }
+  ]
+}
