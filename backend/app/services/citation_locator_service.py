@@ -154,7 +154,11 @@ def _locate_wiki_page(
     payload: dict[str, Any],
 ) -> CitationLocateResponse:
     page = _find_wiki_page(session=session, payload=payload)
-    slug = _first_string(page.slug if page else None, payload.get("wiki_slug"))
+    slug = _first_string(
+        page.slug if page else None,
+        payload.get("wiki_slug"),
+        payload.get("wiki_page_id") if page is None else None,
+    )
     if not slug:
         return _unavailable("Citation cannot be located because the Wiki slug is missing.")
     return CitationLocateResponse(

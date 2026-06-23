@@ -752,8 +752,11 @@ export type GeneratedOutput = {
   mock_citation_count: number;
   document_citation_count: number;
   wiki_citation_count: number;
+  traceable_citation_count: number;
   warning_count: number;
   evidence_state: string;
+  citation_blocked: boolean;
+  citation_blocker: string | null;
   created_at: string;
   updated_at: string;
 };

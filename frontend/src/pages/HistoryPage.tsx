@@ -54,6 +54,7 @@ const baseTaskTypeOptions = ["knowledge_qa", "policy_analysis", "case_review", "
 const baseStatusOptions = ["completed", "failed", "running", "created"];
 
 const evidenceStateLabels: Record<string, string> = {
+  citation_blocked: "引用阻断",
   no_evidence: "无证据",
   mock_only: "仅模拟证据",
   weknora: "WeKnora",
@@ -64,6 +65,8 @@ const evidenceStateLabels: Record<string, string> = {
 
 const taskTypeLabels: Record<string, string> = {
   knowledge_qa: "知识问答",
+  native_agentqa: "Native AgentQA",
+  native_knowledge_chat: "Native 知识对话",
   policy_analysis: "政策分析",
   case_review: "案例复盘",
   wiki_draft: "Wiki 草稿",
@@ -401,6 +404,7 @@ export function HistoryPage() {
                 }
               >
                 <option value="all">全部</option>
+                <option value="citation_blocked">引用阻断</option>
                 <option value="no_evidence">无证据</option>
                 <option value="mock_only">仅模拟证据</option>
                 <option value="weknora">WeKnora</option>
@@ -458,6 +462,7 @@ export function HistoryPage() {
                   </div>
                   <div className="history-output-metrics">
                     <span>{compactCountLabel("引用", output.citation_count)}</span>
+                    <span>{compactCountLabel("可定位", output.traceable_citation_count)}</span>
                     <span>{compactCountLabel("WeKnora", output.weknora_citation_count)}</span>
                     <span>{compactCountLabel("模拟", output.mock_citation_count)}</span>
                     <span>{compactCountLabel("文档", output.document_citation_count)}</span>
@@ -487,9 +492,16 @@ export function HistoryPage() {
               <span>{outputStatusLabel(selectedOutput.status)}</span>
               <span>{evidenceStateLabel(selectedOutput)}</span>
               <span>{compactCountLabel("引用", selectedOutput.citation_count)}</span>
+              <span>{compactCountLabel("可定位", selectedOutput.traceable_citation_count)}</span>
               <span>{compactCountLabel("警告", selectedOutput.warning_count)}</span>
               <span>{formatDate(selectedOutput.created_at)}</span>
             </div>
+            {selectedOutput.citation_blocked ? (
+              <div className="history-draft-warning">
+                {selectedOutput.citation_blocker ||
+                  "该原生输出没有可追踪引用，PA 已阻断 citation PASS。"}
+              </div>
+            ) : null}
             <pre>{displayContent}</pre>
           </article>
         ) : (

@@ -17,8 +17,11 @@ class HistoryOutputSummary(TypedDict):
     mock_citation_count: int
     document_citation_count: int
     wiki_citation_count: int
+    traceable_citation_count: int
     warning_count: int
     evidence_state: str
+    citation_blocked: bool
+    citation_blocker: str | None
 
 
 def list_history(
@@ -52,19 +55,30 @@ def list_history(
 
 def history_output_summary(session: Session, output: GeneratedOutput) -> HistoryOutputSummary:
     citations = list_output_citations(session, output.id)
-    warning_count = _warning_count(output.warnings_json)
+    warnings = _warning_messages(output.warnings_json)
+    citation_blocker = _citation_blocker(warnings)
     weknora_count = sum(1 for citation in citations if _citation_source(citation) == "weknora_api")
     mock_count = sum(1 for citation in citations if _citation_source(citation) == "mock")
     document_count = sum(1 for citation in citations if _citation_source_type(citation) == "document_chunk")
     wiki_count = sum(1 for citation in citations if _citation_source_type(citation) == "wiki_page")
+    traceable_count = sum(1 for citation in citations if _citation_traceable(citation))
+    citation_blocked = citation_blocker is not None
     return {
         "citation_count": len(citations),
         "weknora_citation_count": weknora_count,
         "mock_citation_count": mock_count,
         "document_citation_count": document_count,
         "wiki_citation_count": wiki_count,
-        "warning_count": warning_count,
-        "evidence_state": _evidence_state(citations, weknora_count, mock_count),
+        "traceable_citation_count": traceable_count,
+        "warning_count": len(warnings),
+        "evidence_state": _evidence_state(
+            citations=citations,
+            weknora_count=weknora_count,
+            mock_count=mock_count,
+            citation_blocked=citation_blocked,
+        ),
+        "citation_blocked": citation_blocked,
+        "citation_blocker": citation_blocker,
     }
 
 
@@ -133,21 +147,40 @@ def _short_json_text(value: str | None) -> str:
     return value[:1000]
 
 
-def _warning_count(warnings_json: str | None) -> int:
+def _warning_messages(warnings_json: str | None) -> list[str]:
     if not warnings_json:
-        return 0
+        return []
     try:
         parsed = json.loads(warnings_json)
     except json.JSONDecodeError:
-        return 1
+        return [warnings_json] if warnings_json.strip() else []
     if isinstance(parsed, list):
-        return len(parsed)
+        return [str(item) for item in parsed if str(item).strip()]
     if isinstance(parsed, dict):
-        return len(parsed) or 1
-    return 1 if str(parsed).strip() else 0
+        if not parsed:
+            return []
+        return [f"{key}: {value}" for key, value in parsed.items()]
+    normalized = str(parsed).strip()
+    return [normalized] if normalized else []
 
 
-def _evidence_state(citations: list[Citation], weknora_count: int, mock_count: int) -> str:
+def _citation_blocker(warnings: list[str]) -> str | None:
+    for warning in warnings:
+        normalized = warning.strip()
+        lower = normalized.lower()
+        if "citation_blocked" in lower or "no traceable references" in lower:
+            return normalized
+    return None
+
+
+def _evidence_state(
+    citations: list[Citation],
+    weknora_count: int,
+    mock_count: int,
+    citation_blocked: bool,
+) -> str:
+    if citation_blocked:
+        return "citation_blocked"
     if not citations:
         return "no_evidence"
     if weknora_count and mock_count:
@@ -195,6 +228,31 @@ def _citation_source_type(citation: Citation) -> str:
     return _normalize_source_type(value)
 
 
+def _citation_traceable(citation: Citation) -> bool:
+    metadata = _citation_metadata(citation)
+    binding = _citation_binding(citation)
+    evidence_id = _first_string(binding.get("evidence_id"), metadata.get("evidence_id"))
+    source_type = _citation_source_type(citation)
+    if source_type == "wiki_page":
+        return bool(
+            evidence_id
+            and _first_string(
+                binding.get("wiki_page_id"),
+                metadata.get("wiki_page_id"),
+                metadata.get("weknora_wiki_page_id"),
+                metadata.get("weknora_wiki_page_slug"),
+                metadata.get("wiki_page_slug"),
+            )
+        )
+    if source_type == "document_chunk":
+        return bool(
+            evidence_id
+            and citation.chunk_id
+            and (citation.document_id or citation.external_doc_id)
+        )
+    return False
+
+
 def _normalize_source_type(value: object) -> str:
     normalized = str(value or "").strip().lower()
     if normalized in {"document", "document_chunk", "chunk"}:
@@ -202,6 +260,16 @@ def _normalize_source_type(value: object) -> str:
     if normalized in {"wiki", "wiki_page", "wiki-page"}:
         return "wiki_page"
     return normalized or "unknown"
+
+
+def _first_string(*values: Any) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        normalized = str(value).strip()
+        if normalized:
+            return normalized
+    return None
 
 
 __all__ = ["get_output", "history_output_summary", "list_history", "list_output_citations"]

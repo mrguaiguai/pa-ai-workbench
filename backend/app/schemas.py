@@ -266,8 +266,11 @@ class GeneratedOutputRead(BaseModel):
     mock_citation_count: int = 0
     document_citation_count: int = 0
     wiki_citation_count: int = 0
+    traceable_citation_count: int = 0
     warning_count: int = 0
     evidence_state: str = "unknown"
+    citation_blocked: bool = False
+    citation_blocker: str | None = None
     created_at: datetime
     updated_at: datetime
 

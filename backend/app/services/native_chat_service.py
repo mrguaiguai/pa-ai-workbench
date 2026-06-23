@@ -1,5 +1,7 @@
 import json
 from typing import Any
+from urllib.parse import quote
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from sqlmodel import Session
@@ -272,9 +274,15 @@ def _citation_payload(evidence: Evidence) -> dict[str, Any]:
 
 def _locator(evidence: Evidence) -> str | None:
     if evidence.source_type == "wiki_page" and evidence.wiki_page_id:
-        return f"#/wiki?page={evidence.wiki_page_id}"
+        slug = _first_string(
+            evidence.metadata.get("weknora_wiki_page_slug"),
+            evidence.metadata.get("wiki_page_slug"),
+            evidence.metadata.get("slug"),
+            evidence.wiki_page_id,
+        )
+        return f"#/wiki?slug={quote(slug, safe='')}" if slug else None
     if evidence.chunk_id:
-        return f"#/library?document={evidence.external_doc_id or ''}&chunk={evidence.chunk_id}"
+        return f"#/library?{urlencode({'document': evidence.external_doc_id or '', 'chunk': evidence.chunk_id})}"
     return None
 
 
@@ -343,6 +351,16 @@ def _normalize_str_list(values: Any) -> list[str]:
         if text and text not in normalized:
             normalized.append(text)
     return normalized
+
+
+def _first_string(*values: Any) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
 
 
 def _json_dumps(value: Any) -> str:
