@@ -260,7 +260,7 @@ and hidden fallback are not used as final PASS evidence.
 | Blocker | Current state | Required next step |
 | --- | --- | --- |
 | Coverage below target | `78.3%`, target `80.0%` | Complete a real Data sources/connectors score-moving task or explicitly revise the target with governance approval. |
-| Data source connector workflow | `WNX-P3-05` revalidated connector catalog `count=12`, but configured data sources are still `0` | Configure a safe native data source outside Codex output, then rerun sanitized connector detail/resources/validate/sync/log smoke. |
+| Data source connector workflow | `WNX-P3-09` revalidated connector catalog `count=12`, but configured data sources are still `0` and implemented connectors require real external credentials | Configure a safe native Feishu/Notion/Yuque data source outside Codex output, then rerun sanitized connector detail/resources/validate/sync/log smoke. |
 
 ## Risk Register
 

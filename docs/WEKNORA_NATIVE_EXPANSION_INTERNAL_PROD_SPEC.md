@@ -292,6 +292,7 @@ Excluded or limited groups:
 | WNX-P3-06 | P3 | AgentQA native reference propagation patch draft | [!] | `docs/WEKNORA_NATIVE_AGENTQA_REFERENCE_PROPAGATION_PATCH_REPORT.md` records a local native source patch draft, but the outer WeKnora source is not commit-trackable in this PA branch, Go tooling is unavailable, and live AgentQA still reports `references=0`; no coverage upgrade is claimed. |
 | WNX-P3-07 | P3 | AgentQA native runtime validation | [!] | `docs/WEKNORA_NATIVE_AGENTQA_RUNTIME_VALIDATION_REPORT.md` records Docker Go test/runtime deployment evidence, but the live AgentQA workflow still returned zero references before the Wiki tool path fix. |
 | WNX-P3-08 | P3 | AgentQA Wiki reference propagation live fix | [x] | `docs/WEKNORA_NATIVE_AGENTQA_WIKI_REFERENCE_LIVE_REPORT.md` records current live AgentQA `references=12`, `saved_citations=12`, `citation_blocked=false`, and history AgentQA citations `traceable=15`; AgentQA/custom Agent is now `live-full`. |
+| WNX-P3-09 | P3 | Data source connector unblock recheck | [!] | `docs/WEKNORA_NATIVE_DATA_SOURCE_CONNECTOR_UNBLOCK_RECHECK_REPORT.md` records native registry/source audit plus current live smoke with `data_sources.count=0` and `credentials_configured=0`; Data sources/connectors remains `read-only`. |
 
 ## 7. Progress Log
 
@@ -326,6 +327,7 @@ Excluded or limited groups:
 | 2026-06-23 | WNX-P3-06 | [!] | `native source patch draft + live API blocked evidence`: a narrow local native patch was drafted to propagate structured `knowledge_search` results into `EventAgentReferences`, but the outer WeKnora source is outside the PA git repository, Go tooling is unavailable, and current live AgentQA still reports `references=0`, `saved_citations=0`, `citation_blocked=true`. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_REFERENCE_PROPAGATION_PATCH_REPORT.md`; AgentQA/custom Agent remains `live-partial`, coverage remains `11.25 / 15 = 75.0%`, and the patch needs a commit-trackable native repo plus deployed runtime validation before it can count. |
 | 2026-06-23 | WNX-P3-07 | [!] | `native Go test evidence + Docker runtime evidence + live API blocked evidence`: the local native AgentQA reference propagation patch was formatted and focused-tested with Docker `golang:1.26.0`, built into `wechatopenai/weknora-app:latest`, and deployed by recreating only `WeKnora-app`, but live AgentQA still reports `references=0`, `saved_citations=0`, `citation_blocked=true`. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_RUNTIME_VALIDATION_REPORT.md`; AgentQA/custom Agent remains `live-partial`, coverage remains `11.25 / 15 = 75.0%`, and the next unblock must inspect why the live Agent path still does not produce traceable references after deployment. |
 | 2026-06-23 | WNX-P3-08 | [x] | `native Go test evidence + Docker runtime evidence + live API evidence`: the live selected Agent path was traced to Wiki tools, native `wiki_search`/`wiki_read_page` now emit structured Wiki page references, stream conversion preserves `source_type=wiki_page`, and PA history/status classify the traceable citations correctly. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_WIKI_REFERENCE_LIVE_REPORT.md`; AgentQA/custom Agent moves to `live-full`, coverage moves to `11.75 / 15 = 78.3%`, and final internal production PASS remains blocked until Data sources/connectors can add the remaining `+0.25`. |
+| 2026-06-23 | WNX-P3-09 | [!] | `native source audit + live API/browser blocked evidence`: the remaining Data sources/connectors path was rechecked; live smoke still reports connector catalog `count=12`, but configured data sources `count=0` and `credentials_configured=0`, while source audit shows only Feishu/Notion/Yuque are implemented and all require real external credentials. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_DATA_SOURCE_CONNECTOR_UNBLOCK_RECHECK_REPORT.md`; Data sources/connectors remains `read-only`, coverage remains `11.75 / 15 = 78.3%`, and final internal production PASS remains blocked below 80.0%. |
 
 ## 8. Task Cards
 
@@ -896,6 +898,37 @@ Excluded or limited groups:
   count is 0; keep credential-heavy setup and raw sync/resource inspection
   backlog until explicitly authorized.
 - Status source: Section 6 row `WNX-P3-05`.
+
+### WNX-P3-09: Data source connector unblock recheck
+
+- Goal: recheck the remaining post-`WNX-P3-08` score-moving path and determine
+  whether Data sources/connectors can now move from `read-only` to
+  `live-partial`.
+- Type: WeKnora native capability接入 + validation/ops/deployment.
+- Scope: native connector registry/source audit, PA safe data source surface
+  audit, current live data source smoke, and blocked/backlog report update.
+- Inputs: native data source router/handler/service/types/connector registry,
+  PA data source adapter/service/API/smoke script, coverage ledger, and final
+  blocked report.
+- Output report:
+  `docs/WEKNORA_NATIVE_DATA_SOURCE_CONNECTOR_UNBLOCK_RECHECK_REPORT.md`.
+- Editable files: this spec, coverage ledger, final blocked report, acceptance
+  checker report list, and the unblock recheck report; PA code only if a real
+  safe configured connector exists and masking is insufficient.
+- Forbidden: printing or committing credentials, raw connector config, private
+  endpoints, raw resource names, raw sync logs, provider payloads, local
+  databases, logs, caches, screenshots, or direct DB row injection as PASS.
+- Acceptance: if a safe configured connector exists, validate sanitized
+  detail/sync-log/resources/validation/sync/pause/resume evidence; otherwise
+  record `[!]` with current live blocker evidence and no coverage upgrade.
+- Recommended validation: live data source management smoke with browser,
+  acceptance checker, report safety checker, `git diff --check`, and sensitive
+  scan.
+- PASS evidence: live API/browser evidence with a safe configured connector;
+  blocked evidence if no configured connector exists.
+- Blocked/backlog: mark `[!]` when data source list is live but configured
+  count is 0; mark `[b]` only if the user defers connector setup entirely.
+- Status source: Section 6 row `WNX-P3-09`.
 
 ### WNX-P3-06: AgentQA native reference propagation patch draft
 
