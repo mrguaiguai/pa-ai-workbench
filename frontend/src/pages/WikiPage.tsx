@@ -9,6 +9,8 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Trash2,
+  Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -17,6 +19,8 @@ import type { FormEvent } from "react";
 import {
   ApiError,
   BackendCapabilitiesResponse,
+  NativeWikiOverviewResponse,
+  NativeWikiPageSummary,
   WikiPage as WikiPageDetail,
   WikiCitation,
   WikiPageSummary,
@@ -31,8 +35,21 @@ import {
 
 type LoadState = "idle" | "loading" | "error";
 type EditorMode = "view" | "create" | "edit";
+type NativeWikiWorkflow = {
+  overview: NativeWikiOverviewResponse | null;
+  pages: NativeWikiPageSummary[];
+  index: Record<string, unknown> | null;
+  log: Record<string, unknown> | null;
+  graph: Record<string, unknown> | null;
+  stats: Record<string, unknown> | null;
+  lint: Record<string, unknown> | null;
+  issues: Record<string, unknown> | null;
+};
 
 const SELECTED_WIKI_STORAGE_KEY = "pa_workbench:selected_wiki_slug";
+const NATIVE_WIKI_CONFIRM_DELETE = "DELETE_NATIVE_WIKI_PAGE";
+const NATIVE_WIKI_CONFIRM_REBUILD_LINKS = "REBUILD_NATIVE_WIKI_LINKS";
+const NATIVE_WIKI_CONFIRM_AUTO_FIX = "AUTO_FIX_NATIVE_WIKI";
 
 type SearchForm = {
   query: string;
@@ -64,6 +81,17 @@ const emptyEditorForm: WikiEditorForm = {
   businessArea: "",
   tags: "",
   content: "",
+};
+
+const emptyNativeWorkflow: NativeWikiWorkflow = {
+  overview: null,
+  pages: [],
+  index: null,
+  log: null,
+  graph: null,
+  stats: null,
+  lint: null,
+  issues: null,
 };
 
 function errorMessage(error: unknown) {
@@ -206,6 +234,36 @@ function metadataString(metadata: Record<string, unknown> | undefined, key: stri
     return null;
   }
   return String(value);
+}
+
+function recordNumber(record: Record<string, unknown> | null, key: string) {
+  const value = record?.[key];
+  return typeof value === "number" ? value : 0;
+}
+
+function recordItemsCount(record: Record<string, unknown> | null, key = "items") {
+  const value = record?.[key];
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function nativeSurfaceStatus(
+  overview: NativeWikiOverviewResponse | null,
+  surface: string,
+) {
+  return String(overview?.surfaces?.[surface]?.status ?? "unknown");
+}
+
+function nativeWorkflowStatusText(status: string | undefined) {
+  if (status === "live") {
+    return "live";
+  }
+  if (status === "partial") {
+    return "partial";
+  }
+  if (status === "blocked") {
+    return "blocked";
+  }
+  return status || "unknown";
 }
 
 function wikiArticleMetaItems(page: WikiPageDetail) {
@@ -460,6 +518,9 @@ export function WikiPage() {
   const [editorNotice, setEditorNotice] = useState<string | null>(null);
   const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
   const [capabilities, setCapabilities] = useState<BackendCapabilitiesResponse | null>(null);
+  const [nativeWorkflow, setNativeWorkflow] = useState<NativeWikiWorkflow>(emptyNativeWorkflow);
+  const [nativeState, setNativeState] = useState<LoadState>("idle");
+  const [nativeNotice, setNativeNotice] = useState<string | null>(null);
 
   const selectedSummary = useMemo(
     () => results.find((result) => result.slug === selectedSlug) ?? null,
@@ -483,9 +544,41 @@ export function WikiPage() {
     });
   };
 
+  const loadNativeWorkflow = (kbId = form.kbId.trim() || undefined, query = form.query.trim()) => {
+    setNativeState("loading");
+    setNativeNotice(null);
+    const params = { kb_id: kbId, query, limit: 8 };
+    Promise.allSettled([
+      apiClient.getNativeWikiOverview(params),
+      apiClient.listNativeWikiPages({ kb_id: kbId, query, limit: 8, pageSize: 8 }),
+      apiClient.getNativeWikiIndex({ kb_id: kbId, limit: 8 }),
+      apiClient.getNativeWikiLog({ kb_id: kbId, limit: 8 }),
+      apiClient.getNativeWikiGraph({ kb_id: kbId, limit: 30 }),
+      apiClient.getNativeWikiStats(kbId),
+      apiClient.getNativeWikiLint(kbId),
+      apiClient.getNativeWikiIssues(kbId),
+    ]).then(([overview, pages, index, log, graph, stats, lint, issues]) => {
+      setNativeWorkflow({
+        overview: overview.status === "fulfilled" ? overview.value : null,
+        pages:
+          pages.status === "fulfilled"
+            ? pages.value.pages ?? pages.value.items ?? []
+            : [],
+        index: index.status === "fulfilled" ? index.value : null,
+        log: log.status === "fulfilled" ? log.value : null,
+        graph: graph.status === "fulfilled" ? graph.value : null,
+        stats: stats.status === "fulfilled" ? stats.value : null,
+        lint: lint.status === "fulfilled" ? lint.value : null,
+        issues: issues.status === "fulfilled" ? issues.value : null,
+      });
+      setNativeState(overview.status === "fulfilled" ? "idle" : "error");
+    });
+  };
+
   const runSearch = (nextForm = form) => {
     setSearchState("loading");
     setError(null);
+    loadNativeWorkflow(nextForm.kbId.trim() || undefined, nextForm.query.trim());
     apiClient
       .searchWiki(
         nextForm.query.trim(),
@@ -740,6 +833,77 @@ export function WikiPage() {
         setIndexState("error");
       });
   };
+
+  const deleteNativePage = () => {
+    const slug = selectedSlug ?? page?.slug ?? "";
+    if (!slug || nativeState === "loading") {
+      return;
+    }
+    const confirmToken = window.prompt(`输入 ${NATIVE_WIKI_CONFIRM_DELETE} 以软删除 native Wiki 页面`);
+    if (confirmToken !== NATIVE_WIKI_CONFIRM_DELETE) {
+      setNativeNotice("Native delete 已取消。");
+      return;
+    }
+    setNativeState("loading");
+    apiClient
+      .deleteNativeWikiPage(slug, confirmToken, form.kbId.trim() || undefined)
+      .then(() => {
+        setNativeNotice("Native Wiki 页面已软删除。");
+        loadNativeWorkflow();
+      })
+      .catch((nativeError: unknown) => {
+        setNativeNotice(errorMessage(nativeError));
+        setNativeState("error");
+      });
+  };
+
+  const rebuildNativeLinks = () => {
+    const confirmToken = window.prompt(`输入 ${NATIVE_WIKI_CONFIRM_REBUILD_LINKS} 以重建 native Wiki 链接`);
+    if (confirmToken !== NATIVE_WIKI_CONFIRM_REBUILD_LINKS) {
+      setNativeNotice("Native rebuild-links 已取消。");
+      return;
+    }
+    setNativeState("loading");
+    apiClient
+      .rebuildNativeWikiLinks(confirmToken, form.kbId.trim() || undefined)
+      .then(() => {
+        setNativeNotice("Native Wiki 链接已重建。");
+        loadNativeWorkflow();
+      })
+      .catch((nativeError: unknown) => {
+        setNativeNotice(errorMessage(nativeError));
+        setNativeState("error");
+      });
+  };
+
+  const autoFixNativeWiki = () => {
+    const confirmToken = window.prompt(`输入 ${NATIVE_WIKI_CONFIRM_AUTO_FIX} 以执行 native Wiki auto-fix`);
+    if (confirmToken !== NATIVE_WIKI_CONFIRM_AUTO_FIX) {
+      setNativeNotice("Native auto-fix 已取消。");
+      return;
+    }
+    setNativeState("loading");
+    apiClient
+      .autoFixNativeWiki(confirmToken, form.kbId.trim() || undefined)
+      .then(() => {
+        setNativeNotice("Native Wiki auto-fix 已执行。");
+        loadNativeWorkflow();
+      })
+      .catch((nativeError: unknown) => {
+        setNativeNotice(errorMessage(nativeError));
+        setNativeState("error");
+      });
+  };
+
+  const nativeStatus = nativeWorkflowStatusText(nativeWorkflow.overview?.status);
+  const nativeStatsTotal = recordNumber(nativeWorkflow.stats, "total_pages");
+  const nativeLintIssues = recordNumber(nativeWorkflow.lint, "issue_count");
+  const nativeIssueCount =
+    recordNumber(nativeWorkflow.issues, "total") || recordItemsCount(nativeWorkflow.issues);
+  const nativeLogCount =
+    recordNumber(nativeWorkflow.log, "count") || recordItemsCount(nativeWorkflow.log, "entries");
+  const nativeGraphNodes = recordNumber(nativeWorkflow.graph, "nodes_count");
+  const nativeKbLabel = nativeWorkflow.overview?.kb_id ?? (form.kbId || "默认");
 
   return (
     <div className="wiki-page">
@@ -1093,6 +1257,83 @@ export function WikiPage() {
           ) : (
             <EmptyState text="未选择页面" compact />
           )}
+        </section>
+
+        <section className="wiki-side-section" aria-label="Native Wiki workflow">
+          <div className="wiki-panel-heading">
+            <span>Native</span>
+            <div className="heading-actions">
+              <strong>{nativeStatus}</strong>
+              <button
+                className={nativeState === "loading" ? "icon-button loading" : "icon-button"}
+                type="button"
+                title="刷新 native Wiki workflow"
+                disabled={nativeState === "loading"}
+                onClick={() => loadNativeWorkflow()}
+              >
+                {nativeState === "loading" ? (
+                  <Loader2 size={16} aria-hidden="true" />
+                ) : (
+                  <RefreshCw size={16} aria-hidden="true" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="wiki-native-card">
+            <div className="wiki-index-state indexed">
+              <ShieldCheck size={16} aria-hidden="true" />
+              <span>{`workflow ${nativeStatus}`}</span>
+            </div>
+            <div className="wiki-ref-list">
+              <span>{`KB：${nativeKbLabel}`}</span>
+              <span>{`pages：${nativeWorkflow.pages.length}/${nativeStatsTotal}`}</span>
+              <span>{`read：${nativeSurfaceStatus(nativeWorkflow.overview, "read")}`}</span>
+              <span>{`search：${nativeSurfaceStatus(nativeWorkflow.overview, "search")}`}</span>
+              <span>{`index：${nativeSurfaceStatus(nativeWorkflow.overview, "index")}`}</span>
+              <span>{`log：${nativeLogCount}`}</span>
+              <span>{`graph nodes：${nativeGraphNodes}`}</span>
+              <span>{`lint issues：${nativeLintIssues}`}</span>
+              <span>{`issues：${nativeIssueCount}`}</span>
+              <span>{`mutations：${nativeSurfaceStatus(nativeWorkflow.overview, "mutations")}`}</span>
+            </div>
+            {nativeWorkflow.pages.length ? (
+              <div className="wiki-native-list">
+                {nativeWorkflow.pages.slice(0, 4).map((item) => (
+                  <button
+                    type="button"
+                    key={item.slug}
+                    onClick={() => loadPage(item.slug)}
+                    title={item.slug}
+                  >
+                    <span>{item.title}</span>
+                    <small>{item.page_type ?? "wiki"}</small>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <EmptyState text="暂无 native pages" compact />
+            )}
+            {nativeNotice ? <div className="wiki-editor-notice">{nativeNotice}</div> : null}
+            <div className="wiki-native-actions">
+              <button type="button" onClick={rebuildNativeLinks} disabled={nativeState === "loading"}>
+                <Wrench size={15} aria-hidden="true" />
+                <span>rebuild</span>
+              </button>
+              <button type="button" onClick={autoFixNativeWiki} disabled={nativeState === "loading"}>
+                <Wrench size={15} aria-hidden="true" />
+                <span>auto-fix</span>
+              </button>
+              <button
+                type="button"
+                onClick={deleteNativePage}
+                disabled={!selectedSlug || nativeState === "loading"}
+              >
+                <Trash2 size={15} aria-hidden="true" />
+                <span>delete</span>
+              </button>
+            </div>
+          </div>
         </section>
 
         <section className="wiki-side-section" aria-label="来源引用">

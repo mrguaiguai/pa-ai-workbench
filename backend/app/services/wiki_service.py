@@ -56,6 +56,12 @@ class WikiPageIndexError(Exception):
 
 
 WIKI_INDEX_TIMEOUT_SECONDS = 30 * 60
+NATIVE_WIKI_CONFIRM_CREATE = "CREATE_NATIVE_WIKI_PAGE"
+NATIVE_WIKI_CONFIRM_UPDATE = "UPDATE_NATIVE_WIKI_PAGE"
+NATIVE_WIKI_CONFIRM_DELETE = "DELETE_NATIVE_WIKI_PAGE"
+NATIVE_WIKI_CONFIRM_REBUILD_LINKS = "REBUILD_NATIVE_WIKI_LINKS"
+NATIVE_WIKI_CONFIRM_AUTO_FIX = "AUTO_FIX_NATIVE_WIKI"
+NATIVE_WIKI_CONFIRM_ISSUE_STATUS = "UPDATE_NATIVE_WIKI_ISSUE_STATUS"
 
 
 class SqlModelWikiStore(WikiStore):
@@ -684,10 +690,39 @@ def native_wiki_overview(
             }
         )
 
+    log = capture(
+        "log",
+        lambda: backend.get_wiki_log(kb_id=resolved_kb_id, limit=page_limit),
+        required=False,
+    )
+    if isinstance(log, dict):
+        overview["surfaces"]["log"].update(
+            {
+                "count": log.get("count"),
+                "entries": log.get("entries") or [],
+                "next_cursor": log.get("next_cursor"),
+            }
+        )
+
     overview["surfaces"]["mutations"] = {
-        "status": "backlog",
-        "items": ["rebuild-links", "auto-fix", "issue-status-update"],
-        "reason": "WF-P1-02 is read-only; native Wiki mutations stay deferred.",
+        "status": "live",
+        "items": [
+            "create-page",
+            "update-page",
+            "delete-page",
+            "rebuild-links",
+            "auto-fix",
+            "issue-status-update",
+        ],
+        "confirmation_required": True,
+        "confirm_tokens": {
+            "create": NATIVE_WIKI_CONFIRM_CREATE,
+            "update": NATIVE_WIKI_CONFIRM_UPDATE,
+            "delete": NATIVE_WIKI_CONFIRM_DELETE,
+            "rebuild_links": NATIVE_WIKI_CONFIRM_REBUILD_LINKS,
+            "auto_fix": NATIVE_WIKI_CONFIRM_AUTO_FIX,
+            "issue_status": NATIVE_WIKI_CONFIRM_ISSUE_STATUS,
+        },
     }
     if required_blockers:
         overview["status"] = "blocked"
@@ -696,6 +731,209 @@ def native_wiki_overview(
     else:
         overview["status"] = "live"
     return overview
+
+
+def list_native_wiki_pages(
+    kb_id: str | None = None,
+    query: str = "",
+    page_type: str = "",
+    status: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> dict[str, Any]:
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    return backend.list_wiki_pages(
+        kb_id=resolved_kb_id,
+        query=query,
+        page_type=page_type,
+        status=status,
+        page=page,
+        page_size=page_size,
+    )
+
+
+def search_native_wiki_pages(
+    query: str,
+    kb_id: str | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    pages = backend.search_wiki(query=query, kb_id=resolved_kb_id, limit=limit)
+    return {
+        "items": [_wiki_summary_safe_dict(page) for page in pages],
+        "total": len(pages),
+        "source": "weknora_api",
+        "kb_id": resolved_kb_id,
+    }
+
+
+def read_native_wiki_page(slug: str, kb_id: str | None = None) -> dict[str, Any]:
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    page = backend.read_wiki_page(slug=slug, kb_id=resolved_kb_id)
+    if page is None:
+        raise WikiPageNotFoundError("Native Wiki page not found")
+    return {
+        **_wiki_page_safe_dict(page),
+        "kb_id": resolved_kb_id,
+        "content_excerpt": _excerpt(page.content or page.summary or "", 400),
+    }
+
+
+def create_native_wiki_page(
+    payload: dict[str, Any],
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    _require_native_wiki_confirmation(payload.get("confirm_token"), NATIVE_WIKI_CONFIRM_CREATE)
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    page_payload = _native_wiki_page_payload(payload)
+    page = backend.create_wiki_page(page=page_payload, kb_id=resolved_kb_id)
+    return {
+        **_wiki_page_safe_dict(page),
+        "kb_id": resolved_kb_id,
+        "mutation": "create-page",
+        "confirmation_required": True,
+    }
+
+
+def update_native_wiki_page(
+    slug: str,
+    payload: dict[str, Any],
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    _require_native_wiki_confirmation(payload.get("confirm_token"), NATIVE_WIKI_CONFIRM_UPDATE)
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    page_payload = _native_wiki_page_payload({**payload, "slug": slug})
+    page = backend.update_wiki_page(slug=slug, page=page_payload, kb_id=resolved_kb_id)
+    return {
+        **_wiki_page_safe_dict(page),
+        "kb_id": resolved_kb_id,
+        "mutation": "update-page",
+        "confirmation_required": True,
+    }
+
+
+def delete_native_wiki_page(
+    slug: str,
+    confirm_token: str,
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    _require_native_wiki_confirmation(confirm_token, NATIVE_WIKI_CONFIRM_DELETE)
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    result = backend.delete_wiki_page(slug=slug, kb_id=resolved_kb_id)
+    return {
+        **result,
+        "mutation": "delete-page",
+        "confirmation_required": True,
+    }
+
+
+def get_native_wiki_index(
+    kb_id: str | None = None,
+    page_types: list[str] | None = None,
+    limit: int = 20,
+    cursor: str = "",
+) -> dict[str, Any]:
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    return backend.get_wiki_index(
+        kb_id=resolved_kb_id,
+        page_types=page_types,
+        limit=limit,
+        cursor=cursor,
+    )
+
+
+def get_native_wiki_log(
+    kb_id: str | None = None,
+    cursor: str = "",
+    limit: int = 20,
+) -> dict[str, Any]:
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    return backend.get_wiki_log(kb_id=resolved_kb_id, cursor=cursor, limit=limit)
+
+
+def get_native_wiki_graph(
+    kb_id: str | None = None,
+    mode: str = "overview",
+    center: str = "",
+    depth: int = 1,
+    page_types: list[str] | None = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    return backend.get_wiki_graph(
+        kb_id=resolved_kb_id,
+        mode=mode,
+        center=center,
+        depth=depth,
+        page_types=page_types,
+        limit=limit,
+    )
+
+
+def get_native_wiki_stats(kb_id: str | None = None) -> dict[str, Any]:
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    return backend.get_wiki_stats(kb_id=resolved_kb_id)
+
+
+def get_native_wiki_lint(kb_id: str | None = None) -> dict[str, Any]:
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    return backend.get_wiki_lint(kb_id=resolved_kb_id)
+
+
+def list_native_wiki_issues(
+    kb_id: str | None = None,
+    slug: str = "",
+    status: str = "",
+) -> dict[str, Any]:
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    issues = backend.list_wiki_issues(kb_id=resolved_kb_id, slug=slug, status=status)
+    return {
+        "items": issues,
+        "total": len(issues),
+        "source": "weknora_api",
+        "kb_id": resolved_kb_id,
+    }
+
+
+def rebuild_native_wiki_links(confirm_token: str, kb_id: str | None = None) -> dict[str, Any]:
+    _require_native_wiki_confirmation(confirm_token, NATIVE_WIKI_CONFIRM_REBUILD_LINKS)
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    return {
+        **backend.rebuild_wiki_links(kb_id=resolved_kb_id),
+        "mutation": "rebuild-links",
+        "confirmation_required": True,
+    }
+
+
+def auto_fix_native_wiki(confirm_token: str, kb_id: str | None = None) -> dict[str, Any]:
+    _require_native_wiki_confirmation(confirm_token, NATIVE_WIKI_CONFIRM_AUTO_FIX)
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    return {
+        **backend.auto_fix_wiki(kb_id=resolved_kb_id),
+        "mutation": "auto-fix",
+        "confirmation_required": True,
+    }
+
+
+def update_native_wiki_issue_status(
+    issue_id: str,
+    status: str,
+    confirm_token: str,
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    _require_native_wiki_confirmation(confirm_token, NATIVE_WIKI_CONFIRM_ISSUE_STATUS)
+    if status not in {"pending", "ignored", "resolved"}:
+        raise ValueError("Native Wiki issue status must be pending, ignored, or resolved.")
+    backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    return {
+        **backend.update_wiki_issue_status(
+            issue_id=issue_id,
+            status=status,
+            kb_id=resolved_kb_id,
+        ),
+        "mutation": "issue-status",
+        "confirmation_required": True,
+    }
 
 
 def _sync_page_to_weknora(
@@ -794,6 +1032,48 @@ def _weknora_backend(settings=None) -> WeKnoraApiBackend:
         kb_mapping_config=settings.weknora_kb_mappings,
         kb_allow_default=settings.weknora_kb_allow_default,
     )
+
+
+def _native_wiki_backend(kb_id: str | None = None) -> tuple[WeKnoraApiBackend, str]:
+    settings = get_settings()
+    if settings.knowledge_backend != "weknora_api":
+        raise KnowledgeBackendUnavailableError("Native Wiki requires KNOWLEDGE_BACKEND=weknora_api")
+    if settings.mock_mode:
+        raise KnowledgeBackendUnavailableError("Native Wiki requires MOCK_MODE=false")
+    backend = _weknora_backend(settings)
+    resolved_kb_id = str(kb_id or settings.weknora_default_kb_id or "").strip()
+    if not resolved_kb_id:
+        raise KnowledgeBackendUnavailableError("Native Wiki requires WEKNORA_DEFAULT_KB_ID or kb_id")
+    return backend, resolved_kb_id
+
+
+def _require_native_wiki_confirmation(actual: object, expected: str) -> None:
+    if str(actual or "").strip() != expected:
+        raise ValueError(f"Native Wiki mutation requires confirm_token={expected}.")
+
+
+def _native_wiki_page_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    slug = _normalize_slug(str(payload.get("slug") or ""))
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        raise ValueError("Native Wiki page title must not be empty.")
+    page_metadata = payload.get("metadata")
+    metadata = dict(page_metadata) if isinstance(page_metadata, dict) else {}
+    metadata.setdefault("pa_native_workflow", "WNX-P1-06")
+    cleaned = {
+        "slug": slug,
+        "title": title,
+        "summary": str(payload.get("summary") or "").strip(),
+        "content": str(payload.get("content_markdown") or payload.get("content") or ""),
+        "page_type": str(payload.get("page_type") or "concept").strip() or "concept",
+        "status": str(payload.get("status") or "draft").strip() or "draft",
+        "page_metadata": metadata,
+    }
+    for key in ("aliases", "source_refs", "chunk_refs"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            cleaned[key] = [str(item).strip() for item in value if str(item).strip()]
+    return cleaned
 
 
 def _weknora_wiki_payload(

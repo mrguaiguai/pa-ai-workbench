@@ -14,6 +14,10 @@ from app.database import get_session
 from app.models import WikiCitation
 from app.models import WikiPage as WikiPageModel
 from app.schemas import EvidenceRead
+from app.schemas import NativeWikiConfirmRequest
+from app.schemas import NativeWikiIssueStatusRequest
+from app.schemas import NativeWikiPageDeleteRequest
+from app.schemas import NativeWikiPageSaveRequest
 from app.schemas import WikiCitationRead
 from app.schemas import WikiDraftFromOutputRequest
 from app.schemas import WikiPageCreateRequest
@@ -22,20 +26,35 @@ from app.schemas import WikiPageSummaryRead
 from app.schemas import WikiPageUpdateRequest
 from app.schemas import WikiSearchResponse
 from app.services.wiki_service import citation_metadata
+from app.services.wiki_service import auto_fix_native_wiki
 from app.services.wiki_service import create_wiki_draft_from_output
 from app.services.wiki_service import create_wiki_page_record
+from app.services.wiki_service import create_native_wiki_page
+from app.services.wiki_service import delete_native_wiki_page
+from app.services.wiki_service import get_native_wiki_graph
+from app.services.wiki_service import get_native_wiki_index
+from app.services.wiki_service import get_native_wiki_lint
+from app.services.wiki_service import get_native_wiki_log
+from app.services.wiki_service import get_native_wiki_stats
 from app.services.wiki_service import index_wiki_page_record
 from app.services.wiki_service import list_wiki_citation_records
+from app.services.wiki_service import list_native_wiki_issues
+from app.services.wiki_service import list_native_wiki_pages
 from app.services.wiki_service import native_wiki_overview
 from app.services.wiki_service import page_metadata
 from app.services.wiki_service import page_source_citation_ids
 from app.services.wiki_service import page_source_document_ids
 from app.services.wiki_service import page_tags
 from app.services.wiki_service import publish_wiki_page_record
+from app.services.wiki_service import read_native_wiki_page
 from app.services.wiki_service import read_wiki_page
 from app.services.wiki_service import recover_wiki_page_status
 from app.services.wiki_service import refresh_wiki_page_status
+from app.services.wiki_service import rebuild_native_wiki_links
 from app.services.wiki_service import search_wiki_pages
+from app.services.wiki_service import search_native_wiki_pages
+from app.services.wiki_service import update_native_wiki_issue_status
+from app.services.wiki_service import update_native_wiki_page
 from app.services.wiki_service import update_wiki_page_record
 from app.services.wiki_service import wiki_status_summary
 from app.services.wiki_service import WikiDraftSourceNotFoundError
@@ -55,6 +74,186 @@ def native_wiki_overview_api(
     limit: int = Query(default=10, ge=1, le=20),
 ) -> dict[str, Any]:
     return native_wiki_overview(kb_id=kb_id, query=query, limit=limit)
+
+
+@router.get("/native/pages")
+def list_native_wiki_pages_api(
+    kb_id: str | None = None,
+    query: str = Query(default=""),
+    page_type: str = Query(default=""),
+    status: str = Query(default=""),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=50),
+) -> dict[str, Any]:
+    return list_native_wiki_pages(
+        kb_id=kb_id,
+        query=query,
+        page_type=page_type,
+        status=status,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/native/search")
+def search_native_wiki_api(
+    query: str = Query(min_length=1),
+    kb_id: str | None = None,
+    limit: int = Query(default=10, ge=1, le=50),
+) -> dict[str, Any]:
+    return search_native_wiki_pages(query=query, kb_id=kb_id, limit=limit)
+
+
+@router.get("/native/page")
+def read_native_wiki_page_api(
+    slug: str = Query(min_length=1),
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        return read_native_wiki_page(slug=slug, kb_id=kb_id)
+    except WikiPageNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/native/pages", status_code=status.HTTP_201_CREATED)
+def create_native_wiki_page_api(
+    payload: NativeWikiPageSaveRequest,
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        return create_native_wiki_page(payload=payload.model_dump(), kb_id=kb_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/native/page")
+def update_native_wiki_page_api(
+    payload: NativeWikiPageSaveRequest,
+    slug: str = Query(min_length=1),
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        return update_native_wiki_page(slug=slug, payload=payload.model_dump(), kb_id=kb_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/native/page/delete")
+def delete_native_wiki_page_api(
+    payload: NativeWikiPageDeleteRequest,
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        return delete_native_wiki_page(
+            slug=payload.slug,
+            confirm_token=payload.confirm_token,
+            kb_id=kb_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/native/index")
+def get_native_wiki_index_api(
+    kb_id: str | None = None,
+    types: str = Query(default=""),
+    limit: int = Query(default=20, ge=1, le=50),
+    cursor: str = Query(default=""),
+) -> dict[str, Any]:
+    page_types = [item.strip() for item in types.split(",") if item.strip()]
+    return get_native_wiki_index(
+        kb_id=kb_id,
+        page_types=page_types or None,
+        limit=limit,
+        cursor=cursor,
+    )
+
+
+@router.get("/native/log")
+def get_native_wiki_log_api(
+    kb_id: str | None = None,
+    cursor: str = Query(default=""),
+    limit: int = Query(default=20, ge=1, le=50),
+) -> dict[str, Any]:
+    return get_native_wiki_log(kb_id=kb_id, cursor=cursor, limit=limit)
+
+
+@router.get("/native/graph")
+def get_native_wiki_graph_api(
+    kb_id: str | None = None,
+    mode: str = Query(default="overview"),
+    center: str = Query(default=""),
+    depth: int = Query(default=1, ge=1, le=3),
+    types: str = Query(default=""),
+    limit: int = Query(default=50, ge=1, le=2000),
+) -> dict[str, Any]:
+    page_types = [item.strip() for item in types.split(",") if item.strip()]
+    return get_native_wiki_graph(
+        kb_id=kb_id,
+        mode=mode,
+        center=center,
+        depth=depth,
+        page_types=page_types or None,
+        limit=limit,
+    )
+
+
+@router.get("/native/stats")
+def get_native_wiki_stats_api(kb_id: str | None = None) -> dict[str, Any]:
+    return get_native_wiki_stats(kb_id=kb_id)
+
+
+@router.get("/native/lint")
+def get_native_wiki_lint_api(kb_id: str | None = None) -> dict[str, Any]:
+    return get_native_wiki_lint(kb_id=kb_id)
+
+
+@router.get("/native/issues")
+def list_native_wiki_issues_api(
+    kb_id: str | None = None,
+    slug: str = Query(default=""),
+    status: str = Query(default=""),
+) -> dict[str, Any]:
+    return list_native_wiki_issues(kb_id=kb_id, slug=slug, status=status)
+
+
+@router.post("/native/rebuild-links")
+def rebuild_native_wiki_links_api(
+    payload: NativeWikiConfirmRequest,
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        return rebuild_native_wiki_links(confirm_token=payload.confirm_token, kb_id=kb_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/native/auto-fix")
+def auto_fix_native_wiki_api(
+    payload: NativeWikiConfirmRequest,
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        return auto_fix_native_wiki(confirm_token=payload.confirm_token, kb_id=kb_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/native/issues/{issue_id}/status")
+def update_native_wiki_issue_status_api(
+    issue_id: str,
+    payload: NativeWikiIssueStatusRequest,
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        return update_native_wiki_issue_status(
+            issue_id=issue_id,
+            status=payload.status,
+            confirm_token=payload.confirm_token,
+            kb_id=kb_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/search", response_model=WikiSearchResponse)

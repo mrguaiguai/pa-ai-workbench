@@ -115,13 +115,14 @@ def native_status_center(limit: int = 5) -> dict[str, Any]:
     groups["native_wiki"] = _baseline_group(
         capability_id="native_wiki",
         label="Native Wiki",
-        status="partial",
+        status="live" if _weknora_core_configured(settings) else "blocked",
         configured=_weknora_core_configured(settings),
         source_endpoint="/api/wiki/native/overview",
-        next_action="WNX-P1-06",
+        next_action="WNX-P1-07",
         summary={
-            "read_only_surfaces": "available",
-            "mutation_status": "backlog",
+            "workflow_surfaces": "pages_search_read_index_log_graph_stats_lint_issues",
+            "mutation_status": "confirmation_required",
+            "global_maintenance": "operator_confirmed_only",
         },
     )
     groups["mcp"] = _overview_group(

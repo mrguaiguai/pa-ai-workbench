@@ -49,7 +49,7 @@ Eligible capability groups: `15`.
 Current score:
 
 ```text
-8.75 / 15 = 58.3%
+9.25 / 15 = 61.7%
 ```
 
 Minimum internal production target:
@@ -75,7 +75,7 @@ safe limited workflows without leaking secrets or rebuilding WeKnora admin.
 | Knowledge-search/RAG | `live-full` | 1.0 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_RAG_DEBUG_LIVE_REPORT.md`; `docs/WEKNORA_NATIVE_RAG_KNOWLEDGE_CHAT_LIVE_REPORT.md`; PA RAG debug called native search and returned `source=weknora_api`, `source_type=document_chunk`, `evidence_id`, rank, trace, native ids, and current-run evidence. | Current-run live RAG debug smoke with source scope and citation checks. | Search path is live-full for RAG debug; advanced ranking UI remains backlog beyond internal use. | `WNX-P3-02` |
 | Knowledge-chat/session chat | `live-full` | 1.0 | `live-full` | 1.0 | `docs/WEKNORA_NATIVE_RAG_KNOWLEDGE_CHAT_LIVE_REPORT.md`; WNX-P1-04 validated native `/api/v1/knowledge-chat`, PA conversation/history/output persistence, native references saved as citations, and current-run guard. | `WNX-P1-04` live API/browser smoke with temporary backend/frontend and sanitized output. | Citation PASS depends on native `references` events containing traceable document or Wiki identity; full cross-workflow unification remains `WNX-P1-07`. | `WNX-P1-07`, `WNX-P3-02` |
 | AgentQA/custom Agent | `live-partial` | 0.5 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_AGENTQA_LIVE_REPORT.md`; `docs/WEKNORA_NATIVE_AGENTQA_CUSTOM_AGENT_LIVE_REPORT.md`; WNX-P1-05 validated native custom Agent catalog, presets, placeholders, suggested questions, PA Analysis browser workflow, and native AgentQA output/history persistence, but citation mapping still recorded `CITATION_BLOCKED`. | `WNX-P1-05` live API/browser workflow. Citation PASS requires traceable native references. | AgentQA answer/history and custom Agent picker are live; citation references were absent in the live run, and Agent copy/update/delete remain backlog until ownership/confirmation/audit design exists. | `WNX-P1-07` |
-| Native Wiki | `live-partial` | 0.5 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_WIKI_NATIVE_BROWSE_REPORT.md`; PA read native Wiki pages/search/read/index/stats/graph/lint/issues; mutations backlog. | Live PA Wiki API plus browser workflow with confirmation for safe mutations. | Read-only surfaces are live; create/update/delete and maintenance mutations require safety design and audit trail. | `WNX-P1-06` |
+| Native Wiki | `live-full` | 1.0 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_WIKI_NATIVE_BROWSE_REPORT.md`; `docs/WEKNORA_NATIVE_WIKI_WORKFLOW_LIVE_REPORT.md`; WNX-P1-06 validated native Wiki pages/search/read/index/log/graph/stats/lint/issues, safe create/update/delete on a temporary page, and Wiki browser workflow. | `WNX-P1-06` live API/browser smoke with confirmation-gated native mutations. | Global rebuild-links/auto-fix and issue-status mutation require operator confirmation and must not run from status-only refreshes. | `WNX-P1-07`, `WNX-P3-02` |
 | MCP | `read-only` | 0.25 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_MCP_VISIBILITY_REPORT.md`; PA read native MCP service list safely; tools/resources/approval/mutations backlog. | Live MCP list/read/test where configured, browser status, sensitive scan. | Credential forms, tool execution, approval mutation, and service CRUD are unsafe without explicit approval model. | `WNX-P2-02` |
 | Web search | `read-only` | 0.25 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_WEB_SEARCH_VISIBILITY_REPORT.md`; PA read provider catalog/configured providers and marked AgentQA dependency optional/unconfigured. | Live provider readiness/test where configured and AgentQA dependency validation. | Provider CRUD, credential handling, raw search debugging, and PA-owned web search orchestration remain backlog. | `WNX-P2-03` |
 | Vector store | `read-only` | 0.25 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md`; PA read vector-store types/list, KB binding, and embedding readiness without raw config. | Live vector-store readiness/test where safe, KB binding check, sensitive scan. | CRUD, connection tests, raw config display, KB rebind mutation, and PA-owned vector administration remain backlog. | `WNX-P2-04` |
@@ -90,7 +90,7 @@ The minimum target plan reaches 80% by completing these state moves:
 
 | Move | Groups | Score gain |
 | --- | --- | ---: |
-| `live-partial` to `live-full` | AgentQA/custom Agent, Native Wiki, History/citation/product shell | +1.5 |
+| `live-partial` to `live-full` | AgentQA/custom Agent, History/citation/product shell | +1.0 |
 | `read-only` to `live-partial` | MCP, Web search, Vector store | +0.75 |
 | `backlog` to `live-partial` | Data sources/connectors, FAQ/tags/favorites/skills | +1.0 |
 | Keep `live-partial` target | Model/embedding/rerank/parser | +0 |
@@ -98,7 +98,7 @@ The minimum target plan reaches 80% by completing these state moves:
 Planned target score:
 
 ```text
-8.75 current + 3.25 planned gain = 12.00 / 15 = 80.0%
+9.25 current + 2.75 planned gain = 12.00 / 15 = 80.0%
 ```
 
 Stretch target:
@@ -130,7 +130,7 @@ Future tasks must update this ledger when they change a capability state:
 | Area | Baseline decision |
 | --- | --- |
 | AgentQA citation mapping | Blocked until native AgentQA emits traceable references or PA receives a documented native citation shape. |
-| Native Wiki mutations and maintenance | Backlog until confirmation, audit trail, preview, and rollback story are designed. |
+| Native Wiki global maintenance | Operator-confirmed only; rebuild-links, auto-fix, and issue-status mutation must not run from status-only refreshes. |
 | MCP execution and credentials | Backlog/unsafe until approval and secret-handling model is explicit. |
 | Web search provider credentials and raw tests | Backlog until a secure masked credential flow is explicitly scoped. |
 | Vector-store CRUD/test/raw config | Backlog until PA can avoid raw DSN/config leakage and avoid conflicting with WeKnora admin ownership. |
@@ -162,8 +162,8 @@ and `docs/WEKNORA_NATIVE_EXPANSION_ACCEPTANCE_HARNESS_REPORT.md`.
 
 The harness validates the ledger math and stage evidence boundaries:
 
-- the checker parses the current ledger score; after `WNX-P1-05` this remains
-  `8.75 / 15 = 58.3%`;
+- the checker parses the current ledger score; after `WNX-P1-06` this is
+  `9.25 / 15 = 61.7%`;
 - target score remains `12.00 / 15 = 80.0%`;
 - current score below target is allowed only because the WNX stage is still in
   progress;

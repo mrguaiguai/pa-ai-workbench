@@ -165,6 +165,60 @@ export type NativeWikiOverviewResponse = {
   >;
 };
 
+export type NativeWikiPageSummary = {
+  id?: string | null;
+  slug: string;
+  title: string;
+  page_type?: string | null;
+  summary?: string | null;
+  status?: string | null;
+  source_type?: string | null;
+  evidence_id?: string | null;
+  wiki_page_id?: string | null;
+};
+
+export type NativeWikiPageRead = NativeWikiPageSummary & {
+  source?: string | null;
+  kb_id?: string | null;
+  content_chars?: number;
+  content_excerpt?: string;
+};
+
+export type NativeWikiPagesResponse = {
+  pages?: NativeWikiPageSummary[];
+  items?: NativeWikiPageSummary[];
+  total?: number | null;
+  page?: number | null;
+  page_size?: number | null;
+  total_pages?: number | null;
+  source: string;
+  kb_id: string;
+};
+
+export type NativeWikiMutationResponse = {
+  status?: string;
+  mutation?: string;
+  slug?: string;
+  kb_id?: string;
+  source?: string;
+  confirmation_required?: boolean;
+  [key: string]: unknown;
+};
+
+export type NativeWikiPageSaveRequest = {
+  confirm_token: string;
+  slug?: string;
+  title: string;
+  summary?: string | null;
+  content_markdown?: string;
+  page_type?: string | null;
+  status?: string;
+  aliases?: string[];
+  source_refs?: string[];
+  chunk_refs?: string[];
+  metadata?: Record<string, unknown>;
+};
+
 export type NativeMcpOverviewResponse = {
   schema_version: string;
   status: "live" | "partial" | "blocked" | "backlog" | string;
@@ -1036,6 +1090,93 @@ export const apiClient = {
     const searchParams = nativeWikiOverviewParams(params);
     const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
     return request<NativeWikiOverviewResponse>(`/api/wiki/native/overview${suffix}`);
+  },
+  listNativeWikiPages: (params: NativeWikiOverviewParams & { pageSize?: number } = {}) => {
+    const searchParams = nativeWikiOverviewParams(params);
+    if (params.pageSize) {
+      searchParams.set("page_size", String(params.pageSize));
+    }
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return request<NativeWikiPagesResponse>(`/api/wiki/native/pages${suffix}`);
+  },
+  searchNativeWikiPages: (query: string, kbId?: string, limit = 10) => {
+    const searchParams = new URLSearchParams({ query, limit: String(limit) });
+    if (kbId) {
+      searchParams.set("kb_id", kbId);
+    }
+    return request<NativeWikiPagesResponse>(`/api/wiki/native/search?${searchParams.toString()}`);
+  },
+  getNativeWikiPage: (slug: string, kbId?: string) => {
+    const searchParams = new URLSearchParams({ slug });
+    if (kbId) {
+      searchParams.set("kb_id", kbId);
+    }
+    return request<NativeWikiPageRead>(`/api/wiki/native/page?${searchParams.toString()}`);
+  },
+  createNativeWikiPage: (payload: NativeWikiPageSaveRequest, kbId?: string) => {
+    const suffix = kbId ? `?${new URLSearchParams({ kb_id: kbId }).toString()}` : "";
+    return request<NativeWikiPageRead>(`/api/wiki/native/pages${suffix}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+  updateNativeWikiPage: (slug: string, payload: NativeWikiPageSaveRequest, kbId?: string) => {
+    const searchParams = new URLSearchParams({ slug });
+    if (kbId) {
+      searchParams.set("kb_id", kbId);
+    }
+    return request<NativeWikiPageRead>(`/api/wiki/native/page?${searchParams.toString()}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+  deleteNativeWikiPage: (slug: string, confirmToken: string, kbId?: string) => {
+    const suffix = kbId ? `?${new URLSearchParams({ kb_id: kbId }).toString()}` : "";
+    return request<NativeWikiMutationResponse>(`/api/wiki/native/page/delete${suffix}`, {
+      method: "POST",
+      body: JSON.stringify({ slug, confirm_token: confirmToken }),
+    });
+  },
+  getNativeWikiIndex: (params: NativeWikiOverviewParams = {}) => {
+    const searchParams = nativeWikiOverviewParams(params);
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return request<Record<string, unknown>>(`/api/wiki/native/index${suffix}`);
+  },
+  getNativeWikiLog: (params: NativeWikiOverviewParams = {}) => {
+    const searchParams = nativeWikiOverviewParams(params);
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return request<Record<string, unknown>>(`/api/wiki/native/log${suffix}`);
+  },
+  getNativeWikiGraph: (params: NativeWikiOverviewParams = {}) => {
+    const searchParams = nativeWikiOverviewParams(params);
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return request<Record<string, unknown>>(`/api/wiki/native/graph${suffix}`);
+  },
+  getNativeWikiStats: (kbId?: string) => {
+    const suffix = kbId ? `?${new URLSearchParams({ kb_id: kbId }).toString()}` : "";
+    return request<Record<string, unknown>>(`/api/wiki/native/stats${suffix}`);
+  },
+  getNativeWikiLint: (kbId?: string) => {
+    const suffix = kbId ? `?${new URLSearchParams({ kb_id: kbId }).toString()}` : "";
+    return request<Record<string, unknown>>(`/api/wiki/native/lint${suffix}`);
+  },
+  getNativeWikiIssues: (kbId?: string) => {
+    const suffix = kbId ? `?${new URLSearchParams({ kb_id: kbId }).toString()}` : "";
+    return request<Record<string, unknown>>(`/api/wiki/native/issues${suffix}`);
+  },
+  rebuildNativeWikiLinks: (confirmToken: string, kbId?: string) => {
+    const suffix = kbId ? `?${new URLSearchParams({ kb_id: kbId }).toString()}` : "";
+    return request<NativeWikiMutationResponse>(`/api/wiki/native/rebuild-links${suffix}`, {
+      method: "POST",
+      body: JSON.stringify({ confirm_token: confirmToken }),
+    });
+  },
+  autoFixNativeWiki: (confirmToken: string, kbId?: string) => {
+    const suffix = kbId ? `?${new URLSearchParams({ kb_id: kbId }).toString()}` : "";
+    return request<NativeWikiMutationResponse>(`/api/wiki/native/auto-fix${suffix}`, {
+      method: "POST",
+      body: JSON.stringify({ confirm_token: confirmToken }),
+    });
   },
   getNativeMcpOverview: (params: NativeMcpOverviewParams = {}) => {
     const searchParams = nativeMcpOverviewParams(params);

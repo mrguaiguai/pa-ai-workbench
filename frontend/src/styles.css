@@ -2731,6 +2731,7 @@ p {
 }
 
 .wiki-index-card,
+.wiki-native-card,
 .wiki-binding-list {
   display: grid;
   gap: 10px;
@@ -2806,6 +2807,83 @@ p {
   font-weight: 800;
   padding: 8px 10px;
   overflow-wrap: anywhere;
+}
+
+.wiki-native-list {
+  display: grid;
+  gap: 6px;
+}
+
+.wiki-native-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #24333b;
+  cursor: pointer;
+  font: inherit;
+  padding: 7px 9px;
+  text-align: left;
+}
+
+.wiki-native-list button:hover {
+  border-color: #b9c8d0;
+  background: #f8fafb;
+}
+
+.wiki-native-list span,
+.wiki-native-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki-native-list span {
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.wiki-native-list small {
+  color: #52636e;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.wiki-native-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.wiki-native-actions button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #32444f;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-weight: 900;
+  padding: 7px 8px;
+}
+
+.wiki-native-actions button:hover:not(:disabled) {
+  border-color: #b9c8d0;
+  background: #f8fafb;
+}
+
+.wiki-native-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .wiki-ref-list {

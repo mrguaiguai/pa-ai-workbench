@@ -861,6 +861,34 @@ class WikiPageUpdateRequest(BaseModel):
     citations: list[WikiCitationPayload] | None = None
 
 
+class NativeWikiPageSaveRequest(BaseModel):
+    confirm_token: str
+    slug: str | None = None
+    title: str
+    summary: str | None = None
+    content_markdown: str = ""
+    page_type: str | None = None
+    status: str = "draft"
+    aliases: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    chunk_refs: list[str] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
+
+
+class NativeWikiPageDeleteRequest(BaseModel):
+    confirm_token: str
+    slug: str
+
+
+class NativeWikiConfirmRequest(BaseModel):
+    confirm_token: str
+
+
+class NativeWikiIssueStatusRequest(BaseModel):
+    confirm_token: str
+    status: str
+
+
 class WikiPageRead(BaseModel):
     id: str | None = None
     slug: str

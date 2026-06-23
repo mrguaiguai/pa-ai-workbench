@@ -1273,6 +1273,114 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if isinstance(item, dict)
         ]
 
+    def get_wiki_log(
+        self,
+        kb_id: str | None = None,
+        *,
+        cursor: str = "",
+        limit: int = 20,
+    ) -> dict:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        params: dict[str, object] = {"limit": max(limit, 1)}
+        if cursor:
+            params["cursor"] = cursor
+        data = self._request_json(
+            "GET",
+            f"{self._wiki_base_path(resolved_kb_id)}/log?{urlencode(params)}",
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora Wiki log returned invalid JSON")
+        entries = [
+            item for item in (payload.get("entries") or payload.get("items") or [])
+            if isinstance(item, dict)
+        ]
+        return {
+            "entries": [
+                {
+                    "id": _optional_str(item.get("id")),
+                    "action": _optional_str(item.get("action")),
+                    "knowledge_id": _optional_str(item.get("knowledge_id")),
+                    "created_at": _optional_str(item.get("created_at")),
+                    "pages_count": len(item.get("pages") or []),
+                }
+                for item in entries[: max(limit, 1)]
+            ],
+            "count": len(entries),
+            "next_cursor": _optional_str(payload.get("next_cursor")),
+            "source": "weknora_api",
+            "kb_id": resolved_kb_id,
+        }
+
+    def delete_wiki_page(self, slug: str, kb_id: str | None = None) -> dict:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        encoded_slug = quote(slug.strip(), safe="/")
+        self._request_json(
+            "DELETE",
+            f"{self._wiki_base_path(resolved_kb_id)}/pages/{encoded_slug}",
+        )
+        return {
+            "slug": slug.strip(),
+            "status": "deleted",
+            "source": "weknora_api",
+            "kb_id": resolved_kb_id,
+        }
+
+    def rebuild_wiki_links(self, kb_id: str | None = None) -> dict:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        data = self._request_json(
+            "POST",
+            f"{self._wiki_base_path(resolved_kb_id)}/rebuild-links",
+        )
+        payload = self._unwrap_data(data)
+        return {
+            "status": "completed",
+            "message": _shorten(str((payload or {}).get("message") if isinstance(payload, dict) else ""), 160),
+            "source": "weknora_api",
+            "kb_id": resolved_kb_id,
+        }
+
+    def auto_fix_wiki(self, kb_id: str | None = None) -> dict:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        data = self._request_json("POST", f"{self._wiki_base_path(resolved_kb_id)}/auto-fix")
+        payload = self._unwrap_data(data)
+        fixed = None
+        if isinstance(payload, dict):
+            fixed = _optional_int(payload.get("fixed") or payload.get("fixed_count"))
+        return {
+            "status": "completed",
+            "fixed_count": fixed,
+            "source": "weknora_api",
+            "kb_id": resolved_kb_id,
+        }
+
+    def update_wiki_issue_status(
+        self,
+        issue_id: str,
+        status: str,
+        kb_id: str | None = None,
+    ) -> dict:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        encoded_issue_id = quote(issue_id.strip(), safe="")
+        data = self._request_json(
+            "PUT",
+            f"{self._wiki_base_path(resolved_kb_id)}/issues/{encoded_issue_id}/status",
+            {"status": status},
+        )
+        payload = self._unwrap_data(data)
+        return {
+            "issue_id": issue_id.strip(),
+            "status": status,
+            "message": _shorten(str((payload or {}).get("message") if isinstance(payload, dict) else ""), 160),
+            "source": "weknora_api",
+            "kb_id": resolved_kb_id,
+        }
+
     def list_agents(self) -> list[dict]:
         self._require_configured()
         data = self._request_json("GET", "/api/v1/agents")
