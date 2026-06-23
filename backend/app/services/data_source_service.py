@@ -86,6 +86,8 @@ def native_data_source_detail_by_index(data_source_index: int) -> dict[str, Any]
         data_source_ref = _data_source_ref_by_index(backend, data_source_index)
         data_source = backend.get_data_source(data_source_ref)
         logs = backend.list_data_source_sync_logs(data_source_ref, limit=5)
+        resources_surface = _data_source_resources_surface(backend, data_source_ref, data_source)
+        validation_surface = _data_source_validation_surface(backend, data_source_ref, data_source)
     except KnowledgeBackendUnavailableError as exc:
         response["surfaces"]["connector_read"] = {
             "status": "blocked",
@@ -101,12 +103,8 @@ def native_data_source_detail_by_index(data_source_index: int) -> dict[str, Any]
         "data_source": _public_data_source_item(data_source),
     }
     response["surfaces"]["sync_logs"] = _logs_surface(logs)
-    response["surfaces"]["resources"] = _external_probe_blocked_surface(
-        "listing connector resources requires a separate credential/resource privacy review"
-    )
-    response["surfaces"]["validation"] = _external_probe_blocked_surface(
-        "connector validation calls external systems and is not run by default"
-    )
+    response["surfaces"]["resources"] = resources_surface
+    response["surfaces"]["validation"] = validation_surface
     response["surfaces"]["sync_control"] = _sync_control_blocked_surface()
     response["surfaces"]["mutations"] = _data_source_mutation_backlog()
     return response
@@ -286,6 +284,53 @@ def _logs_surface(logs: list[dict]) -> dict[str, Any]:
         "count": len(logs),
         "status_counts": dict(sorted(status_counts.items())),
         "items": logs[:5],
+    }
+
+
+def _data_source_resources_surface(
+    backend: WeKnoraApiBackend,
+    data_source_ref: str,
+    data_source: dict[str, Any],
+) -> dict[str, Any]:
+    if data_source.get("type") != "rss":
+        return _external_probe_blocked_surface(
+            "listing connector resources requires a separate credential/resource privacy review"
+        )
+    try:
+        summary = backend.list_data_source_resources(data_source_ref)
+    except KnowledgeBackendUnavailableError as exc:
+        return {
+            "status": "partial",
+            "reason": f"resources: {_error_code(exc)}",
+            "count": 0,
+        }
+    return {
+        "status": "live",
+        "count": int(summary.get("count") or 0),
+        "type_counts": summary.get("type_counts") if isinstance(summary.get("type_counts"), dict) else {},
+    }
+
+
+def _data_source_validation_surface(
+    backend: WeKnoraApiBackend,
+    data_source_ref: str,
+    data_source: dict[str, Any],
+) -> dict[str, Any]:
+    if data_source.get("type") != "rss":
+        return _external_probe_blocked_surface(
+            "connector validation calls external systems and is not run by default"
+        )
+    try:
+        result = backend.validate_data_source(data_source_ref)
+    except KnowledgeBackendUnavailableError as exc:
+        return {
+            "status": "partial",
+            "connected": False,
+            "reason": f"validation: {_error_code(exc)}",
+        }
+    return {
+        "status": "live",
+        "connected": bool(result.get("connected")),
     }
 
 

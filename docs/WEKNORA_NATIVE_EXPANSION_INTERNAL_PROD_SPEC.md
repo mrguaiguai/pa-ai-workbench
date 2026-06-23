@@ -285,7 +285,7 @@ Excluded or limited groups:
 | WNX-P2-05 | P2 | Data source connector management | [x] | Safe read-only connector catalog/list visibility is live; no configured connector exists, so validate/resources/sync/pause/resume/logs remain backlog/confirmation-gated. |
 | WNX-P2-06 | P2 | FAQ, tags, favorites, skills | [x] | Native tags, favorites, and skills visibility integrated as live-partial workbench organization primitives; FAQ read is blocked in current active-KB runtime. |
 | WNX-P3-01 | P3 | Six-page product workflow browser matrix | [x] | Home, library, RAG, analysis, Wiki, history, capability center pass desktop/mobile browser checks. |
-| WNX-P3-02 | P3 | Internal production report | [!] | `docs/WEKNORA_NATIVE_EXPANSION_INTERNAL_PROD_PASS_REPORT.md` records blocked final PASS because current verified coverage is `11.75 / 15 = 78.3%`, below the 80.0% internal production threshold. |
+| WNX-P3-02 | P3 | Internal production report | [x] | `docs/WEKNORA_NATIVE_EXPANSION_INTERNAL_PROD_PASS_REPORT.md` records final PASS because current verified coverage is `12.00 / 15 = 80.0%`, meeting the internal production threshold with current live evidence. |
 | WNX-P3-03 | P3 | Deployment handoff prompt/runbook | [x] | Handoff runbook explains current blocked final PASS, local recovery commands, validation commands, and copy-paste continuation prompt. |
 | WNX-P3-04 | P3 | AgentQA citation traceability blocker refresh | [!] | `docs/WEKNORA_NATIVE_AGENTQA_CITATION_TRACEABILITY_REPORT.md` records live AgentQA/history smokes with `references=0`, `saved_citations=0`, and `citation_blocked=true`; no coverage upgrade is claimed. |
 | WNX-P3-05 | P3 | Configured data source connector smoke | [!] | `docs/WEKNORA_NATIVE_DATA_SOURCE_CONFIGURED_CONNECTOR_SMOKE_REPORT.md` records live API/browser evidence that connector catalog is live but current runtime still has `data_sources.count=0`; no coverage upgrade is claimed. |
@@ -293,6 +293,7 @@ Excluded or limited groups:
 | WNX-P3-07 | P3 | AgentQA native runtime validation | [!] | `docs/WEKNORA_NATIVE_AGENTQA_RUNTIME_VALIDATION_REPORT.md` records Docker Go test/runtime deployment evidence, but the live AgentQA workflow still returned zero references before the Wiki tool path fix. |
 | WNX-P3-08 | P3 | AgentQA Wiki reference propagation live fix | [x] | `docs/WEKNORA_NATIVE_AGENTQA_WIKI_REFERENCE_LIVE_REPORT.md` records current live AgentQA `references=12`, `saved_citations=12`, `citation_blocked=false`, and history AgentQA citations `traceable=15`; AgentQA/custom Agent is now `live-full`. |
 | WNX-P3-09 | P3 | Data source connector unblock recheck | [!] | `docs/WEKNORA_NATIVE_DATA_SOURCE_CONNECTOR_UNBLOCK_RECHECK_REPORT.md` records native registry/source audit plus current live smoke with `data_sources.count=0` and `credentials_configured=0`; Data sources/connectors remains `read-only`. |
+| WNX-P3-10 | P3 | RSS data source connector live-partial unblock | [x] | `docs/WEKNORA_NATIVE_RSS_DATA_SOURCE_CONNECTOR_LIVE_REPORT.md` records a real no-credential native RSS connector, Docker runtime deployment, live RSS data source configuration, sanitized resources/validation/sync/pause/resume/log evidence, and browser validation; Data sources/connectors is now `live-partial`. |
 
 ## 7. Progress Log
 
@@ -328,6 +329,8 @@ Excluded or limited groups:
 | 2026-06-23 | WNX-P3-07 | [!] | `native Go test evidence + Docker runtime evidence + live API blocked evidence`: the local native AgentQA reference propagation patch was formatted and focused-tested with Docker `golang:1.26.0`, built into `wechatopenai/weknora-app:latest`, and deployed by recreating only `WeKnora-app`, but live AgentQA still reports `references=0`, `saved_citations=0`, `citation_blocked=true`. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_RUNTIME_VALIDATION_REPORT.md`; AgentQA/custom Agent remains `live-partial`, coverage remains `11.25 / 15 = 75.0%`, and the next unblock must inspect why the live Agent path still does not produce traceable references after deployment. |
 | 2026-06-23 | WNX-P3-08 | [x] | `native Go test evidence + Docker runtime evidence + live API evidence`: the live selected Agent path was traced to Wiki tools, native `wiki_search`/`wiki_read_page` now emit structured Wiki page references, stream conversion preserves `source_type=wiki_page`, and PA history/status classify the traceable citations correctly. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_WIKI_REFERENCE_LIVE_REPORT.md`; AgentQA/custom Agent moves to `live-full`, coverage moves to `11.75 / 15 = 78.3%`, and final internal production PASS remains blocked until Data sources/connectors can add the remaining `+0.25`. |
 | 2026-06-23 | WNX-P3-09 | [!] | `native source audit + live API/browser blocked evidence`: the remaining Data sources/connectors path was rechecked; live smoke still reports connector catalog `count=12`, but configured data sources `count=0` and `credentials_configured=0`, while source audit shows only Feishu/Notion/Yuque are implemented and all require real external credentials. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_DATA_SOURCE_CONNECTOR_UNBLOCK_RECHECK_REPORT.md`; Data sources/connectors remains `read-only`, coverage remains `11.75 / 15 = 78.3%`, and final internal production PASS remains blocked below 80.0%. |
+| 2026-06-24 | WNX-P3-10 | [x] | `native Docker runtime evidence + live API/browser evidence`: native RSS connector is implemented and registered, app image rebuild/recreate passes, PA configures one live no-credential RSS data source, and the data source smoke validates sanitized detail/resources/validation/sync/pause/resume/log/browser evidence. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_RSS_DATA_SOURCE_CONNECTOR_LIVE_REPORT.md`; Data sources/connectors moves to `live-partial`, coverage moves to `12.00 / 15 = 80.0%`, and credential-bearing connector CRUD/raw resources/raw logs remain backlog. |
+| 2026-06-24 | WNX-P3-02 | [x] | `checker execution evidence + live API/browser evidence`: final internal production report refreshed after `WNX-P3-10`; coverage ledger now reaches the 80.0% threshold and the final report records PASS while keeping remaining credential/admin surfaces in backlog. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_EXPANSION_INTERNAL_PROD_PASS_REPORT.md`; acceptance harness/report-safety/diff/sensitive scans must pass before commit. |
 
 ## 8. Task Cards
 
@@ -929,6 +932,41 @@ Excluded or limited groups:
 - Blocked/backlog: mark `[!]` when data source list is live but configured
   count is 0; mark `[b]` only if the user defers connector setup entirely.
 - Status source: Section 6 row `WNX-P3-09`.
+
+### WNX-P3-10: RSS data source connector live-partial unblock
+
+- Goal: move Data sources/connectors from `read-only` to `live-partial` with a
+  real no-credential native connector workflow.
+- Type: WeKnora native capability接入 + validation/ops/deployment.
+- Scope: native RSS connector implementation/registration, PA safe
+  create/validate/resources summaries for RSS, sanitized configured-source
+  smoke, confirmed sync/pause/resume, and browser status validation.
+- Inputs: native data source route/handler/service/type contracts, connector
+  registry, PA WeKnora adapter, data source BFF service/API, data source smoke
+  script, coverage ledger, and final internal production report.
+- Output report:
+  `docs/WEKNORA_NATIVE_RSS_DATA_SOURCE_CONNECTOR_LIVE_REPORT.md`.
+- Editable files: native RSS connector files, native container registry, PA
+  adapter/service/smoke/config script, this spec, coverage ledger, final report,
+  and acceptance checker.
+- Forbidden: printing or committing credentials, raw connector config, private
+  endpoints, raw resource names, raw sync logs, provider payloads, local
+  databases, logs, caches, screenshots, or direct DB row injection as PASS.
+- Acceptance: native Docker build/recreate passes, PA configures a real RSS
+  data source through the native API, detail/resources/validation/log summary
+  are sanitized, sync/pause/resume require confirmation and pass, and browser
+  status renders current data source readiness.
+- Recommended validation: native focused Go tests, Docker Compose app build and
+  recreate, RSS configuration smoke, live data source management smoke with
+  browser and confirmed sync controls, acceptance checker, report safety
+  checker, `git diff --check`, and sensitive scan.
+- PASS evidence: native Docker runtime evidence plus live API/browser evidence
+  with a safe no-credential configured RSS connector.
+- Blocked/backlog: mark `[!]` if RSS cannot be built, registered, configured,
+  validated, or synced safely; keep generic connector CRUD, credential forms,
+  raw resources, raw logs, and credential-bearing Feishu/Notion/Yuque setup in
+  backlog until explicitly scoped.
+- Status source: Section 6 row `WNX-P3-10`.
 
 ### WNX-P3-06: AgentQA native reference propagation patch draft
 

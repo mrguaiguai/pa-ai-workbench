@@ -1657,6 +1657,67 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return {}
         return self._data_source_safe_dict(payload)
 
+    def create_rss_data_source(self, *, feed_url: str, name: str = "WNX RSS connector smoke") -> dict:
+        self._require_configured()
+        resolved_kb_id = str(self.default_kb_id or "").strip()
+        if not resolved_kb_id:
+            raise KnowledgeBackendUnavailableError(
+                "knowledge base id is required for RSS data source creation",
+                error_code="data_source_kb_id_required",
+                operation="data_source_create",
+            )
+        normalized_feed_url = str(feed_url or "").strip()
+        if not normalized_feed_url.startswith(("http://", "https://")):
+            raise KnowledgeBackendUnavailableError(
+                "RSS feed URL must use http or https",
+                error_code="rss_feed_url_invalid",
+                operation="data_source_create",
+            )
+        payload = {
+            "knowledge_base_id": resolved_kb_id,
+            "name": str(name or "WNX RSS connector smoke")[:80],
+            "type": "rss",
+            "config": {
+                "type": "rss",
+                "credentials": {},
+                "resource_ids": [normalized_feed_url],
+                "settings": {
+                    "feed_url": normalized_feed_url,
+                    "item_limit": 3,
+                },
+            },
+            "sync_mode": "full",
+            "status": "active",
+            "conflict_strategy": "overwrite",
+            "sync_deletions": False,
+            "sync_log_retention_days": 7,
+        }
+        data = self._request_json("POST", "/api/v1/datasource", payload)
+        created = self._unwrap_data(data)
+        if not isinstance(created, dict):
+            return {}
+        return self._data_source_safe_dict(created)
+
+    def validate_data_source(self, data_source_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(data_source_id, safe="")
+        data = self._request_json("POST", f"/api/v1/datasource/{encoded_id}/validate")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            payload = data if isinstance(data, dict) else {}
+        return {
+            "connected": str(payload.get("status") or "").lower() in {"connected", "ok", "success"},
+            "status": _optional_str(payload.get("status")) or "connected",
+            "source": "weknora_api",
+        }
+
+    def list_data_source_resources(self, data_source_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(data_source_id, safe="")
+        data = self._request_json("GET", f"/api/v1/datasource/{encoded_id}/resources")
+        items = self._unwrap_items(data)
+        return self._data_source_resource_summary(items)
+
     def list_data_source_sync_logs(self, data_source_id: str, *, limit: int = 5) -> list[dict]:
         self._require_configured()
         encoded_id = quote(data_source_id, safe="")
@@ -2318,6 +2379,22 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "items_failed": _optional_int(item.get("items_failed")) or 0,
             "has_error": bool(_optional_str(item.get("error_message"))),
             "result_configured": bool(item.get("result")),
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _data_source_resource_summary(items: list) -> dict:
+        type_counts: dict[str, int] = {}
+        count = 0
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            count += 1
+            resource_type = _optional_str(item.get("type")) or "unknown"
+            type_counts[resource_type] = type_counts.get(resource_type, 0) + 1
+        return {
+            "count": count,
+            "type_counts": dict(sorted(type_counts.items())),
             "source": "weknora_api",
         }
 

@@ -12,7 +12,7 @@ The v0.2 version focuses on:
 - Wiki draft / edit / publish / retrieve workflow
 - Modular Agent runtime with persistent conversation memory
 
-This repository is intentionally separated from the upstream WeKnora source tree. WeKnora can be used as a reference or RAG capability source, but this product should remain independently structured under `pa-ai-workbench/`.
+In the combined PA + WeKnora worktree, this product remains independently structured under `pa-ai-workbench/` while using WeKnora native APIs as its capability source through the PA backend BFF.
 
 ## Local Startup
 
@@ -23,7 +23,7 @@ Use mock mode for the safest local demo. Do not copy real credentials, real depa
 Create a local environment if needed:
 
 ```bash
-cd /Users/mac/Downloads/WeKnora-main/pa-ai-workbench/backend
+cd pa-ai-workbench/backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -43,7 +43,7 @@ EMBEDDING_PROVIDER=mock
 Start the API:
 
 ```bash
-cd /Users/mac/Downloads/WeKnora-main/pa-ai-workbench/backend
+cd pa-ai-workbench/backend
 source .venv/bin/activate
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -61,7 +61,7 @@ curl http://127.0.0.1:8000/api/model/status
 Install dependencies and start Vite:
 
 ```bash
-cd /Users/mac/Downloads/WeKnora-main/pa-ai-workbench/frontend
+cd pa-ai-workbench/frontend
 npm install
 npm run dev
 ```
@@ -75,17 +75,12 @@ http://127.0.0.1:5173/
 Build check:
 
 ```bash
-cd /Users/mac/Downloads/WeKnora-main/pa-ai-workbench/frontend
+cd pa-ai-workbench/frontend
 npm run build
 ```
 
-If `npm` is not on PATH in a Codex desktop runtime, use the bundled Node runtime:
-
-```bash
-cd /Users/mac/Downloads/WeKnora-main/pa-ai-workbench/frontend
-/Users/mac/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/typescript/bin/tsc --noEmit
-/Users/mac/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node node_modules/.bin/vite build
-```
+If `npm` is not on PATH, install Node.js 18+ or set `NODE_BIN` before using
+`scripts/pa-dev-services.sh`.
 
 ## v0.2 Model And RAG Configuration
 
@@ -124,12 +119,15 @@ Configure only in `backend/.env` or your shell environment:
 ```text
 CHAT_MODEL_PROVIDER=openai-compatible
 CHAT_MODEL_BASE_URL=https://example-model-endpoint/v1
-CHAT_MODEL_API_KEY=<your-api-key>
+CHAT_MODEL_API_KEY=
 CHAT_MODEL_NAME=<chat-model-name>
 CHAT_MODEL_TIMEOUT_SECONDS=60
 CHAT_MODEL_TEMPERATURE=0.2
 MOCK_MODEL_MODE=false
 ```
+
+Fill API key values locally. Do not commit real provider keys or private
+endpoints.
 
 ### OpenAI-Compatible Embeddings
 
@@ -138,7 +136,7 @@ Configure embeddings separately from chat:
 ```text
 EMBEDDING_PROVIDER=openai-compatible
 EMBEDDING_BASE_URL=https://example-embedding-endpoint/v1
-EMBEDDING_API_KEY=<your-api-key>
+EMBEDDING_API_KEY=
 EMBEDDING_MODEL_NAME=<embedding-model-name>
 EMBEDDING_DIMENSION=1024
 EMBEDDING_TIMEOUT_SECONDS=60

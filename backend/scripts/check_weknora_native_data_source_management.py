@@ -34,6 +34,8 @@ from check_weknora_native_kb_management import _wait_for_json
 
 
 CONFIRM_SYNC_PHRASE = "SYNC_NATIVE_DATA_SOURCE"
+CONFIRM_PAUSE_PHRASE = "PAUSE_NATIVE_DATA_SOURCE"
+CONFIRM_RESUME_PHRASE = "RESUME_NATIVE_DATA_SOURCE"
 
 
 def main() -> int:
@@ -75,6 +77,8 @@ def main() -> int:
             detail_status = "not_configured"
             sync_blocked_status = str(sync_control.get("status"))
             confirmed_sync_status = "not_requested"
+            confirmed_pause_status = "not_requested"
+            confirmed_resume_status = "not_requested"
             coverage_state = "read-only"
             if data_source_count == 0:
                 _assert(connector_read.get("status") == "backlog", "connector detail is backlog without data sources")
@@ -96,10 +100,20 @@ def main() -> int:
                 detail_surfaces = detail.get("surfaces") if isinstance(detail.get("surfaces"), dict) else {}
                 detail_read = _surface(detail_surfaces, "connector_read")
                 detail_logs = _surface(detail_surfaces, "sync_logs")
+                detail_resources = _surface(detail_surfaces, "resources")
+                detail_validation = _surface(detail_surfaces, "validation")
                 detail_sync = _surface(detail_surfaces, "sync_control")
                 _assert(detail_read.get("status") == "live", "data source detail read is live")
                 _assert(detail_logs.get("status") == "live", "sync-log summary read is live")
                 _assert(detail_sync.get("status") == "blocked", "sync control requires confirmation")
+                detail_source = (
+                    detail_read.get("data_source") if isinstance(detail_read.get("data_source"), dict) else {}
+                )
+                if detail_source.get("type") == "rss":
+                    _assert(detail_resources.get("status") == "live", "RSS resource probe is live")
+                    _assert(int(detail_resources.get("count") or 0) > 0, "RSS resource probe has resources")
+                    _assert(detail_validation.get("status") == "live", "RSS validation probe is live")
+                    _assert(bool(detail_validation.get("connected")), "RSS validation is connected")
                 detail_status = "live"
                 blocked_sync = _request_json(
                     backend_port,
@@ -131,6 +145,38 @@ def main() -> int:
                         "confirmed sync returns live or partial",
                     )
                     confirmed_sync_status = str(confirmed_surface.get("status"))
+                    confirmed_pause = _request_json(
+                        backend_port,
+                        "POST",
+                        f"/api/data-sources/native/sources/by-index/{data_source_index}/pause",
+                        {"confirm_token": CONFIRM_PAUSE_PHRASE},
+                    )
+                    _assert(_no_secret_shaped_fields(confirmed_pause), "confirmed pause excludes secret-shaped fields")
+                    confirmed_pause_surface = _surface(
+                        confirmed_pause.get("surfaces") if isinstance(confirmed_pause.get("surfaces"), dict) else {},
+                        "sync_control",
+                    )
+                    _assert(
+                        confirmed_pause_surface.get("status") in {"live", "partial"},
+                        "confirmed pause returns live or partial",
+                    )
+                    confirmed_pause_status = str(confirmed_pause_surface.get("status"))
+                    confirmed_resume = _request_json(
+                        backend_port,
+                        "POST",
+                        f"/api/data-sources/native/sources/by-index/{data_source_index}/resume",
+                        {"confirm_token": CONFIRM_RESUME_PHRASE},
+                    )
+                    _assert(_no_secret_shaped_fields(confirmed_resume), "confirmed resume excludes secret-shaped fields")
+                    confirmed_resume_surface = _surface(
+                        confirmed_resume.get("surfaces") if isinstance(confirmed_resume.get("surfaces"), dict) else {},
+                        "sync_control",
+                    )
+                    _assert(
+                        confirmed_resume_surface.get("status") in {"live", "partial"},
+                        "confirmed resume returns live or partial",
+                    )
+                    confirmed_resume_status = str(confirmed_resume_surface.get("status"))
 
             native_status = _request_json(backend_port, "GET", "/api/native/status?limit=5")
             groups = native_status.get("groups") if isinstance(native_status.get("groups"), dict) else {}
@@ -192,6 +238,12 @@ def main() -> int:
                     overview=sync_control.get("status"),
                     blocked=sync_blocked_status,
                     confirmed=confirmed_sync_status,
+                )
+            )
+            print(
+                "- pause_resume: pause={pause} resume={resume}".format(
+                    pause=confirmed_pause_status,
+                    resume=confirmed_resume_status,
                 )
             )
             print("- mutations: backlog")

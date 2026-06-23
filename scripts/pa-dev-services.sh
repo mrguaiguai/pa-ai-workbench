@@ -18,10 +18,7 @@ FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 
 PYTHON_BIN="${PYTHON_BIN:-$BACKEND_DIR/.venv/bin/python}"
-NODE_BIN="${NODE_BIN:-/Users/mac/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node}"
-if [[ ! -x "$NODE_BIN" ]]; then
-  NODE_BIN="$(command -v node || true)"
-fi
+NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 
 mkdir -p "$RUNTIME_DIR" "$LOG_DIR"
 

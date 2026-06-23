@@ -1,6 +1,6 @@
 # WeKnora Native Expansion Handoff Runbook
 
-Date: 2026-06-23
+Date: 2026-06-24
 
 Task: `WNX-P3-03`
 
@@ -11,8 +11,8 @@ evidence from `WNX-P0-05`.
 
 ## Current State
 
-The WeKnora Native Expansion stage is closed enough for a safe handoff, but it
-is not a final internal production PASS.
+The WeKnora Native Expansion stage has reached the minimum internal production
+PASS threshold with current live evidence.
 
 Authoritative local state sources for the next agent or operator:
 
@@ -50,19 +50,19 @@ Completed WNX scope:
 Current final-report decision:
 
 ```text
-WNX-P3-02: [!]
-coverage current: 11.25 / 15 = 75.0%
+WNX-P3-02: [x]
+coverage current: 12.00 / 15 = 80.0%
 coverage target: 12.00 / 15 = 80.0%
 ```
 
-The blocker is not a service outage. The blocker is an evidence threshold:
+The final PASS depends on the two score-moving unblocks that happened after the
+original handoff:
 
-- `AgentQA/custom Agent` remains `live-partial` because native AgentQA did not
-  return traceable references in the live run, so PA correctly records citation
-  blocking.
-- `Data sources/connectors` remains `read-only` because the current runtime has
-  no configured connector for resources, validation, sync, pause, resume, or
-  sync-log workflow PASS.
+- `WNX-P3-08` moved `AgentQA/custom Agent` to `live-full` with traceable Wiki
+  references and PA history citation locators.
+- `WNX-P3-10` moved `Data sources/connectors` to `live-partial` with a real
+  no-credential native RSS connector, one configured live RSS source, sanitized
+  resources/validation/sync/pause/resume/log evidence, and browser validation.
 
 ## Local Service Recovery
 
@@ -122,20 +122,21 @@ screenshots, `dist`, `node_modules`, `.env`, provider payloads, raw chunks,
 raw vectors, API keys, service tokens, passwords, private endpoints, or private
 key material.
 
-## Next Score-Moving Options
+## Remaining Backlog Options
 
-Do not change the coverage score from prose alone. A future task needs real
-current-run evidence.
+Do not change the coverage score from prose alone. Any future upgrade beyond
+the current 80.0% PASS needs real current-run evidence.
 
-Likely score-moving options:
+Useful future options:
 
 | Option | Expected gain | Required evidence |
 | --- | ---: | --- |
-| AgentQA/custom Agent citation traceability | `+0.5` if promoted from `live-partial` to `live-full` | Native AgentQA emits traceable references or PA receives a documented native reference shape and validates history/citation locators live. |
-| Data source connector workflow | `+0.25` if promoted from `read-only` to `live-partial` | A safe configured connector exists and PA validates sanitized resources, validate, sync, pause/resume, and sync-log summaries without credential or raw log leakage. |
-| Target governance change | depends | Explicit governance task changes the threshold or scope; do not do this silently. |
+| Credential-bearing data source workflow | Optional stretch | Operator-configured Feishu/Notion/Yuque source with masked validation, sanitized resources/sync logs, confirmation-gated sync/pause/resume, and no raw credentials or private endpoints in output. |
+| MCP/web-search/vector/model active tests | Optional stretch | Explicit confirmation, masked credentials, sanitized results, and no raw provider payloads. |
+| FAQ/tags/favorites/skills workflow | Optional stretch | Native live read/write workflow with ownership, confirmation, and audit boundaries. |
 
-If none of these can be proven, keep `WNX-P3-02` blocked.
+If none of these are explicitly scoped, keep them as backlog and do not broaden
+the already-passed internal production scope.
 
 ## Copy-Paste New-Chat Prompt
 
@@ -168,10 +169,11 @@ weknora-first-mvp
 
 当前事实：
 - 信任本地 git log 和 spec，而不是手抄旧 hash。
-- WNX-P3-02 是 [!] blocked，不是 PASS。
-- 当前覆盖率是 11.25 / 15 = 75.0%，目标是 12.00 / 15 = 80.0%。
-- blocker 主要是 AgentQA citation traceability 和 Data source connector workflow。
-- WNX-P3-03 handoff/runbook 已完成。
+- WNX-P3-02 是 [x] PASS。
+- 当前覆盖率是 12.00 / 15 = 80.0%，目标是 12.00 / 15 = 80.0%。
+- WNX-P3-08 已把 AgentQA/custom Agent 推到 live-full。
+- WNX-P3-10 已把 Data sources/connectors 推到 live-partial，证据是 native RSS connector + configured RSS source + sanitized resources/validation/sync/pause/resume/log/browser smoke。
+- WNX-P3-03 handoff/runbook 已刷新。
 - docs/PHASE5_B5_DIALOGUE_RETROSPECTIVE_CN.md 是未跟踪文件，不要 stage，除非我明确改范围。
 - 不 push，除非我明确要求。
 
@@ -184,10 +186,7 @@ weknora-first-mvp
 - spec 状态只能在验证通过或真实 blocked/backlog 后更新。
 
 下一步建议：
-先不要把内部生产版称为 PASS。若要解除 blocker，选择一个明确 score-moving 任务：
-1. 验证 native AgentQA 是否能返回 traceable references，并更新 PA citation/history 证据；
-2. 或配置一个安全 data source connector smoke，验证 sanitized resources/validate/sync/log workflow；
-3. 或做治理任务，明确调整 80% target/scope。
+不要继续扩大本阶段范围，除非用户明确授权新的 WNX-*。如果继续做，只选择一个明确任务，例如 credential-bearing connector stretch、MCP/web-search/vector/model active test、FAQ/tag/favorite/skill workflow，且必须保持 live evidence 和 secret-safety 边界。
 ```
 
 ## Operator Notes
@@ -202,7 +201,7 @@ weknora-first-mvp
 
 ## PASS Boundary
 
-`WNX-P3-03` passes when this handoff lets a new agent or operator recover the
-local service state, understand the blocked final-report decision, find the
-source-of-truth reports, and continue without leaking secrets or broadening the
-scope.
+`WNX-P3-03` remains valid when this handoff lets a new agent or operator recover
+the local service state, understand the final PASS decision and remaining
+backlog, find the source-of-truth reports, and continue without leaking secrets
+or broadening the scope.

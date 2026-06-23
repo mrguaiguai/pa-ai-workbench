@@ -49,7 +49,7 @@ Eligible capability groups: `15`.
 Current score:
 
 ```text
-11.75 / 15 = 78.3%
+12.00 / 15 = 80.0%
 ```
 
 Minimum internal production target:
@@ -80,7 +80,7 @@ safe limited workflows without leaking secrets or rebuilding WeKnora admin.
 | Web search | `live-partial` | 0.5 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_WEB_SEARCH_VISIBILITY_REPORT.md`; `docs/WEKNORA_NATIVE_WEB_SEARCH_MANAGEMENT_LIVE_REPORT.md`; PA reads native provider type catalog and configured-provider list live, exposes sanitized provider detail/test controls, renders Capability Center web search management status, and records no configured provider for current-run external tests or AgentQA web-search readiness. | `WNX-P2-03` live API/browser smoke, masked response checks, and sensitive scan. | Current tenant has no configured provider; credential forms, raw credential tests, raw search debugging, provider CRUD, and PA-owned web-search orchestration remain backlog without explicit approval/audit design. | `WNX-P3-02` |
 | Vector store | `live-partial` | 0.5 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md`; `docs/WEKNORA_NATIVE_VECTOR_STORE_MANAGEMENT_LIVE_REPORT.md`; PA reads native vector-store types/list/detail, active KB binding, and embedding readiness without raw config or raw store IDs. | `WNX-P2-04` live API/browser smoke, masked response checks, blocked default test path, and sensitive scan. | Confirmed external vector-store test was not requested; CRUD, raw config/test display, KB rebind mutation, and PA-owned vector administration remain backlog. | `WNX-P3-02` |
 | Model/embedding/rerank/parser | `live-partial` | 0.5 | `live-partial` | 0.5 | `docs/WEKNORA_FIRST_STATUS_REPORT_GATES.md`; `docs/WEKNORA_FIRST_VECTOR_STORE_VISIBILITY_REPORT.md`; `docs/WEKNORA_NATIVE_MODEL_CONFIG_LIVE_REPORT.md`; WNX-P2-01 validated masked native provider catalog, model catalog, parser engines, storage engine status, and PA chat/embedding runtime. | `WNX-P2-01` live API/browser smoke with sanitized counts and `blocked_admin_only` active test boundaries. | Chat/embedding runtime and read-only native model/parser/storage visibility are live; remote model, embedding, rerank, parser, and storage active tests remain blocked until operator confirmation and secret-handling design exists. | `WNX-P3-02` |
-| Data sources/connectors | `read-only` | 0.25 | `live-partial` | 0.5 | `docs/WEKNORA_NATIVE_EXPANSION_ARCHITECTURE.md`; `docs/WEKNORA_NATIVE_DATA_SOURCE_CONNECTOR_LIVE_REPORT.md`; `docs/WEKNORA_NATIVE_DATA_SOURCE_CONFIGURED_CONNECTOR_SMOKE_REPORT.md`; `docs/WEKNORA_NATIVE_DATA_SOURCE_CONNECTOR_UNBLOCK_RECHECK_REPORT.md`; WNX-P2-05 validated native connector type catalog and active-KB data source list through PA API/browser with no configured connector in the live runtime; WNX-P3-05 revalidated connector catalog `count=12`, data source `count=0`, and `credentials_configured=0`; WNX-P3-09 rechecked the native registry and found only Feishu/Notion/Yuque implemented, all requiring real external credentials before configured connector PASS. | `WNX-P2-05`, `WNX-P3-05`, and `WNX-P3-09` live API/browser smokes with sanitized connector catalog/list output. | Current runtime has 0 configured data sources; resources, validation, sync, pause, resume, sync-log workflow PASS, connector CRUD, credential forms, and raw sync-log details remain backlog until a safe configured connector exists. Catalog-only `auth_type=none` connector metadata cannot count as configured workflow evidence. | configure a real safe Feishu/Notion/Yuque connector outside Codex output, then a later sanitized live smoke |
+| Data sources/connectors | `live-partial` | 0.5 | `live-partial` | 0.5 | `docs/WEKNORA_NATIVE_EXPANSION_ARCHITECTURE.md`; `docs/WEKNORA_NATIVE_DATA_SOURCE_CONNECTOR_LIVE_REPORT.md`; `docs/WEKNORA_NATIVE_DATA_SOURCE_CONFIGURED_CONNECTOR_SMOKE_REPORT.md`; `docs/WEKNORA_NATIVE_DATA_SOURCE_CONNECTOR_UNBLOCK_RECHECK_REPORT.md`; `docs/WEKNORA_NATIVE_RSS_DATA_SOURCE_CONNECTOR_LIVE_REPORT.md`; WNX-P3-10 implemented and registered a no-credential native RSS connector, configured one live RSS data source through the native API, and validated sanitized resources/validation/sync/pause/resume/log/browser evidence through PA. | `WNX-P3-10` native Docker build/runtime evidence, RSS configuration smoke, and live PA API/browser data source management smoke with `coverage_state=live-partial`, `data_sources.count=1`, `credentials_configured=0`, confirmed sync live, and pause/resume live. | Data sources/connectors is live-partial only: generic connector CRUD, credential forms, raw resource listing, raw sync-log details, deletion-sync controls, and credential-bearing Feishu/Notion/Yuque setup remain backlog. RSS output is sanitized to counts/status and does not expose raw config or feed URL. | `WNX-P3-02` final acceptance refresh; future credential-bearing connector workflows remain backlog until separately scoped. |
 | FAQ/tags/favorites/skills | `live-partial` | 0.5 | `live-partial` | 0.5 | `docs/WEKNORA_NATIVE_EXPANSION_ARCHITECTURE.md`; `docs/WEKNORA_NATIVE_WORKBENCH_ORGANIZATION_LIVE_REPORT.md`; WNX-P2-06 validated native KB tags, user favorites, and Skills list through PA API/browser with FAQ blocked in the current active-KB runtime. | `WNX-P2-06` live API/browser smoke with sanitized tags/skills/favorites output and Capability Center DOM validation. | FAQ read is blocked for the current active-KB runtime; FAQ/tag/favorite/skill mutations remain backlog until confirmation, ownership, sandbox, and audit design exists. | `WNX-P3-02` |
 | History/citation/product shell | `live-full` | 1.0 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_CITATION_CONTRACT.md`; `docs/WEKNORA_FIRST_FRONTEND_BROWSER_ACCEPTANCE_REPORT.md`; `docs/WEKNORA_NATIVE_HISTORY_CITATION_UNIFICATION_LIVE_REPORT.md`; PA pages, citation contract, traceable counts, citation locators, and visible native citation blockers are live. | `WNX-P1-07` live API/browser validation across native knowledge-chat history, citation locator, AgentQA citation blocker, History filters, and browser DOM; `WNX-P3-08` revalidated AgentQA locatable citations. | AgentQA citation now has traceable Wiki references in the current live path; PA still fails closed for any future native workflow without traceable references. Advanced history analytics remain backlog. | `WNX-P3-01`, `WNX-P3-08` |
 
@@ -97,7 +97,7 @@ The minimum target plan reaches 80% by completing these state moves:
 Planned target score:
 
 ```text
-11.75 current + 0.25 planned gain = 12.00 / 15 = 80.0%
+12.00 current + 0.00 planned gain = 12.00 / 15 = 80.0%
 ```
 
 `WNX-P3-04` attempted the AgentQA score move and found the current runtime
@@ -131,7 +131,13 @@ planned AgentQA target remains pending and no score is added.
 references for the live selected Wiki Agent path. The current live AgentQA
 workflow now returns traceable references, PA saves citations, and history
 locators succeed. AgentQA/custom Agent is therefore `live-full`, adding `+0.5`.
-The remaining target gap is `+0.25` from Data sources/connectors.
+
+`WNX-P3-10` completed the remaining Data sources/connectors score move by
+implementing/registering a real no-credential RSS connector in the native
+runtime, configuring one live RSS source, and validating sanitized
+resources/validation/sync/pause/resume/log/browser evidence through PA.
+Data sources/connectors is therefore `live-partial`, adding `+0.25` and
+bringing the stage to `12.00 / 15 = 80.0%`.
 
 Stretch target:
 
@@ -197,6 +203,9 @@ Future tasks must update this ledger when they change a capability state:
   implemented connectors require real external credentials.
 - `WNX-P3-08`: upgrades AgentQA/custom Agent to `live-full` after current PA
   smokes show traceable AgentQA citations and locators.
+- `WNX-P3-10`: upgrades Data sources/connectors to `live-partial` after a real
+  no-credential native RSS connector is implemented, configured, and validated
+  with sanitized live API/browser evidence.
 
 ## WNX-P0-04 Harness Validation
 
@@ -205,8 +214,8 @@ and `docs/WEKNORA_NATIVE_EXPANSION_ACCEPTANCE_HARNESS_REPORT.md`.
 
 The harness validates the ledger math and stage evidence boundaries:
 
-- the checker parses the current ledger score; after `WNX-P3-08` this is
-  `11.75 / 15 = 78.3%`;
+- the checker parses the current ledger score; after `WNX-P3-10` this is
+  `12.00 / 15 = 80.0%`;
 - target score remains `12.00 / 15 = 80.0%`;
 - current score below target is allowed only because the WNX stage is still in
   progress;

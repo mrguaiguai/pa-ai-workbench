@@ -59,6 +59,7 @@ REQUIRED_REPORTS = {
     "WNX-P3-07": DOCS_ROOT / "WEKNORA_NATIVE_AGENTQA_RUNTIME_VALIDATION_REPORT.md",
     "WNX-P3-08": DOCS_ROOT / "WEKNORA_NATIVE_AGENTQA_WIKI_REFERENCE_LIVE_REPORT.md",
     "WNX-P3-09": DOCS_ROOT / "WEKNORA_NATIVE_DATA_SOURCE_CONNECTOR_UNBLOCK_RECHECK_REPORT.md",
+    "WNX-P3-10": DOCS_ROOT / "WEKNORA_NATIVE_RSS_DATA_SOURCE_CONNECTOR_LIVE_REPORT.md",
 }
 
 COMPLETED_PREREQUISITE_TASKS = (
@@ -86,6 +87,7 @@ COMPLETED_PREREQUISITE_TASKS = (
     "WNX-P3-01",
     "WNX-P3-03",
     "WNX-P3-08",
+    "WNX-P3-10",
 )
 
 EVIDENCE_LABELS = (
@@ -349,17 +351,17 @@ def _check_report_evidence(task_id: str, path: Path, text: str) -> list[Issue]:
                 issues.append(Issue(path, "missing_harness_marker", f"missing harness marker {required}"))
     if task_id == "WNX-P3-02":
         for required in (
-            "Decision: `BLOCKED`",
-            "11.75 / 15 = 78.3%",
+            "Decision: `PASS`",
             "12.00 / 15 = 80.0%",
+            "coverage current: 12.00/15 = 80.0%",
             "Mock evidence, fixture-only evidence, cached evidence",
         ):
             if required not in text:
-                issues.append(Issue(path, "missing_final_blocked_marker", f"missing final blocked marker {required}"))
+                issues.append(Issue(path, "missing_final_pass_marker", f"missing final PASS marker {required}"))
     if task_id == "WNX-P3-03":
         for required in (
             "Copy-Paste New-Chat Prompt",
-            "WNX-P3-02 是 [!] blocked",
+            "WNX-P3-02 是 [x] PASS",
             "docs/PHASE5_B5_DIALOGUE_RETROSPECTIVE_CN.md",
             "git log --oneline -5",
         ):
@@ -379,7 +381,7 @@ def _final_blocked_report_is_explicit(task_statuses: dict[str, str]) -> bool:
         return False
     required = (
         "Decision: `BLOCKED`",
-        "coverage current: 11.75/15 = 78.3%",
+        "coverage current:",
         "coverage target: 12.00/15 = 80.0%",
         "The stage should not be called internal production PASS",
     )
