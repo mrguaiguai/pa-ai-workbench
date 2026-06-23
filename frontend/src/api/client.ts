@@ -367,6 +367,26 @@ export type DocumentUploadRequest = {
   knowledge_base_id?: string;
 };
 
+export type DocumentUrlCreateRequest = {
+  url: string;
+  title?: string;
+  business_area?: string;
+  document_type?: string;
+  source?: string;
+  keywords_json?: string;
+  knowledge_base_id?: string;
+};
+
+export type DocumentManualCreateRequest = {
+  title: string;
+  content: string;
+  business_area?: string;
+  document_type?: string;
+  source?: string;
+  keywords_json?: string;
+  knowledge_base_id?: string;
+};
+
 export type DocumentUploadResponse = {
   document: Document;
 };
@@ -374,6 +394,14 @@ export type DocumentUploadResponse = {
 export type DocumentRetryIndexResponse = {
   document: Document;
   message: string;
+};
+
+export type DocumentLifecycleActionResponse = {
+  document: Document;
+  action: string;
+  message: string;
+  evidence_type: string;
+  source: string;
 };
 
 export type DocumentListFilters = {
@@ -459,6 +487,16 @@ export type DocumentProcessingEvent = {
   metadata_json: string | null;
   error_message: string | null;
   created_at: string;
+};
+
+export type DocumentSpansResponse = {
+  source: string;
+  external_doc_id: string | null;
+  parse_status: string | null;
+  current_attempt: number | null;
+  current_stage: string | null;
+  trace: Record<string, unknown>;
+  last_error: Record<string, unknown> | null;
 };
 
 export type DocumentIndexResponse = {
@@ -956,6 +994,16 @@ export const apiClient = {
       headers: {},
     });
   },
+  ingestDocumentUrl: (payload: DocumentUrlCreateRequest) =>
+    request<DocumentUploadResponse>("/api/documents/url", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  ingestManualDocument: (payload: DocumentManualCreateRequest) =>
+    request<DocumentUploadResponse>("/api/documents/manual", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   retryDocumentIndex: (documentId: string) =>
     request<DocumentRetryIndexResponse>(`/api/documents/${documentId}/retry-index`, {
       method: "POST",
@@ -968,6 +1016,24 @@ export const apiClient = {
     request<DocumentIndexResponse>(`/api/documents/${documentId}/reindex`, {
       method: "POST",
     }),
+  reparseNativeDocument: (documentId: string) =>
+    request<DocumentLifecycleActionResponse>(`/api/documents/${documentId}/native-reparse`, {
+      method: "POST",
+    }),
+  cancelDocumentProcessing: (documentId: string) =>
+    request<DocumentLifecycleActionResponse>(`/api/documents/${documentId}/cancel-processing`, {
+      method: "POST",
+    }),
+  deleteDocument: (documentId: string) =>
+    request<DocumentLifecycleActionResponse>(`/api/documents/${documentId}`, {
+      method: "DELETE",
+    }),
+  documentPreviewUrl: (documentId: string) =>
+    `${API_BASE_URL}/api/documents/${encodeURIComponent(documentId)}/preview`,
+  documentDownloadUrl: (documentId: string) =>
+    `${API_BASE_URL}/api/documents/${encodeURIComponent(documentId)}/download`,
+  getDocumentSpans: (documentId: string) =>
+    request<DocumentSpansResponse>(`/api/documents/${documentId}/spans`),
   listDocumentChunks: (documentId: string) =>
     request<DocumentChunkListResponse>(`/api/documents/${documentId}/chunks`),
   listDocumentEvents: (documentId: string) =>

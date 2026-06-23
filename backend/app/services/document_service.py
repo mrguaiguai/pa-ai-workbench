@@ -24,6 +24,7 @@ from knowledge_engine.embeddings.schemas import EmbeddingVector
 from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.log_context import weknora_log_context
+from knowledge_engine.schemas import KnowledgeDocument
 from knowledge_engine.parsers import DocumentParser
 from knowledge_engine.parsers import FileDocumentParser
 from knowledge_engine.parsers import ParsedDocument
@@ -33,7 +34,7 @@ from knowledge_engine.vectorstores import get_vector_store
 
 MAX_ERROR_MESSAGE_CHARS = 500
 DOCUMENT_PROCESSING_TIMEOUT_SECONDS = 30 * 60
-PROCESSING_STATUSES = {"uploaded", "parsing", "chunking", "embedding", "indexing"}
+PROCESSING_STATUSES = {"uploaded", "parsing", "chunking", "embedding", "indexing", "deleting"}
 
 
 class DocumentWorkflowError(Exception):
@@ -72,6 +73,162 @@ async def create_document(
     if settings.knowledge_backend == "weknora_api":
         selected_kb_id = (knowledge_base_id or "").strip() or active_knowledge_base_id(session)
         _upload_document_to_weknora(session, document, knowledge_base_id=selected_kb_id)
+    return document
+
+
+def create_document_from_url(
+    session: Session,
+    url: str,
+    title: str | None = None,
+    business_area: str | None = None,
+    document_type: str | None = None,
+    source: str | None = None,
+    keywords_json: str | None = None,
+    knowledge_base_id: str | None = None,
+) -> Document:
+    normalized_url = str(url or "").strip()
+    if not normalized_url:
+        raise DocumentWorkflowError("URL is required.")
+    settings = get_settings()
+    document = Document(
+        title=title or normalized_url,
+        business_area=business_area,
+        document_type=document_type or "url",
+        source=source or "url",
+        keywords_json=keywords_json,
+        file_name=None,
+        file_path=None,
+        file_size=None,
+        mime_type=None,
+        knowledge_backend=settings.knowledge_backend,
+        external_doc_id=None,
+        status="uploaded",
+    )
+    session.add(document)
+    session.commit()
+    session.refresh(document)
+    if settings.knowledge_backend != "weknora_api":
+        return document
+
+    selected_kb_id = (knowledge_base_id or "").strip() or active_knowledge_base_id(session)
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_url_ingest",
+        status="started",
+        message="WeKnora URL ingestion started.",
+    )
+    session.commit()
+    try:
+        with _document_weknora_log_context(document):
+            uploaded = _weknora_backend().create_document_from_url(
+                normalized_url,
+                metadata={
+                    "document_id": document.id,
+                    "title": document.title,
+                    "business_area": document.business_area,
+                    "document_type": document.document_type,
+                    "source": document.source,
+                    "keywords_json": document.keywords_json,
+                    "kb_id": selected_kb_id,
+                },
+            )
+    except KnowledgeBackendUnavailableError as exc:
+        _fail_document_step(
+            session=session,
+            document=document,
+            failed_step="weknora_url_ingest",
+            exc=DocumentWorkflowError(str(exc)),
+        )
+        return document
+
+    _apply_weknora_document_result(
+        session=session,
+        document=document,
+        uploaded=uploaded,
+        step="weknora_url_ingest",
+        message="WeKnora URL ingestion submitted.",
+    )
+    return document
+
+
+def create_manual_document(
+    session: Session,
+    title: str,
+    content: str,
+    business_area: str | None = None,
+    document_type: str | None = None,
+    source: str | None = None,
+    keywords_json: str | None = None,
+    knowledge_base_id: str | None = None,
+) -> Document:
+    normalized_title = str(title or "").strip()
+    normalized_content = str(content or "").strip()
+    if not normalized_title:
+        raise DocumentWorkflowError("Manual document title is required.")
+    if not normalized_content:
+        raise DocumentWorkflowError("Manual document content is required.")
+    settings = get_settings()
+    document = Document(
+        title=normalized_title,
+        business_area=business_area,
+        document_type=document_type or "manual",
+        source=source or "manual",
+        keywords_json=keywords_json,
+        file_name=None,
+        file_path=None,
+        file_size=len(normalized_content.encode("utf-8")),
+        mime_type="text/markdown; charset=utf-8",
+        knowledge_backend=settings.knowledge_backend,
+        external_doc_id=None,
+        status="uploaded",
+    )
+    session.add(document)
+    session.commit()
+    session.refresh(document)
+    if settings.knowledge_backend != "weknora_api":
+        return document
+
+    selected_kb_id = (knowledge_base_id or "").strip() or active_knowledge_base_id(session)
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_manual_ingest",
+        status="started",
+        message="WeKnora manual ingestion started.",
+    )
+    session.commit()
+    try:
+        with _document_weknora_log_context(document):
+            uploaded = _weknora_backend().create_manual_document(
+                normalized_title,
+                normalized_content,
+                metadata={
+                    "document_id": document.id,
+                    "title": document.title,
+                    "business_area": document.business_area,
+                    "document_type": document.document_type,
+                    "source": document.source,
+                    "keywords_json": document.keywords_json,
+                    "kb_id": selected_kb_id,
+                },
+            )
+    except KnowledgeBackendUnavailableError as exc:
+        _fail_document_step(
+            session=session,
+            document=document,
+            failed_step="weknora_manual_ingest",
+            exc=DocumentWorkflowError(str(exc)),
+        )
+        return document
+
+    _apply_weknora_document_result(
+        session=session,
+        document=document,
+        uploaded=uploaded,
+        step="weknora_manual_ingest",
+        message="WeKnora manual ingestion submitted.",
+    )
     return document
 
 
@@ -444,6 +601,122 @@ def recover_document_processing(session: Session, document: Document) -> tuple[D
     return document, "Document retry submitted to WeKnora using the existing PA record."
 
 
+def get_document_spans(session: Session, document: Document) -> dict:
+    if not _is_weknora_document(document) or not document.external_doc_id:
+        return {
+            "source": document.knowledge_backend,
+            "status": "backlog",
+            "reason": "Native WeKnora spans are only available for WeKnora documents.",
+        }
+    try:
+        with _document_weknora_log_context(document):
+            spans = _weknora_backend().get_document_spans(document.external_doc_id)
+    except KnowledgeBackendUnavailableError as exc:
+        _record_event(
+            session=session,
+            document=document,
+            step="weknora_spans",
+            status="failed",
+            message="WeKnora document spans refresh failed.",
+            error_message=str(exc)[:MAX_ERROR_MESSAGE_CHARS],
+        )
+        session.commit()
+        raise DocumentWorkflowError(str(exc)) from exc
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_spans",
+        status="completed",
+        message="WeKnora document spans refreshed.",
+        metadata={
+            "parse_status": spans.get("parse_status"),
+            "current_stage": spans.get("current_stage"),
+            "current_attempt": spans.get("current_attempt"),
+        },
+    )
+    session.commit()
+    return spans
+
+
+def reparse_native_document(session: Session, document: Document) -> tuple[Document, str]:
+    return _run_native_document_action(
+        session=session,
+        document=document,
+        action="reparse",
+        step="weknora_reparse",
+        message="WeKnora reparse submitted.",
+        runner=lambda backend, external_doc_id: backend.reparse_document(external_doc_id),
+    )
+
+
+def cancel_native_document_parse(session: Session, document: Document) -> tuple[Document, str]:
+    if document.status not in PROCESSING_STATUSES:
+        _record_event(
+            session=session,
+            document=document,
+            step="weknora_cancel",
+            status="skipped",
+            message="WeKnora cancel skipped because the document is not processing.",
+            metadata={"status": document.status},
+        )
+        session.commit()
+        return document, "Cancel is only available while WeKnora reports active processing."
+    return _run_native_document_action(
+        session=session,
+        document=document,
+        action="cancel_parse",
+        step="weknora_cancel",
+        message="WeKnora cancel submitted.",
+        runner=lambda backend, external_doc_id: backend.cancel_document_parse(external_doc_id),
+    )
+
+
+def delete_native_document(session: Session, document: Document) -> tuple[Document, str]:
+    return _run_native_document_action(
+        session=session,
+        document=document,
+        action="delete",
+        step="weknora_delete",
+        message="WeKnora delete submitted.",
+        runner=lambda backend, external_doc_id: backend.delete_document(external_doc_id),
+    )
+
+
+def read_native_document_file(session: Session, document: Document, *, preview: bool = False) -> dict:
+    if not _is_weknora_document(document) or not document.external_doc_id:
+        raise DocumentWorkflowError("Native preview/download is only available for WeKnora documents.")
+    try:
+        with _document_weknora_log_context(document):
+            file_payload = _weknora_backend().read_document_file(
+                document.external_doc_id,
+                preview=preview,
+            )
+    except KnowledgeBackendUnavailableError as exc:
+        _record_event(
+            session=session,
+            document=document,
+            step="weknora_preview" if preview else "weknora_download",
+            status="failed",
+            message="WeKnora document file read failed.",
+            error_message=str(exc)[:MAX_ERROR_MESSAGE_CHARS],
+        )
+        session.commit()
+        raise DocumentWorkflowError(str(exc)) from exc
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_preview" if preview else "weknora_download",
+        status="completed",
+        message="WeKnora document file was proxied through PA.",
+        metadata={
+            "content_type": file_payload.get("content_type"),
+            "content_length": file_payload.get("content_length"),
+        },
+    )
+    session.commit()
+    return file_payload
+
+
 def _is_weknora_document(document: Document) -> bool:
     return document.knowledge_backend == "weknora_api"
 
@@ -467,6 +740,64 @@ def _weknora_native_action_metadata(
         "status": document.status,
         "failed_step": document.failed_step,
     }
+
+
+def _run_native_document_action(
+    session: Session,
+    document: Document,
+    action: str,
+    step: str,
+    message: str,
+    runner,
+) -> tuple[Document, str]:
+    if not _is_weknora_document(document) or not document.external_doc_id:
+        raise DocumentWorkflowError("Native lifecycle action is only available for WeKnora documents.")
+    _record_event(
+        session=session,
+        document=document,
+        step=step,
+        status="started",
+        message=message,
+        metadata={"status": document.status},
+    )
+    session.commit()
+    try:
+        with _document_weknora_log_context(document):
+            result = runner(_weknora_backend(), document.external_doc_id)
+    except KnowledgeBackendUnavailableError as exc:
+        _fail_document_step(
+            session=session,
+            document=document,
+            failed_step=step,
+            exc=DocumentWorkflowError(str(exc)),
+        )
+        raise DocumentWorkflowError(str(exc)) from exc
+
+    if action == "delete":
+        document.status = "deleting"
+    elif result.get("status") and result.get("status") != "unknown":
+        document.status = str(result["status"])
+    else:
+        document.status = "uploaded"
+    document.error_message = None
+    document.failed_step = None
+    document.updated_at = utc_now()
+    session.add(document)
+    _record_event(
+        session=session,
+        document=document,
+        step=step,
+        status="completed",
+        message=result.get("message") or message,
+        metadata={
+            "action": action,
+            "task_id": result.get("task_id"),
+            "native_status": result.get("native_status"),
+        },
+    )
+    session.commit()
+    session.refresh(document)
+    return document, str(result.get("message") or message)
 
 
 def document_processing_summary(document: Document) -> dict[str, Any]:
@@ -692,6 +1023,38 @@ def _upload_document_to_weknora(
     session.refresh(document)
 
 
+def _apply_weknora_document_result(
+    session: Session,
+    document: Document,
+    uploaded: KnowledgeDocument,
+    step: str,
+    message: str,
+) -> None:
+    document.external_doc_id = uploaded.external_doc_id
+    document.knowledge_backend = uploaded.source
+    document.status = uploaded.status
+    document.error_message = None
+    document.failed_step = None
+    document.updated_at = utc_now()
+    session.add(document)
+    _record_event(
+        session=session,
+        document=document,
+        step=step,
+        status="completed",
+        message=message,
+        metadata={
+            "external_doc_id": uploaded.external_doc_id,
+            "status": uploaded.status,
+            "title": uploaded.title,
+            "source": uploaded.source,
+            "weknora": uploaded.metadata,
+        },
+    )
+    session.commit()
+    session.refresh(document)
+
+
 def _weknora_backend() -> WeKnoraApiBackend:
     settings = get_settings()
     return WeKnoraApiBackend(
@@ -736,6 +1099,8 @@ def _active_processing_message(document: Document) -> str:
         return "WeKnora is splitting the document into chunks."
     if document.status in {"embedding", "indexing"}:
         return "WeKnora is embedding and indexing the document."
+    if document.status == "deleting":
+        return "WeKnora document deletion has been submitted."
     return "Document processing is active."
 
 

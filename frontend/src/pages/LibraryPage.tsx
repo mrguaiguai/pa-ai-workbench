@@ -1,12 +1,17 @@
 import {
   Database,
+  Download,
   Eye,
   FileText,
+  Keyboard,
+  Link,
   Loader2,
   Pin,
   RefreshCw,
   RotateCcw,
+  Trash2,
   Upload,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
@@ -15,6 +20,7 @@ import {
   ApiError,
   Document,
   DocumentChunk,
+  DocumentSpansResponse,
   DocumentProcessingEvent,
   NativeKnowledgeBaseItem,
   NativeKnowledgeBaseOverviewResponse,
@@ -32,6 +38,8 @@ type LibraryForm = {
   businessArea: string;
   documentType: string;
   source: string;
+  url: string;
+  manualContent: string;
 };
 
 type LibraryFilters = {
@@ -44,12 +52,15 @@ type LoadState = "idle" | "loading" | "error";
 type ChunkLoadState = "idle" | "loading" | "error";
 type EventLoadState = "idle" | "loading" | "error";
 type KnowledgeBaseLoadState = "idle" | "loading" | "error";
+type IngestionMode = "file" | "url" | "manual";
 
 const initialForm: LibraryForm = {
   title: "",
   businessArea: "",
   documentType: "",
   source: "手动上传",
+  url: "",
+  manualContent: "",
 };
 
 const initialFilters: LibraryFilters = {
@@ -58,7 +69,7 @@ const initialFilters: LibraryFilters = {
   errorOnly: false,
 };
 
-const runningStatuses = new Set(["uploaded", "parsing", "chunking", "embedding", "indexing"]);
+const runningStatuses = new Set(["uploaded", "parsing", "chunking", "embedding", "indexing", "deleting"]);
 const parsedStatuses = new Set(["parsed", "chunked", "embedding", "indexing", "indexed"]);
 const readyStatuses = new Set(["indexed"]);
 
@@ -156,6 +167,9 @@ function indexStatus(document: Document) {
   if (document.status === "indexing") {
     return "索引中";
   }
+  if (document.status === "deleting") {
+    return "删除中";
+  }
   if (document.status === "failed" && document.failed_step === "index") {
     return "索引失败";
   }
@@ -216,6 +230,9 @@ function statusHint(document: Document) {
   }
   if (document.status === "indexing") {
     return "索引完成后可提问";
+  }
+  if (document.status === "deleting") {
+    return "删除任务已提交";
   }
   if (document.status === "embedding") {
     return "向量化完成后进入索引";
@@ -350,13 +367,16 @@ export function LibraryPage() {
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [ingestionMode, setIngestionMode] = useState<IngestionMode>("file");
   const [form, setForm] = useState<LibraryForm>(initialForm);
   const [filters, setFilters] = useState<LibraryFilters>(initialFilters);
   const [isUploading, setIsUploading] = useState(false);
   const [isRefreshingStatuses, setIsRefreshingStatuses] = useState(false);
   const [reindexingId, setReindexingId] = useState<string | null>(null);
+  const [lifecycleActionId, setLifecycleActionId] = useState<string | null>(null);
   const [previewDocumentId, setPreviewDocumentId] = useState<string | null>(null);
   const [chunks, setChunks] = useState<DocumentChunk[]>([]);
+  const [spans, setSpans] = useState<DocumentSpansResponse | null>(null);
   const [chunkLoadState, setChunkLoadState] = useState<ChunkLoadState>("idle");
   const [chunkError, setChunkError] = useState<string | null>(null);
   const [events, setEvents] = useState<DocumentProcessingEvent[]>([]);
@@ -415,6 +435,7 @@ export function LibraryPage() {
           setPreviewDocumentId(null);
           setChunks([]);
           setEvents([]);
+          setSpans(null);
         }
         applyHashTarget(response.items);
         setLoadState("idle");
@@ -490,22 +511,57 @@ export function LibraryPage() {
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedFile) {
+    if (ingestionMode === "file" && !selectedFile) {
       setError("请选择文件");
+      return;
+    }
+    if (ingestionMode === "url" && !form.url.trim()) {
+      setError("请输入 URL");
+      return;
+    }
+    if (ingestionMode === "manual" && (!form.title.trim() || !form.manualContent.trim())) {
+      setError("请输入标题和正文");
       return;
     }
 
     setIsUploading(true);
     setError(null);
-    apiClient
-      .uploadDocument({
-        file: selectedFile,
-        title: form.title.trim() || selectedFile.name,
-        business_area: form.businessArea.trim(),
-        document_type: form.documentType.trim(),
-        source: form.source.trim(),
-        knowledge_base_id: selectedKbId || undefined,
-      })
+    const sourceValue =
+      ingestionMode === "file"
+        ? form.source.trim()
+        : form.source.trim() && form.source.trim() !== initialForm.source
+          ? form.source.trim()
+          : ingestionMode;
+    const commonPayload = {
+      title: form.title.trim(),
+      business_area: form.businessArea.trim(),
+      document_type: form.documentType.trim(),
+      source: sourceValue,
+      knowledge_base_id: selectedKbId || undefined,
+    };
+    const requestPromise =
+      ingestionMode === "file"
+        ? apiClient.uploadDocument({
+            file: selectedFile as File,
+            ...commonPayload,
+            title: commonPayload.title || (selectedFile as File).name,
+          })
+        : ingestionMode === "url"
+          ? apiClient.ingestDocumentUrl({
+              ...commonPayload,
+              title: commonPayload.title || form.url.trim(),
+              url: form.url.trim(),
+              source: commonPayload.source || "url",
+              document_type: commonPayload.document_type || "url",
+            })
+          : apiClient.ingestManualDocument({
+              ...commonPayload,
+              title: commonPayload.title,
+              content: form.manualContent.trim(),
+              source: commonPayload.source || "manual",
+              document_type: commonPayload.document_type || "manual",
+            });
+    requestPromise
       .then((response) => {
         setDocuments((current) => [response.document, ...current]);
         setSelectedFile(null);
@@ -549,6 +605,14 @@ export function LibraryPage() {
         setChunkLoadState("error");
       });
     apiClient
+      .getDocumentSpans(documentId)
+      .then((response) => {
+        setSpans(response);
+      })
+      .catch(() => {
+        setSpans(null);
+      });
+    apiClient
       .listDocumentEvents(documentId)
       .then((response) => {
         setEvents(response.items.slice(-6).reverse());
@@ -580,6 +644,48 @@ export function LibraryPage() {
       .finally(() => setReindexingId(null));
   };
 
+  const updateDocument = (nextDocument: Document) => {
+    setDocuments((current) =>
+      current.map((document) =>
+        document.id === nextDocument.id ? nextDocument : document,
+      ),
+    );
+  };
+
+  const onLifecycleAction = (
+    document: Document,
+    action: "reparse" | "cancel" | "delete",
+  ) => {
+    if (action === "delete" && !window.confirm("确认提交 WeKnora 删除任务？")) {
+      return;
+    }
+    setLifecycleActionId(document.id);
+    setError(null);
+    const requestPromise =
+      action === "reparse"
+        ? apiClient.reparseNativeDocument(document.id)
+        : action === "cancel"
+          ? apiClient.cancelDocumentProcessing(document.id)
+          : apiClient.deleteDocument(document.id);
+    requestPromise
+      .then((response) => {
+        updateDocument(response.document);
+        if (previewDocumentId === document.id) {
+          loadPreview(document.id, targetChunkId);
+        }
+      })
+      .catch((actionError: unknown) => setError(errorMessage(actionError)))
+      .finally(() => setLifecycleActionId(null));
+  };
+
+  const openNativeFile = (document: Document, mode: "preview" | "download") => {
+    const url =
+      mode === "preview"
+        ? apiClient.documentPreviewUrl(document.id)
+        : apiClient.documentDownloadUrl(document.id);
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   const onRefreshStatuses = () => {
     setIsRefreshingStatuses(true);
     setError(null);
@@ -594,6 +700,7 @@ export function LibraryPage() {
           setPreviewDocumentId(null);
           setChunks([]);
           setEvents([]);
+          setSpans(null);
         }
       })
       .catch((refreshError: unknown) => setError(errorMessage(refreshError)))
@@ -673,11 +780,62 @@ export function LibraryPage() {
             </button>
           </section>
 
-          <label className="file-drop">
-            <input type="file" onChange={onFileChange} />
-            <Upload size={20} aria-hidden="true" />
-            <span>{selectedFile ? selectedFile.name : "选择文件"}</span>
-          </label>
+          <div className="ingestion-mode-tabs" aria-label="资料入口">
+            <button
+              className={ingestionMode === "file" ? "active" : ""}
+              type="button"
+              onClick={() => setIngestionMode("file")}
+              title="文件"
+            >
+              <Upload size={16} aria-hidden="true" />
+              <span>文件</span>
+            </button>
+            <button
+              className={ingestionMode === "url" ? "active" : ""}
+              type="button"
+              onClick={() => setIngestionMode("url")}
+              title="URL"
+            >
+              <Link size={16} aria-hidden="true" />
+              <span>URL</span>
+            </button>
+            <button
+              className={ingestionMode === "manual" ? "active" : ""}
+              type="button"
+              onClick={() => setIngestionMode("manual")}
+              title="手工录入"
+            >
+              <Keyboard size={16} aria-hidden="true" />
+              <span>手工</span>
+            </button>
+          </div>
+
+          {ingestionMode === "file" ? (
+            <label className="file-drop">
+              <input type="file" onChange={onFileChange} />
+              <Upload size={20} aria-hidden="true" />
+              <span>{selectedFile ? selectedFile.name : "选择文件"}</span>
+            </label>
+          ) : ingestionMode === "url" ? (
+            <label className="url-input-row">
+              <span>URL</span>
+              <input
+                value={form.url}
+                onChange={(event) => setForm({ ...form, url: event.target.value })}
+                placeholder="https://"
+              />
+            </label>
+          ) : (
+            <label className="manual-input-row">
+              <span>正文</span>
+              <textarea
+                value={form.manualContent}
+                onChange={(event) =>
+                  setForm({ ...form, manualContent: event.target.value })
+                }
+              />
+            </label>
+          )}
 
           <div className="form-grid">
             <label>
@@ -716,7 +874,7 @@ export function LibraryPage() {
 
           <button className="primary-action" type="submit" disabled={isUploading}>
             {isUploading ? <Loader2 size={16} aria-hidden="true" /> : <Upload size={16} />}
-            <span>{isUploading ? "上传中" : "上传"}</span>
+            <span>{isUploading ? "提交中" : "提交"}</span>
           </button>
         </form>
 
@@ -859,6 +1017,24 @@ export function LibraryPage() {
                     <button
                       className="icon-button"
                       type="button"
+                      onClick={() => openNativeFile(document, "preview")}
+                      disabled={!document.external_doc_id || document.knowledge_backend !== "weknora_api"}
+                      title="原文预览"
+                    >
+                      <FileText size={16} aria-hidden="true" />
+                    </button>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => openNativeFile(document, "download")}
+                      disabled={!document.external_doc_id || document.knowledge_backend !== "weknora_api"}
+                      title="下载原文"
+                    >
+                      <Download size={16} aria-hidden="true" />
+                    </button>
+                    <button
+                      className="icon-button"
+                      type="button"
                       onClick={() => onRecoverDocument(document.id)}
                       disabled={reindexingId === document.id}
                       title={document.retryable ? "恢复处理" : "刷新/恢复处理"}
@@ -868,6 +1044,52 @@ export function LibraryPage() {
                       ) : (
                         <RotateCcw size={16} aria-hidden="true" />
                       )}
+                    </button>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => onLifecycleAction(document, "reparse")}
+                      disabled={
+                        lifecycleActionId === document.id ||
+                        !document.external_doc_id ||
+                        document.knowledge_backend !== "weknora_api"
+                      }
+                      title="WeKnora 重解析"
+                    >
+                      {lifecycleActionId === document.id ? (
+                        <Loader2 size={16} aria-hidden="true" />
+                      ) : (
+                        <RefreshCw size={16} aria-hidden="true" />
+                      )}
+                    </button>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => onLifecycleAction(document, "cancel")}
+                      disabled={
+                        lifecycleActionId === document.id ||
+                        !runningStatuses.has(document.status) ||
+                        document.status === "deleting" ||
+                        !document.external_doc_id ||
+                        document.knowledge_backend !== "weknora_api"
+                      }
+                      title="取消解析"
+                    >
+                      <XCircle size={16} aria-hidden="true" />
+                    </button>
+                    <button
+                      className="icon-button danger"
+                      type="button"
+                      onClick={() => onLifecycleAction(document, "delete")}
+                      disabled={
+                        lifecycleActionId === document.id ||
+                        document.status === "deleting" ||
+                        !document.external_doc_id ||
+                        document.knowledge_backend !== "weknora_api"
+                      }
+                      title="删除"
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
                     </button>
                   </div>
                 </article>
@@ -899,6 +1121,8 @@ export function LibraryPage() {
                 <span className={readinessClass(previewDocument)}>
                   {statusHint(previewDocument)}
                 </span>
+                {spans?.current_stage ? <span>{`阶段：${spans.current_stage}`}</span> : null}
+                {spans?.current_attempt ? <span>{`尝试：${spans.current_attempt}`}</span> : null}
                 <span>{`分块：${previewDocument.chunk_count}`}</span>
                 <span>{`已索引：${previewDocument.indexed_chunk_count}`}</span>
                 <span>{`待处理：${previewDocument.pending_chunk_count}`}</span>
@@ -932,6 +1156,12 @@ export function LibraryPage() {
                         <span>{chunk.token_count} 个词元</span>
                         <span>{chunk.char_count} 个字符</span>
                         {chunk.external_doc_id ? <span>{chunk.external_doc_id}</span> : null}
+                        <a
+                          href={`#/library?document=${previewDocument.id}&chunk=${chunk.id}`}
+                          onClick={() => setTargetChunkId(chunk.id)}
+                        >
+                          定位
+                        </a>
                       </div>
                     </article>
                   ))}

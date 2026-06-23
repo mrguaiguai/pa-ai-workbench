@@ -1055,6 +1055,78 @@ p {
   white-space: nowrap;
 }
 
+.ingestion-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 16px;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #f8fafb;
+  padding: 6px;
+}
+
+.ingestion-mode-tabs button {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #52636e;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.ingestion-mode-tabs button.active {
+  border-color: #c4d9e3;
+  background: #ffffff;
+  color: #0d536c;
+}
+
+.url-input-row,
+.manual-input-row {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.url-input-row span,
+.manual-input-row span {
+  color: #5c6c77;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.url-input-row input,
+.manual-input-row textarea {
+  width: 100%;
+  border: 1px solid #d8e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #17212b;
+  padding: 9px 10px;
+}
+
+.url-input-row input {
+  min-height: 38px;
+}
+
+.manual-input-row textarea {
+  min-height: 126px;
+  resize: vertical;
+}
+
+.url-input-row input:focus,
+.manual-input-row textarea:focus {
+  border-color: #176b87;
+  outline: 2px solid #dcecf1;
+}
+
 .form-grid {
   display: grid;
   gap: 12px;
@@ -1126,15 +1198,13 @@ p {
 }
 
 .primary-action svg,
-.secondary-action svg,
-.document-actions .icon-button:disabled svg {
+.secondary-action svg {
   animation: none;
 }
 
 .primary-action:disabled svg,
 .secondary-action:disabled svg,
-.library-empty.loading svg,
-.document-actions .icon-button:disabled svg {
+.library-empty.loading svg {
   animation: spin 1.4s linear infinite;
 }
 
@@ -1330,6 +1400,11 @@ p {
   gap: 8px;
 }
 
+.document-actions .icon-button.danger {
+  border-color: #edc7c2;
+  color: #9b382d;
+}
+
 .chunk-preview-panel {
   margin-top: 16px;
   border: 1px solid #d8e0e5;
@@ -1451,7 +1526,8 @@ p {
 }
 
 .chunk-preview-title span,
-.chunk-preview-meta span {
+.chunk-preview-meta span,
+.chunk-preview-meta a {
   min-height: 22px;
   border-radius: 8px;
   background: #f2f6f8;
@@ -1459,6 +1535,7 @@ p {
   font-size: 0.72rem;
   font-weight: 800;
   padding: 3px 7px;
+  text-decoration: none;
 }
 
 .chunk-preview-item p {

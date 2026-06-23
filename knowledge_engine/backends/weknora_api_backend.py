@@ -134,6 +134,16 @@ class WeKnoraNativeClient:
         )
         return self._perform_json_request(request, operation=f"{method} {path}")
 
+    def request_bytes(self, method: str, path: str) -> tuple[bytes, dict[str, str]]:
+        headers = {"Accept": "*/*"}
+        self._apply_auth_headers(headers)
+        request = Request(
+            url=f"{self.base_url}{path}",
+            headers=headers,
+            method=method,
+        )
+        return self._perform_bytes_request(request, operation=f"{method} {path}")
+
     def request_multipart_json(
         self,
         path: str,
@@ -322,6 +332,48 @@ class WeKnoraNativeClient:
             retryable=False,
         )
 
+    def _perform_bytes_request(self, request: Request, operation: str) -> tuple[bytes, dict[str, str]]:
+        attempts = self.retry_attempts + 1
+        last_error: WeKnoraUnavailableError | None = None
+        request_id = uuid4().hex
+        started = time.perf_counter()
+        safe_operation = _sanitize_operation(operation)
+        for attempt in range(attempts):
+            try:
+                data, headers, status_code = self._read_bytes_response(request, safe_operation)
+                _log_weknora_call(
+                    request_id=request_id,
+                    operation=safe_operation,
+                    status="ok",
+                    status_code=status_code,
+                    duration_ms=_elapsed_ms(started),
+                    retry_count=attempt,
+                    excerpt=f"bytes={len(data)}",
+                )
+                return data, headers
+            except WeKnoraUnavailableError as exc:
+                last_error = exc
+                if not exc.retryable or attempt >= attempts - 1:
+                    _log_weknora_call(
+                        request_id=request_id,
+                        operation=safe_operation,
+                        status="error",
+                        status_code=exc.status_code,
+                        duration_ms=_elapsed_ms(started),
+                        retry_count=attempt,
+                        error_code=exc.error_code,
+                        excerpt=exc.message,
+                    )
+                    raise
+                self._sleep_before_retry(attempt)
+        if last_error is not None:
+            raise last_error
+        raise WeKnoraUnavailableError(
+            "WeKnora binary request failed",
+            operation=_sanitize_operation(operation),
+            retryable=False,
+        )
+
     def _read_response(self, request: Request, safe_operation: str) -> tuple[str, int | None]:
         try:
             with urlopen(request, timeout=self.timeout) as response:
@@ -347,6 +399,41 @@ class WeKnoraNativeClient:
                 ) from exc
             raise WeKnoraNetworkError(
                 "WeKnora network request failed",
+                error_code="weknora_network_error",
+                operation=safe_operation,
+                retryable=True,
+            ) from exc
+
+    def _read_bytes_response(
+        self,
+        request: Request,
+        safe_operation: str,
+    ) -> tuple[bytes, dict[str, str], int | None]:
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                status_code = getattr(response, "status", None) or response.getcode()
+                headers = {key.lower(): value for key, value in response.headers.items()}
+                return response.read(), headers, status_code
+        except HTTPError as exc:
+            body_text = exc.read().decode("utf-8", errors="replace")
+            raise _http_error_to_weknora_error(exc.code, body_text, safe_operation) from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise WeKnoraTimeoutError(
+                "WeKnora binary request timed out",
+                error_code="weknora_timeout",
+                operation=safe_operation,
+                retryable=True,
+            ) from exc
+        except URLError as exc:
+            if _url_error_is_timeout(exc):
+                raise WeKnoraTimeoutError(
+                    "WeKnora binary request timed out",
+                    error_code="weknora_timeout",
+                    operation=safe_operation,
+                    retryable=True,
+                ) from exc
+            raise WeKnoraNetworkError(
+                "WeKnora binary network request failed",
                 error_code="weknora_network_error",
                 operation=safe_operation,
                 retryable=True,
@@ -573,6 +660,66 @@ class WeKnoraApiBackend(KnowledgeEngine):
             metadata=self._document_metadata(data, enriched_metadata),
         )
 
+    def create_document_from_url(self, url: str, metadata: dict) -> KnowledgeDocument:
+        self._require_configured()
+        normalized_url = str(url or "").strip()
+        if not normalized_url:
+            raise KnowledgeBackendUnavailableError("document URL is required")
+        target = self.kb_resolver.resolve_one(metadata, operation="create_document_from_url")
+        enriched_metadata = {**metadata, **target.metadata()}
+        payload = {
+            "url": normalized_url,
+            "title": str(enriched_metadata.get("title") or ""),
+            "file_name": str(enriched_metadata.get("file_name") or ""),
+            "file_type": str(enriched_metadata.get("file_type") or ""),
+            "tag_id": str(enriched_metadata.get("tag_id") or ""),
+            "channel": str(enriched_metadata.get("weknora_channel") or "pa_url"),
+        }
+        data = self._request_json(
+            "POST",
+            "/api/v1/knowledge-bases/{kb_id}/knowledge/url".format(kb_id=quote(target.kb_id, safe="")),
+            {key: value for key, value in payload.items() if value not in (None, "")},
+        )
+        data = self._unwrap_data(data)
+        if not isinstance(data, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora URL ingestion returned invalid JSON")
+        return self._to_knowledge_document(
+            data=data,
+            fallback_title=str(enriched_metadata.get("title") or normalized_url),
+            original_metadata={**enriched_metadata, "weknora_ingestion_mode": "url"},
+        )
+
+    def create_manual_document(self, title: str, content: str, metadata: dict) -> KnowledgeDocument:
+        self._require_configured()
+        normalized_title = str(title or "").strip()
+        normalized_content = str(content or "").strip()
+        if not normalized_title:
+            raise KnowledgeBackendUnavailableError("manual document title is required")
+        if not normalized_content:
+            raise KnowledgeBackendUnavailableError("manual document content is required")
+        target = self.kb_resolver.resolve_one(metadata, operation="create_manual_document")
+        enriched_metadata = {**metadata, **target.metadata()}
+        payload = {
+            "title": normalized_title,
+            "content": normalized_content,
+            "status": str(enriched_metadata.get("manual_status") or "publish"),
+            "tag_id": str(enriched_metadata.get("tag_id") or ""),
+            "channel": str(enriched_metadata.get("weknora_channel") or "pa_manual"),
+        }
+        data = self._request_json(
+            "POST",
+            "/api/v1/knowledge-bases/{kb_id}/knowledge/manual".format(kb_id=quote(target.kb_id, safe="")),
+            {key: value for key, value in payload.items() if value not in (None, "")},
+        )
+        data = self._unwrap_data(data)
+        if not isinstance(data, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora manual ingestion returned invalid JSON")
+        return self._to_knowledge_document(
+            data=data,
+            fallback_title=normalized_title,
+            original_metadata={**enriched_metadata, "weknora_ingestion_mode": "manual"},
+        )
+
     def get_document_status(self, external_doc_id: str) -> dict:
         self._require_configured()
         data = self._request_json("GET", f"/api/v1/knowledge/{external_doc_id}")
@@ -591,6 +738,65 @@ class WeKnoraApiBackend(KnowledgeEngine):
             else None,
             "error_message": self._document_error_message(data),
             "metadata": self._document_metadata(data, {}),
+        }
+
+    def get_document_spans(self, external_doc_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(str(external_doc_id or "").strip(), safe="")
+        if not encoded_id:
+            raise KnowledgeBackendUnavailableError("document id is required for spans")
+        data = self._request_json("GET", f"/api/v1/knowledge/{encoded_id}/spans")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora document spans returned invalid JSON")
+        return {
+            "source": "weknora_api",
+            "external_doc_id": external_doc_id,
+            "parse_status": _optional_str(payload.get("parse_status")),
+            "current_attempt": _optional_int(payload.get("current_attempt")),
+            "current_stage": _optional_str(payload.get("current_stage")),
+            "trace": payload.get("trace") if isinstance(payload.get("trace"), dict) else {},
+            "last_error": payload.get("last_error") if isinstance(payload.get("last_error"), dict) else None,
+        }
+
+    def reparse_document(self, external_doc_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(str(external_doc_id or "").strip(), safe="")
+        if not encoded_id:
+            raise KnowledgeBackendUnavailableError("document id is required for reparse")
+        data = self._request_json("POST", f"/api/v1/knowledge/{encoded_id}/reparse")
+        return self._document_action_result(data, external_doc_id, action="reparse")
+
+    def cancel_document_parse(self, external_doc_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(str(external_doc_id or "").strip(), safe="")
+        if not encoded_id:
+            raise KnowledgeBackendUnavailableError("document id is required for cancel")
+        data = self._request_json("POST", f"/api/v1/knowledge/{encoded_id}/cancel-parse")
+        return self._document_action_result(data, external_doc_id, action="cancel_parse")
+
+    def delete_document(self, external_doc_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(str(external_doc_id or "").strip(), safe="")
+        if not encoded_id:
+            raise KnowledgeBackendUnavailableError("document id is required for delete")
+        data = self._request_json("DELETE", f"/api/v1/knowledge/{encoded_id}")
+        return self._document_action_result(data, external_doc_id, action="delete")
+
+    def read_document_file(self, external_doc_id: str, *, preview: bool = False) -> dict:
+        self._require_configured()
+        encoded_id = quote(str(external_doc_id or "").strip(), safe="")
+        if not encoded_id:
+            raise KnowledgeBackendUnavailableError("document id is required for file read")
+        suffix = "preview" if preview else "download"
+        content, headers = self.client.request_bytes("GET", f"/api/v1/knowledge/{encoded_id}/{suffix}")
+        return {
+            "source": "weknora_api",
+            "external_doc_id": external_doc_id,
+            "content": content,
+            "content_type": headers.get("content-type") or "application/octet-stream",
+            "content_disposition": headers.get("content-disposition"),
+            "content_length": len(content),
         }
 
     def list_document_chunks(
@@ -1331,6 +1537,40 @@ class WeKnoraApiBackend(KnowledgeEngine):
                 metadata[f"weknora_{key}"] = data.get(key)
         metadata["source"] = "weknora_api"
         return metadata
+
+    def _to_knowledge_document(
+        self,
+        *,
+        data: dict,
+        fallback_title: str,
+        original_metadata: dict,
+    ) -> KnowledgeDocument:
+        external_doc_id = data.get("external_doc_id") or data.get("id")
+        if not external_doc_id:
+            raise KnowledgeBackendUnavailableError("WeKnora ingestion returned no document id")
+        return KnowledgeDocument(
+            document_id=original_metadata.get("document_id"),
+            external_doc_id=external_doc_id,
+            title=data.get("title") or data.get("file_name") or fallback_title,
+            status=self._map_document_status(data.get("parse_status") or data.get("status")),
+            source="weknora_api",
+            metadata=self._document_metadata(data, original_metadata),
+        )
+
+    def _document_action_result(self, data: dict | list, external_doc_id: str, action: str) -> dict:
+        payload = self._unwrap_data(data)
+        payload = payload if isinstance(payload, dict) else {}
+        raw_status = payload.get("parse_status") or payload.get("status")
+        return {
+            "source": "weknora_api",
+            "action": action,
+            "external_doc_id": external_doc_id,
+            "status": self._map_document_status(raw_status),
+            "native_status": _optional_str(raw_status),
+            "task_id": _optional_str(payload.get("task_id")),
+            "message": _shorten(str(payload.get("message") or payload.get("status") or action), 240),
+            "metadata": self._document_metadata(payload, {}),
+        }
 
     @staticmethod
     def _status_message(data: dict) -> str | None:

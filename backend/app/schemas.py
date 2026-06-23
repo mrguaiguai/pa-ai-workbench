@@ -56,9 +56,47 @@ class DocumentUploadResponse(BaseModel):
     document: DocumentRead
 
 
+class DocumentUrlCreateRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2000)
+    title: str | None = None
+    business_area: str | None = None
+    document_type: str | None = None
+    source: str | None = None
+    keywords_json: str | None = None
+    knowledge_base_id: str | None = None
+
+
+class DocumentManualCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    content: str = Field(min_length=1, max_length=200000)
+    business_area: str | None = None
+    document_type: str | None = None
+    source: str | None = None
+    keywords_json: str | None = None
+    knowledge_base_id: str | None = None
+
+
 class DocumentRetryIndexResponse(BaseModel):
     document: DocumentRead
     message: str
+
+
+class DocumentLifecycleActionResponse(BaseModel):
+    document: DocumentRead
+    action: str
+    message: str
+    evidence_type: str = "live_api"
+    source: str = "weknora_api"
+
+
+class DocumentSpansResponse(BaseModel):
+    source: str
+    external_doc_id: str | None = None
+    parse_status: str | None = None
+    current_attempt: int | None = None
+    current_stage: str | None = None
+    trace: dict = Field(default_factory=dict)
+    last_error: dict | None = None
 
 
 class DocumentBulkRefreshResponse(BaseModel):

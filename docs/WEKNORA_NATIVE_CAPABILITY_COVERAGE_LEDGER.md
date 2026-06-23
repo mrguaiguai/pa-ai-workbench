@@ -49,7 +49,7 @@ Eligible capability groups: `15`.
 Current score:
 
 ```text
-6.50 / 15 = 43.3%
+7.00 / 15 = 46.7%
 ```
 
 Minimum internal production target:
@@ -70,7 +70,7 @@ safe limited workflows without leaking secrets or rebuilding WeKnora admin.
 | --- | --- | ---: | --- | ---: | --- | --- | --- | --- |
 | System health/status/deployment | `live-full` | 1.0 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_STATUS_REPORT_GATES.md`; `docs/WEKNORA_NATIVE_DEPLOYMENT_READINESS_REPORT.md`; `/health`, `/api/status`, `/api/model/status`, `/api/native/status`, and temporary frontend service were validated live in `WNX-P0-05`. | `WNX-P0-05` live service/status smoke and runbook validation. | Local internal production recovery is validated; cloud deployment remains outside this stage, and deeper parser management remains `WNX-P2-01`. | `WNX-P3-02`, `WNX-P2-01` |
 | Workspace/knowledge-base management | `live-full` | 1.0 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_KB_SELECTION_MAPPING_REPORT.md`; `docs/WEKNORA_NATIVE_KB_MANAGEMENT_LIVE_REPORT.md`; WNX-P1-01 validated live KB list/read, active PA DB selection snapshot, upload target propagation, safe tag visibility, and Library browser selector. | `WNX-P1-01` live API/browser smoke with temporary backend/frontend and Chrome DOM validation. | Destructive KB create/update/delete and pin/tag write flows remain backlog until confirmation and audit trail exist. | `WNX-P3-02` |
-| Document lifecycle | `live-partial` | 0.5 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_DOCUMENT_RAG_LIVE_REPORT.md`; PA uploaded a sanitized file to WeKnora, persisted native id, reached indexed, and read native chunks. | Live upload/status/chunk smoke plus browser library workflow. | File upload/status works; url/manual ingestion, preview/download, delete/reparse/cancel, status spans, and recovery controls remain incomplete. | `WNX-P1-02` |
+| Document lifecycle | `live-full` | 1.0 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_DOCUMENT_RAG_LIVE_REPORT.md`; `docs/WEKNORA_NATIVE_DOCUMENT_LIFECYCLE_LIVE_REPORT.md`; WNX-P1-02 validated live file upload/index/chunks, URL ingestion, manual ingestion, spans, preview/download, reparse, delete submission, safe cancel control, and Library browser workflow. | `WNX-P1-02` live API/browser smoke with temporary backend/frontend, temporary DB, and sanitized output. | Native delete is asynchronous, cancel only applies to active processing, and destructive chunk mutation remains separate `WNX-P1-03` scope. | `WNX-P1-03`, `WNX-P3-02` |
 | Chunk management | `read-only` | 0.25 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_DOCUMENT_RAG_LIVE_REPORT.md`; native chunk preview was read after indexing. | Live chunk list/by-id and browser chunk detail workflow; mutation tests only with confirmation. | Preview exists, but update/toggle/delete/generated questions are not PA-safe yet. Chunk status cannot be treated as answer evidence. | `WNX-P1-03` |
 | Knowledge-search/RAG | `live-full` | 1.0 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_RAG_DEBUG_LIVE_REPORT.md`; PA RAG debug called native search and returned `source=weknora_api`, `source_type=document_chunk`, `evidence_id`, rank, trace, and native ids. | Current-run live RAG matrix with source scope and citation checks. | Search path is live-full for RAG debug; future knowledge-chat is scored separately. | `WNX-P1-04` |
 | Knowledge-chat/session chat | `backlog` | 0 | `live-full` | 1.0 | `docs/WEKNORA_FIRST_NATIVE_CAPABILITY_MAP.md`; native `/api/v1/knowledge-chat/{session_id}` exists, but PA has not integrated it. | Live PA chat API/browser workflow with conversation history and citation mapping. | No PA native knowledge-chat path yet. Must not substitute PA-native general QA as completion. | `WNX-P1-04` |
@@ -90,7 +90,7 @@ The minimum target plan reaches 80% by completing these state moves:
 
 | Move | Groups | Score gain |
 | --- | --- | ---: |
-| `live-partial` to `live-full` | Document lifecycle, AgentQA/custom Agent, Native Wiki, History/citation/product shell | +2.0 |
+| `live-partial` to `live-full` | AgentQA/custom Agent, Native Wiki, History/citation/product shell | +1.5 |
 | `read-only` to `live-full` | Chunk management | +0.75 |
 | `backlog` to `live-full` | Knowledge-chat/session chat | +1.0 |
 | `read-only` to `live-partial` | MCP, Web search, Vector store | +0.75 |
@@ -100,7 +100,7 @@ The minimum target plan reaches 80% by completing these state moves:
 Planned target score:
 
 ```text
-6.50 current + 5.50 planned gain = 12.00 / 15 = 80.0%
+7.00 current + 5.00 planned gain = 12.00 / 15 = 80.0%
 ```
 
 Stretch target:
@@ -164,8 +164,8 @@ and `docs/WEKNORA_NATIVE_EXPANSION_ACCEPTANCE_HARNESS_REPORT.md`.
 
 The harness validates the ledger math and stage evidence boundaries:
 
-- the checker parses the current ledger score; after `WNX-P1-01` this is
-  `6.50 / 15 = 43.3%`;
+- the checker parses the current ledger score; after `WNX-P1-02` this is
+  `7.00 / 15 = 46.7%`;
 - target score remains `12.00 / 15 = 80.0%`;
 - current score below target is allowed only because the WNX stage is still in
   progress;
