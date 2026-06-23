@@ -153,6 +153,28 @@ Future tasks must update this ledger when they change a capability state:
 - `WNX-P3-02`: recompute final score from current WNX evidence, not just prior
   WF reports.
 
+## WNX-P0-04 Harness Validation
+
+`WNX-P0-04` adds `backend/scripts/check_weknora_native_expansion_acceptance.py`
+and `docs/WEKNORA_NATIVE_EXPANSION_ACCEPTANCE_HARNESS_REPORT.md`.
+
+The harness validates the ledger math and stage evidence boundaries:
+
+- current score remains `5.50 / 15 = 36.7%`;
+- target score remains `12.00 / 15 = 80.0%`;
+- current score below target is allowed only because the WNX stage is still in
+  progress;
+- the checker fails unsafe mock, fixture-only, cached, static UI, or
+  secret-shaped PASS claims;
+- browser hooks are currently represented by the WNX-P0-03 desktop/mobile
+  capability center report;
+- optional live API validation checks `/api/native/status` for 15 masked groups
+  without printing raw payloads.
+
+No capability group score changes from this harness alone. Future `WNX-P1-*`
+and `WNX-P2-*` tasks must still supply their own live API/browser evidence
+before this ledger can move any group toward the 80% target.
+
 ## PASS Boundary For This Ledger
 
 `WNX-0-03` is complete when this ledger:
