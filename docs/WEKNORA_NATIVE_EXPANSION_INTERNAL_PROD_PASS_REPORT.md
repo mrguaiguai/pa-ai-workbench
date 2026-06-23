@@ -108,7 +108,10 @@ are absent.
 
 `WNX-P3-06` drafted a narrow local native patch that propagates structured
 `knowledge_search` results into standard native `references` events instead of
-parsing Agent answer text or free-form tool output.
+parsing Agent answer text or free-form tool output. `WNX-P3-07` then formatted
+and focused-tested that patch with Docker Go tooling, rebuilt
+`wechatopenai/weknora-app:latest`, and recreated only the `WeKnora-app`
+container.
 
 Patch draft files outside the PA git repository:
 
@@ -119,14 +122,13 @@ internal/agent/tools/knowledge_search.go
 internal/agent/act_references_test.go
 ```
 
-The patch could not move coverage because the outer WeKnora source directory is
-not the active PA git repository, `go`/`gofmt` are unavailable in this shell,
-and the running live service did not absorb the local source patch.
+The patch still cannot move coverage because the rebuilt live AgentQA workflow
+does not emit traceable references.
 
-Current live validation after the patch draft still reports:
+Current live validation after the rebuilt runtime reports:
 
 ```text
-agentqa: answer_events=186 references=0 saved_citations=0 citation_blocked=true
+agentqa: answer_events=122 references=0 saved_citations=0 citation_blocked=true
 knowledge_chat: saved_citations=2 traceable=2 locator=located
 agentqa history: saved_citations=0 traceable=0 citation_blocked=true
 ```

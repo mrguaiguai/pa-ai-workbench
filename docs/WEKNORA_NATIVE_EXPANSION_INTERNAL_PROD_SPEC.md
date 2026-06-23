@@ -322,6 +322,7 @@ Excluded or limited groups:
 | 2026-06-23 | WNX-P3-04 | [!] | `audit/map + blocked evidence + live API evidence`: native AgentQA references path and PA parser path were re-audited; current live AgentQA smoke still reports `references=0`, `saved_citations=0`, `citation_blocked=true`, while native knowledge-chat still saves 2 locatable citations. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_CITATION_TRACEABILITY_REPORT.md`; AgentQA/custom Agent remains `live-partial`, coverage remains `11.25 / 15 = 75.0%`, and no Agent answer/tool text is accepted as citation PASS. |
 | 2026-06-23 | WNX-P3-05 | [!] | `live API/browser evidence + blocked evidence`: configured connector smoke revalidated the data source connector path; connector catalog remains live with 12 types, but active-KB data source count is still 0 and credentials configured count is 0. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_DATA_SOURCE_CONFIGURED_CONNECTOR_SMOKE_REPORT.md`; Data sources/connectors remains `read-only`, resources/validation/sync/pause/resume/log workflow PASS remains blocked/backlog, and coverage remains `11.25 / 15 = 75.0%`. |
 | 2026-06-23 | WNX-P3-06 | [!] | `native source patch draft + live API blocked evidence`: a narrow local native patch was drafted to propagate structured `knowledge_search` results into `EventAgentReferences`, but the outer WeKnora source is outside the PA git repository, Go tooling is unavailable, and current live AgentQA still reports `references=0`, `saved_citations=0`, `citation_blocked=true`. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_REFERENCE_PROPAGATION_PATCH_REPORT.md`; AgentQA/custom Agent remains `live-partial`, coverage remains `11.25 / 15 = 75.0%`, and the patch needs a commit-trackable native repo plus deployed runtime validation before it can count. |
+| 2026-06-23 | WNX-P3-07 | [!] | `native Go test evidence + Docker runtime evidence + live API blocked evidence`: the local native AgentQA reference propagation patch was formatted and focused-tested with Docker `golang:1.26.0`, built into `wechatopenai/weknora-app:latest`, and deployed by recreating only `WeKnora-app`, but live AgentQA still reports `references=0`, `saved_citations=0`, `citation_blocked=true`. | this commit on `weknora-first-mvp` | Dedicated report: `docs/WEKNORA_NATIVE_AGENTQA_RUNTIME_VALIDATION_REPORT.md`; AgentQA/custom Agent remains `live-partial`, coverage remains `11.25 / 15 = 75.0%`, and the next unblock must inspect why the live Agent path still does not produce traceable references after deployment. |
 
 ## 8. Task Cards
 
@@ -915,6 +916,28 @@ Excluded or limited groups:
   are unavailable, and the current live runtime still returns zero AgentQA
   references.
 - Status source: Section 6 row `WNX-P3-06`.
+
+### WNX-P3-07: AgentQA native runtime validation
+
+- Goal: validate the local native AgentQA reference propagation patch with an
+  available Go toolchain, deploy it into the local WeKnora runtime, and decide
+  whether AgentQA/custom Agent can move from `live-partial` to `live-full`.
+- Type: WeKnora native capability接入 + runtime validation + PA
+  history/citation validation.
+- Inputs: `internal/agent/act.go`, `internal/agent/engine.go`,
+  `internal/agent/tools/knowledge_search.go`,
+  `internal/agent/act_references_test.go`, Docker Compose app build, and
+  AgentQA/history citation smoke scripts.
+- Output report:
+  `docs/WEKNORA_NATIVE_AGENTQA_RUNTIME_VALIDATION_REPORT.md`.
+- Acceptance: live PA AgentQA smoke must show `references > 0`,
+  `saved_citations > 0`, `citation_blocked=false`, and history citation locator
+  success before AgentQA/custom Agent can move to `live-full`.
+- Current decision: blocked. Docker Go formatting and focused native tests
+  passed, the local app image was rebuilt and `WeKnora-app` was recreated, but
+  the current live AgentQA workflow still reports zero references and zero saved
+  citations.
+- Status source: Section 6 row `WNX-P3-07`.
 
 ## 9. Evidence Classification Rules
 

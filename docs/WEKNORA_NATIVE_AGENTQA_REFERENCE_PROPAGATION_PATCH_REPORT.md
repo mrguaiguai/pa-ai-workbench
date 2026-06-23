@@ -124,6 +124,11 @@ WeKnora source repository or equivalent tracked patch workflow, formatted and
 tested with Go tooling, deployed/restarted into the live runtime, then validated
 again through the PA live AgentQA and history citation smokes.
 
+Follow-up `WNX-P3-07` completed the local Docker Go formatting/test and app
+runtime rebuild/recreate path, but live AgentQA still returned zero references
+and zero saved citations. The remaining blocker is therefore the live Agent
+tool invocation/result/reference retention path, not host Go tooling alone.
+
 Only a current live run with `references > 0`, `saved_citations > 0`,
 `citation_blocked=false`, and locatable history citations may promote
 AgentQA/custom Agent to `live-full`.
