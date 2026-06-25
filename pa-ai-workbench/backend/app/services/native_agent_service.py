@@ -19,6 +19,10 @@ from app.services.generation_service import create_output_with_citations
 from app.services.generation_service import create_task
 from app.services.generation_service import update_task_status
 from app.services.knowledge_base_service import active_knowledge_base_id
+from app.services.native_audit_service import NativeConfirmationError
+from app.services.native_audit_service import record_native_mutation_audit
+from app.services.native_audit_service import require_native_confirmation
+from app.services.native_audit_service import update_native_mutation_audit
 from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.log_context import weknora_log_context
@@ -27,6 +31,10 @@ from knowledge_engine.schemas import Evidence
 
 class NativeAgentError(Exception):
     """Raised when the native AgentQA workflow cannot complete."""
+
+
+CONFIRM_AGENT_MUTATION_TOKEN = "CONFIRM_NATIVE_AGENT_MUTATION"
+CONFIRM_AGENT_MUTATION_TOKEN_ID = "native_custom_agent_mutation"
 
 
 def native_agent_catalog(session: Session) -> dict[str, Any]:
@@ -74,13 +82,83 @@ def native_agent_catalog(session: Session) -> dict[str, Any]:
             "type_presets": "live" if presets else "partial",
             "placeholders": "live" if placeholders else "partial",
             "suggested_questions": suggested_status,
-            "copy": "backlog",
-            "mutations": "backlog",
+            "copy": "live",
+            "mutations": "live",
+            "ownership": "native_owned_agent_or_admin",
         },
         "warnings": [
-            "Agent copy/update/delete stay backlog until PA has an ownership and audit confirmation flow."
+            "Agent copy/update/delete require confirm_token and NativeMutationAudit."
         ],
     }
+
+
+def create_native_agent(
+    *,
+    session: Session,
+    payload: dict[str, Any],
+    confirm_token: str | None,
+) -> dict[str, Any]:
+    return _mutate_agent(
+        session=session,
+        action="create",
+        confirm_token=confirm_token,
+        target_type="custom_agent",
+        target_id=None,
+        request_summary=_agent_request_summary("create", payload=payload),
+        mutate=lambda backend: {"agent": backend.create_agent(_agent_payload(payload))},
+    )
+
+
+def update_native_agent(
+    *,
+    session: Session,
+    agent_id: str,
+    payload: dict[str, Any],
+    confirm_token: str | None,
+) -> dict[str, Any]:
+    return _mutate_agent(
+        session=session,
+        action="update",
+        confirm_token=confirm_token,
+        target_type="custom_agent",
+        target_id=_safe_public_id(agent_id),
+        request_summary=_agent_request_summary("update", payload=payload, agent_id=agent_id),
+        mutate=lambda backend: {"agent": backend.update_agent(agent_id, _agent_payload(payload))},
+    )
+
+
+def copy_native_agent(
+    *,
+    session: Session,
+    agent_id: str,
+    confirm_token: str | None,
+) -> dict[str, Any]:
+    return _mutate_agent(
+        session=session,
+        action="copy",
+        confirm_token=confirm_token,
+        target_type="custom_agent",
+        target_id=_safe_public_id(agent_id),
+        request_summary={"action": "copy", "agent_id_present": bool(str(agent_id or "").strip())},
+        mutate=lambda backend: {"agent": backend.copy_agent(agent_id)},
+    )
+
+
+def delete_native_agent(
+    *,
+    session: Session,
+    agent_id: str,
+    confirm_token: str | None,
+) -> dict[str, Any]:
+    return _mutate_agent(
+        session=session,
+        action="delete",
+        confirm_token=confirm_token,
+        target_type="custom_agent",
+        target_id=_safe_public_id(agent_id),
+        request_summary={"action": "delete", "agent_id_present": bool(str(agent_id or "").strip())},
+        mutate=lambda backend: {"deleted": bool(backend.delete_agent(agent_id).get("success"))},
+    )
 
 
 def run_native_agent_qa(
@@ -269,6 +347,193 @@ def run_native_agent_qa(
         "user_message_id": user_message.id if user_message is not None else None,
     }
     return conversation, messages, task, output, citations, runtime
+
+
+def _mutate_agent(
+    *,
+    session: Session,
+    action: str,
+    confirm_token: str | None,
+    target_type: str,
+    target_id: str | None,
+    request_summary: dict[str, Any],
+    mutate: Any,
+) -> dict[str, Any]:
+    settings = get_settings()
+    response = {
+        "schema_version": f"wnfc-p5-03-agent-{action}",
+        "source": "weknora_api" if settings.knowledge_backend == "weknora_api" else settings.knowledge_backend,
+        "status": "blocked",
+        "masked": True,
+        "surfaces": {},
+        "warnings": [],
+    }
+    if settings.knowledge_backend != "weknora_api":
+        response["status"] = "backlog"
+        response["surfaces"][action] = {"status": "backlog", "reason": "weknora_api backend is required"}
+        return response
+    try:
+        confirmation = require_native_confirmation(
+            confirm=None,
+            confirm_token=confirm_token,
+            expected_token=CONFIRM_AGENT_MUTATION_TOKEN,
+            token_id=CONFIRM_AGENT_MUTATION_TOKEN_ID,
+            action=f"native custom agent {action}",
+        )
+    except NativeConfirmationError:
+        response["surfaces"][action] = _agent_confirmation_blocked(action)
+        response["warnings"].append(f"blocked: native custom agent {action} requires explicit confirmation")
+        return response
+
+    audit = record_native_mutation_audit(
+        session=session,
+        capability="custom_agent",
+        operation=f"weknora_agent_{action}",
+        target_type=target_type,
+        target_id=target_id,
+        status="started",
+        confirmation=confirmation,
+        request_summary=request_summary,
+    )
+    session.commit()
+
+    try:
+        result = mutate(_weknora_backend())
+    except (KnowledgeBackendUnavailableError, ValueError) as exc:
+        update_native_mutation_audit(
+            audit=audit,
+            status="failed",
+            response_summary={"action": action, "success": False},
+            error_message=str(exc),
+        )
+        session.commit()
+        response["status"] = "partial"
+        response["surfaces"][action] = {"status": "partial", "reason": _error_code_from_exception(exc)}
+        response["audit"] = _audit_surface(audit)
+        response["confirmation"] = _confirmation_read(confirmation)
+        response["warnings"].append(f"partial: agent_{action}: {_error_code_from_exception(exc)}")
+        return response
+
+    surface = {"status": "live", **_agent_result_surface(result)}
+    if action == "create":
+        created_id = _safe_public_id((surface.get("agent") or {}).get("id") if isinstance(surface.get("agent"), dict) else None)
+        if created_id:
+            audit.target_id = created_id
+    update_native_mutation_audit(
+        audit=audit,
+        status="succeeded",
+        response_summary={"action": action, "success": True, **_agent_surface_summary(surface)},
+    )
+    session.commit()
+    response["status"] = "live"
+    response["surfaces"][action] = surface
+    response["audit"] = _audit_surface(audit)
+    response["confirmation"] = _confirmation_read(confirmation)
+    return response
+
+
+def _agent_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("agent name is required")
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    safe_config = dict(config)
+    safe_config.setdefault("agent_mode", "quick-answer")
+    safe_config.setdefault("kb_selection_mode", "none")
+    safe_config.setdefault("knowledge_bases", [])
+    safe_config["web_search_enabled"] = False
+    return {
+        "name": name[:255],
+        "description": str(payload.get("description") or "").strip()[:1000],
+        "avatar": str(payload.get("avatar") or "").strip()[:64],
+        "config": safe_config,
+    }
+
+
+def _agent_request_summary(action: str, *, payload: dict[str, Any], agent_id: str | None = None) -> dict[str, Any]:
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    return {
+        "action": action,
+        "agent_id_present": bool(str(agent_id or "").strip()),
+        "name_present": bool(str(payload.get("name") or "").strip()),
+        "description_present": bool(str(payload.get("description") or "").strip()),
+        "agent_mode": str(config.get("agent_mode") or "quick-answer")[:40],
+        "kb_selection_mode": str(config.get("kb_selection_mode") or "none")[:40],
+        "web_search_enabled": bool(config.get("web_search_enabled")),
+    }
+
+
+def _agent_result_surface(result: dict[str, Any]) -> dict[str, Any]:
+    safe: dict[str, Any] = {}
+    agent = result.get("agent") if isinstance(result.get("agent"), dict) else None
+    if agent:
+        safe["agent"] = _public_agent(agent)
+    if "deleted" in result:
+        safe["deleted"] = bool(result.get("deleted"))
+    return safe
+
+
+def _agent_surface_summary(surface: dict[str, Any]) -> dict[str, Any]:
+    agent = surface.get("agent") if isinstance(surface.get("agent"), dict) else {}
+    return {
+        "status": surface.get("status"),
+        "deleted": surface.get("deleted"),
+        "agent_id_present": bool(agent.get("id")),
+        "is_builtin": bool(agent.get("is_builtin")),
+        "agent_mode": agent.get("agent_mode"),
+    }
+
+
+def _public_agent(agent: dict[str, Any]) -> dict[str, Any]:
+    safe = _safe_agent_item(agent)
+    safe["created_by_present"] = bool(agent.get("created_by"))
+    return safe
+
+
+def _agent_confirmation_blocked(action: str) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "reason": f"confirm_token={CONFIRM_AGENT_MUTATION_TOKEN} is required",
+        "action": action,
+        "confirm_token_id": CONFIRM_AGENT_MUTATION_TOKEN_ID,
+    }
+
+
+def _audit_surface(audit: Any) -> dict[str, Any]:
+    return {
+        "id": audit.id,
+        "capability": audit.capability,
+        "operation": audit.operation,
+        "target_type": audit.target_type,
+        "target_id": audit.target_id,
+        "source": audit.source,
+        "status": audit.status,
+        "confirmation_required": audit.confirmation_required,
+        "confirmation_method": audit.confirmation_method,
+        "confirm_token_id": audit.confirm_token_id,
+        "created_at": audit.created_at.isoformat(),
+    }
+
+
+def _confirmation_read(confirmation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "required": bool(confirmation.get("required")),
+        "method": confirmation.get("method"),
+        "token_id": confirmation.get("token_id"),
+    }
+
+
+def _safe_public_id(value: object) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if len(text) <= 12:
+        return text
+    return f"{text[:6]}...{text[-4:]}"
+
+
+def _error_code_from_exception(exc: Exception) -> str:
+    return str(getattr(exc, "error_code", None) or exc.__class__.__name__)
 
 
 def _ensure_conversation(

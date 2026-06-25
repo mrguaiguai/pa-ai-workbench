@@ -13,6 +13,12 @@ from app.models import Document
 from app.models import DocumentChunk
 from app.models import DocumentProcessingEvent
 from app.models import utc_now
+from app.services.native_audit_service import NativeConfirmationError
+from app.services.native_audit_service import NATIVE_CHUNK_CONFIRM_PHRASE
+from app.services.native_audit_service import NATIVE_CHUNK_CONFIRM_PHRASE_ID
+from app.services.native_audit_service import record_native_mutation_audit
+from app.services.native_audit_service import require_native_confirmation
+from app.services.native_audit_service import update_native_mutation_audit
 from app.storage.file_store import save_upload_file
 from app.services.knowledge_base_service import active_knowledge_base_id
 from knowledge_engine.chunking import Chunker
@@ -41,6 +47,20 @@ class DocumentWorkflowError(Exception):
     """Raised when a document processing workflow step fails."""
 
 
+def _selected_knowledge_base_id(
+    session: Session,
+    requested_kb_id: str | None,
+    *,
+    use_active: bool,
+) -> str | None:
+    cleaned = str(requested_kb_id or "").strip()
+    if cleaned:
+        return cleaned
+    if use_active:
+        return active_knowledge_base_id(session)
+    return None
+
+
 async def create_document(
     session: Session,
     upload: UploadFile,
@@ -53,6 +73,11 @@ async def create_document(
 ) -> Document:
     stored_file = await save_upload_file(upload)
     settings = get_settings()
+    selected_kb_id = _selected_knowledge_base_id(
+        session,
+        knowledge_base_id,
+        use_active=settings.knowledge_backend == "weknora_api",
+    )
     document = Document(
         title=title or stored_file.file_name,
         business_area=business_area,
@@ -64,6 +89,7 @@ async def create_document(
         file_size=stored_file.file_size,
         mime_type=stored_file.mime_type,
         knowledge_backend=settings.knowledge_backend,
+        knowledge_base_id=selected_kb_id,
         external_doc_id=None,
         status="uploaded",
     )
@@ -71,7 +97,6 @@ async def create_document(
     session.commit()
     session.refresh(document)
     if settings.knowledge_backend == "weknora_api":
-        selected_kb_id = (knowledge_base_id or "").strip() or active_knowledge_base_id(session)
         _upload_document_to_weknora(session, document, knowledge_base_id=selected_kb_id)
     return document
 
@@ -90,6 +115,11 @@ def create_document_from_url(
     if not normalized_url:
         raise DocumentWorkflowError("URL is required.")
     settings = get_settings()
+    selected_kb_id = _selected_knowledge_base_id(
+        session,
+        knowledge_base_id,
+        use_active=settings.knowledge_backend == "weknora_api",
+    )
     document = Document(
         title=title or normalized_url,
         business_area=business_area,
@@ -101,6 +131,7 @@ def create_document_from_url(
         file_size=None,
         mime_type=None,
         knowledge_backend=settings.knowledge_backend,
+        knowledge_base_id=selected_kb_id,
         external_doc_id=None,
         status="uploaded",
     )
@@ -110,7 +141,6 @@ def create_document_from_url(
     if settings.knowledge_backend != "weknora_api":
         return document
 
-    selected_kb_id = (knowledge_base_id or "").strip() or active_knowledge_base_id(session)
     _record_event(
         session=session,
         document=document,
@@ -169,6 +199,11 @@ def create_manual_document(
     if not normalized_content:
         raise DocumentWorkflowError("Manual document content is required.")
     settings = get_settings()
+    selected_kb_id = _selected_knowledge_base_id(
+        session,
+        knowledge_base_id,
+        use_active=settings.knowledge_backend == "weknora_api",
+    )
     document = Document(
         title=normalized_title,
         business_area=business_area,
@@ -180,6 +215,7 @@ def create_manual_document(
         file_size=len(normalized_content.encode("utf-8")),
         mime_type="text/markdown; charset=utf-8",
         knowledge_backend=settings.knowledge_backend,
+        knowledge_base_id=selected_kb_id,
         external_doc_id=None,
         status="uploaded",
     )
@@ -189,7 +225,6 @@ def create_manual_document(
     if settings.knowledge_backend != "weknora_api":
         return document
 
-    selected_kb_id = (knowledge_base_id or "").strip() or active_knowledge_base_id(session)
     _record_event(
         session=session,
         document=document,
@@ -238,10 +273,13 @@ def list_documents(
     processing_state: str | None = None,
     has_error: bool | None = None,
     knowledge_backend: str | None = None,
+    knowledge_base_id: str | None = None,
     refresh_status: bool = False,
 ) -> list[Document]:
     statement = select(Document).order_by(Document.created_at.desc())
     documents = list(session.exec(statement).all())
+    for document in documents:
+        _complete_submitted_delete_if_needed(session, document)
     if refresh_status:
         for document in documents:
             sync_document_status(session, document)
@@ -255,6 +293,7 @@ def list_documents(
             processing_state=processing_state,
             has_error=has_error,
             knowledge_backend=knowledge_backend,
+            knowledge_base_id=knowledge_base_id,
         )
     ]
 
@@ -265,6 +304,7 @@ def refresh_document_statuses(
     processing_state: str | None = None,
     has_error: bool | None = None,
     knowledge_backend: str | None = None,
+    knowledge_base_id: str | None = None,
     limit: int = 50,
 ) -> list[Document]:
     documents = list_documents(
@@ -273,6 +313,7 @@ def refresh_document_statuses(
         processing_state=processing_state,
         has_error=has_error,
         knowledge_backend=knowledge_backend,
+        knowledge_base_id=knowledge_base_id,
         refresh_status=False,
     )
     refreshed: list[Document] = []
@@ -284,6 +325,7 @@ def refresh_document_statuses(
 def get_document(session: Session, document_id: str) -> Document | None:
     document = session.get(Document, document_id)
     if document is not None:
+        _complete_submitted_delete_if_needed(session, document)
         sync_document_status(session, document)
     return document
 
@@ -295,10 +337,20 @@ def _document_matches_filters(
     processing_state: str | None,
     has_error: bool | None,
     knowledge_backend: str | None,
+    knowledge_base_id: str | None,
 ) -> bool:
     if knowledge_backend and document.knowledge_backend != knowledge_backend:
         return False
     normalized_status = (status or "").strip().lower()
+    if document.status == "deleted" and normalized_status != "deleted":
+        return False
+    normalized_kb_id = (knowledge_base_id or "").strip()
+    if normalized_kb_id and normalized_kb_id != "all":
+        if normalized_kb_id == "__unassigned__":
+            if document.knowledge_base_id:
+                return False
+        elif document.knowledge_base_id != normalized_kb_id:
+            return False
     if normalized_status and normalized_status != "all":
         if normalized_status == "processing":
             if document.status not in PROCESSING_STATUSES:
@@ -327,6 +379,38 @@ def _document_matches_filters(
     return True
 
 
+def _complete_submitted_delete_if_needed(session: Session, document: Document) -> None:
+    if document.status != "deleting" or not _has_completed_delete_event(session, document.id):
+        return
+    document.status = "deleted"
+    document.error_message = None
+    document.failed_step = None
+    document.updated_at = utc_now()
+    session.add(document)
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_delete",
+        status="completed",
+        message="PA marked the document deleted after WeKnora accepted the delete task.",
+        metadata={"resolved_from": "completed_delete_event"},
+    )
+    session.commit()
+    session.refresh(document)
+
+
+def _has_completed_delete_event(session: Session, document_id: str) -> bool:
+    statement = (
+        select(DocumentProcessingEvent)
+        .where(DocumentProcessingEvent.document_id == document_id)
+        .where(DocumentProcessingEvent.step == "weknora_delete")
+        .where(DocumentProcessingEvent.status == "completed")
+        .order_by(DocumentProcessingEvent.created_at.desc())
+        .limit(1)
+    )
+    return session.exec(statement).first() is not None
+
+
 def _has_unavailable_status_event(session: Session, document_id: str) -> bool:
     statement = (
         select(DocumentProcessingEvent)
@@ -340,6 +424,8 @@ def _has_unavailable_status_event(session: Session, document_id: str) -> bool:
 
 
 def sync_document_status(session: Session, document: Document) -> Document:
+    if document.status == "deleted":
+        return document
     if document.knowledge_backend != "weknora_api" or not document.external_doc_id:
         return document
     try:
@@ -595,6 +681,7 @@ def recover_document_processing(session: Session, document: Document) -> tuple[D
         document=document,
         operation="retry",
         prior_external_doc_id=prior_external_doc_id,
+        knowledge_base_id=document.knowledge_base_id or active_knowledge_base_id(session),
     )
     if document.status == "failed" and document.failed_step == "weknora_retry":
         raise DocumentWorkflowError(document.error_message or "WeKnora retry upload failed.")
@@ -774,7 +861,7 @@ def _run_native_document_action(
         raise DocumentWorkflowError(str(exc)) from exc
 
     if action == "delete":
-        document.status = "deleting"
+        document.status = "deleted"
     elif result.get("status") and result.get("status") != "unknown":
         document.status = str(result["status"])
     else:
@@ -821,6 +908,15 @@ def document_processing_summary(document: Document) -> dict[str, Any]:
             "processing_message": _failed_processing_message(document),
             "next_action": "retry",
             "retryable": True,
+            "processing_seconds": processing_seconds,
+            "processing_timed_out": False,
+        }
+    if document.status == "deleted":
+        return {
+            "processing_state": "deleted",
+            "processing_message": "Document has been deleted from WeKnora.",
+            "next_action": None,
+            "retryable": False,
             "processing_seconds": processing_seconds,
             "processing_timed_out": False,
         }
@@ -907,12 +1003,32 @@ def set_native_document_chunk_enabled(
     is_enabled: bool,
     *,
     confirm: bool,
+    confirm_token: str | None = None,
     reason: str | None = None,
-) -> DocumentChunk:
-    if not confirm:
-        raise DocumentWorkflowError("Chunk toggle requires explicit confirmation.")
+) -> tuple[DocumentChunk, object]:
+    confirmation = _require_native_chunk_confirmation(
+        confirm=confirm,
+        confirm_token=confirm_token,
+        action="weknora_chunk_toggle",
+    )
     _require_weknora_document(document)
     current_chunk = read_document_chunk(session, document, chunk_id)
+    audit = record_native_mutation_audit(
+        session=session,
+        capability="chunk",
+        operation="weknora_chunk_toggle",
+        target_type="chunk",
+        target_id=current_chunk.id,
+        status="started",
+        confirmation=confirmation,
+        reason=reason,
+        request_summary={
+            "document_id": document.id,
+            "external_doc_id": document.external_doc_id,
+            "chunk_id": current_chunk.id,
+            "is_enabled": is_enabled,
+        },
+    )
     _record_event(
         session=session,
         document=document,
@@ -931,10 +1047,15 @@ def set_native_document_chunk_enabled(
             raw_chunk = _weknora_backend().update_document_chunk(
                 document.external_doc_id or "",
                 current_chunk.id,
-                content=current_chunk.content,
                 is_enabled=is_enabled,
             )
     except KnowledgeBackendUnavailableError as exc:
+        update_native_mutation_audit(
+            audit=audit,
+            status="failed",
+            response_summary={"chunk_id": current_chunk.id, "is_enabled": is_enabled},
+            error_message=str(exc),
+        )
         _record_event(
             session=session,
             document=document,
@@ -949,6 +1070,15 @@ def set_native_document_chunk_enabled(
 
     updated_chunk = _weknora_raw_chunk_to_model(document, raw_chunk, index=current_chunk.chunk_index)
     _require_chunk_document_match(document, updated_chunk)
+    update_native_mutation_audit(
+        audit=audit,
+        status="succeeded",
+        response_summary={
+            "chunk_id": updated_chunk.id,
+            "embedding_status": updated_chunk.embedding_status,
+            "is_enabled": is_enabled,
+        },
+    )
     _record_event(
         session=session,
         document=document,
@@ -958,7 +1088,105 @@ def set_native_document_chunk_enabled(
         metadata={"chunk_id": updated_chunk.id, "is_enabled": is_enabled},
     )
     session.commit()
-    return updated_chunk
+    return updated_chunk, audit
+
+
+def rewrite_native_document_chunk_content(
+    session: Session,
+    document: Document,
+    chunk_id: str,
+    content: str,
+    *,
+    confirm: bool,
+    confirm_token: str | None = None,
+    reason: str | None = None,
+) -> tuple[DocumentChunk, object]:
+    confirmation = _require_native_chunk_confirmation(
+        confirm=confirm,
+        confirm_token=confirm_token,
+        action="weknora_chunk_content_rewrite",
+    )
+    normalized_content = str(content or "").strip()
+    if not normalized_content:
+        raise DocumentWorkflowError("Chunk content is required.")
+    _require_weknora_document(document)
+    current_chunk = read_document_chunk(session, document, chunk_id)
+    audit = record_native_mutation_audit(
+        session=session,
+        capability="chunk",
+        operation="weknora_chunk_content_rewrite",
+        target_type="chunk",
+        target_id=current_chunk.id,
+        status="started",
+        confirmation=confirmation,
+        reason=reason,
+        request_summary={
+            "document_id": document.id,
+            "external_doc_id": document.external_doc_id,
+            "chunk_id": current_chunk.id,
+            "content_chars": len(normalized_content),
+        },
+    )
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_chunk_content_rewrite",
+        status="started",
+        message="WeKnora chunk content rewrite requested.",
+        metadata={
+            "chunk_id": current_chunk.id,
+            "content_chars": len(normalized_content),
+            "reason": _safe_reason(reason),
+        },
+    )
+    session.commit()
+    try:
+        with _document_weknora_log_context(document):
+            raw_chunk = _weknora_backend().update_document_chunk(
+                document.external_doc_id or "",
+                current_chunk.id,
+                content=normalized_content,
+            )
+    except KnowledgeBackendUnavailableError as exc:
+        update_native_mutation_audit(
+            audit=audit,
+            status="failed",
+            response_summary={"chunk_id": current_chunk.id, "content_chars": len(normalized_content)},
+            error_message=str(exc),
+        )
+        _record_event(
+            session=session,
+            document=document,
+            step="weknora_chunk_content_rewrite",
+            status="failed",
+            message="WeKnora chunk content rewrite failed.",
+            metadata={"chunk_id": current_chunk.id, "content_chars": len(normalized_content)},
+            error_message=str(exc)[:MAX_ERROR_MESSAGE_CHARS],
+        )
+        session.commit()
+        raise DocumentWorkflowError(str(exc)) from exc
+
+    updated_chunk = _weknora_raw_chunk_to_model(document, raw_chunk, index=current_chunk.chunk_index)
+    _require_chunk_document_match(document, updated_chunk)
+    update_native_mutation_audit(
+        audit=audit,
+        status="succeeded",
+        response_summary={
+            "chunk_id": updated_chunk.id,
+            "content_chars": updated_chunk.char_count,
+            "embedding_status": updated_chunk.embedding_status,
+        },
+    )
+    _record_event(
+        session=session,
+        document=document,
+        step="weknora_chunk_content_rewrite",
+        status="succeeded",
+        message="WeKnora chunk content rewrite completed.",
+        metadata={"chunk_id": updated_chunk.id, "content_chars": updated_chunk.char_count},
+    )
+    session.commit()
+    return updated_chunk, audit
 
 
 def delete_native_document_chunk(
@@ -967,12 +1195,31 @@ def delete_native_document_chunk(
     chunk_id: str,
     *,
     confirm: bool,
+    confirm_token: str | None = None,
     reason: str | None = None,
-) -> str:
-    if not confirm:
-        raise DocumentWorkflowError("Chunk delete requires explicit confirmation.")
+) -> tuple[str, object]:
+    confirmation = _require_native_chunk_confirmation(
+        confirm=confirm,
+        confirm_token=confirm_token,
+        action="weknora_chunk_delete",
+    )
     _require_weknora_document(document)
     chunk = read_document_chunk(session, document, chunk_id)
+    audit = record_native_mutation_audit(
+        session=session,
+        capability="chunk",
+        operation="weknora_chunk_delete",
+        target_type="chunk",
+        target_id=chunk.id,
+        status="started",
+        confirmation=confirmation,
+        reason=reason,
+        request_summary={
+            "document_id": document.id,
+            "external_doc_id": document.external_doc_id,
+            "chunk_id": chunk.id,
+        },
+    )
     _record_event(
         session=session,
         document=document,
@@ -986,6 +1233,12 @@ def delete_native_document_chunk(
         with _document_weknora_log_context(document):
             _weknora_backend().delete_document_chunk(document.external_doc_id or "", chunk.id)
     except KnowledgeBackendUnavailableError as exc:
+        update_native_mutation_audit(
+            audit=audit,
+            status="failed",
+            response_summary={"chunk_id": chunk.id},
+            error_message=str(exc),
+        )
         _record_event(
             session=session,
             document=document,
@@ -997,6 +1250,11 @@ def delete_native_document_chunk(
         )
         session.commit()
         raise DocumentWorkflowError(str(exc)) from exc
+    update_native_mutation_audit(
+        audit=audit,
+        status="succeeded",
+        response_summary={"chunk_id": chunk.id, "deleted": True},
+    )
     _record_event(
         session=session,
         document=document,
@@ -1006,7 +1264,7 @@ def delete_native_document_chunk(
         metadata={"chunk_id": chunk.id},
     )
     session.commit()
-    return "WeKnora chunk delete completed."
+    return "WeKnora chunk delete completed.", audit
 
 
 def delete_native_generated_question(
@@ -1016,10 +1274,14 @@ def delete_native_generated_question(
     question_id: str,
     *,
     confirm: bool,
+    confirm_token: str | None = None,
     reason: str | None = None,
-) -> DocumentChunk:
-    if not confirm:
-        raise DocumentWorkflowError("Generated question delete requires explicit confirmation.")
+) -> tuple[DocumentChunk, object]:
+    confirmation = _require_native_chunk_confirmation(
+        confirm=confirm,
+        confirm_token=confirm_token,
+        action="weknora_chunk_question_delete",
+    )
     normalized_question_id = str(question_id or "").strip()
     if not normalized_question_id:
         raise DocumentWorkflowError("Question ID is required.")
@@ -1028,6 +1290,22 @@ def delete_native_generated_question(
     question_ids = _generated_question_ids(chunk)
     if normalized_question_id not in question_ids:
         raise DocumentWorkflowError("Generated question not found on this chunk.")
+    audit = record_native_mutation_audit(
+        session=session,
+        capability="chunk",
+        operation="weknora_chunk_question_delete",
+        target_type="chunk_question",
+        target_id=f"{chunk.id}:{normalized_question_id}",
+        status="started",
+        confirmation=confirmation,
+        reason=reason,
+        request_summary={
+            "document_id": document.id,
+            "external_doc_id": document.external_doc_id,
+            "chunk_id": chunk.id,
+            "question_id": normalized_question_id,
+        },
+    )
     _record_event(
         session=session,
         document=document,
@@ -1045,6 +1323,12 @@ def delete_native_generated_question(
         with _document_weknora_log_context(document):
             _weknora_backend().delete_generated_question(chunk.id, normalized_question_id)
     except KnowledgeBackendUnavailableError as exc:
+        update_native_mutation_audit(
+            audit=audit,
+            status="failed",
+            response_summary={"chunk_id": chunk.id, "question_id": normalized_question_id},
+            error_message=str(exc),
+        )
         _record_event(
             session=session,
             document=document,
@@ -1056,6 +1340,15 @@ def delete_native_generated_question(
         )
         session.commit()
         raise DocumentWorkflowError(str(exc)) from exc
+    update_native_mutation_audit(
+        audit=audit,
+        status="succeeded",
+        response_summary={
+            "chunk_id": chunk.id,
+            "question_id": normalized_question_id,
+            "deleted": True,
+        },
+    )
     _record_event(
         session=session,
         document=document,
@@ -1065,7 +1358,34 @@ def delete_native_generated_question(
         metadata={"chunk_id": chunk.id, "question_id": normalized_question_id},
     )
     session.commit()
-    return read_document_chunk(session, document, chunk.id)
+    return read_document_chunk(session, document, chunk.id), audit
+
+
+def search_native_document_chunk_similar(
+    session: Session,
+    document: Document,
+    chunk_id: str,
+    *,
+    top_k: int = 8,
+) -> list[dict[str, Any]]:
+    _require_weknora_document(document)
+    chunk = read_document_chunk(session, document, chunk_id)
+    try:
+        with _document_weknora_log_context(document):
+            raw_items = _weknora_backend().search_similar_chunks_by_chunk(chunk.id, top_k=top_k)
+    except KnowledgeBackendUnavailableError as exc:
+        _record_event(
+            session=session,
+            document=document,
+            step="weknora_chunk_search_by_chunk",
+            status="failed",
+            message="WeKnora search-by-chunk failed.",
+            metadata={"chunk_id": chunk.id, "top_k": top_k},
+            error_message=str(exc)[:MAX_ERROR_MESSAGE_CHARS],
+        )
+        session.commit()
+        raise DocumentWorkflowError(str(exc)) from exc
+    return [_normalize_similar_chunk_result(item) for item in raw_items]
 
 
 def _list_local_document_chunks(session: Session, document_id: str) -> list[DocumentChunk]:
@@ -1085,6 +1405,38 @@ def _list_weknora_document_chunks(document: Document) -> list[DocumentChunk]:
         for index, raw in enumerate(raw_chunks)
     ]
     return sorted(chunks, key=lambda chunk: chunk.chunk_index)
+
+
+def _normalize_similar_chunk_result(item: dict[str, Any]) -> dict[str, Any]:
+    content = str(item.get("content") or "")
+    matched_content = item.get("matched_content")
+    return {
+        "id": str(item.get("id") or item.get("chunk_id") or ""),
+        "external_doc_id": item.get("knowledge_id"),
+        "knowledge_base_id": item.get("knowledge_base_id"),
+        "chunk_index": _safe_int(item.get("chunk_index")),
+        "content": content,
+        "score": _safe_float(item.get("score")),
+        "match_type": item.get("match_type"),
+        "retriever_type": item.get("retriever_type"),
+        "retriever_engine": item.get("retriever_engine"),
+        "matched_content": str(matched_content) if matched_content not in (None, "") else None,
+        "source_id": item.get("source_id"),
+    }
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _weknora_raw_chunk_to_model(
@@ -1134,6 +1486,24 @@ def _require_chunk_document_match(document: Document, chunk: DocumentChunk) -> N
 def _safe_reason(reason: str | None) -> str | None:
     value = str(reason or "").strip()
     return value[:160] if value else None
+
+
+def _require_native_chunk_confirmation(
+    *,
+    confirm: bool,
+    confirm_token: str | None,
+    action: str,
+) -> dict[str, Any]:
+    try:
+        return require_native_confirmation(
+            confirm=confirm,
+            confirm_token=confirm_token,
+            expected_token=NATIVE_CHUNK_CONFIRM_PHRASE,
+            token_id=NATIVE_CHUNK_CONFIRM_PHRASE_ID,
+            action=action,
+        )
+    except NativeConfirmationError as exc:
+        raise DocumentWorkflowError(str(exc)) from exc
 
 
 def _generated_question_ids(chunk: DocumentChunk) -> set[str]:
@@ -1187,6 +1557,10 @@ def _upload_document_to_weknora(
     knowledge_base_id: str | None = None,
 ) -> None:
     step = "weknora_upload" if operation == "upload" else "weknora_retry"
+    if knowledge_base_id and document.knowledge_base_id != knowledge_base_id:
+        document.knowledge_base_id = knowledge_base_id
+        document.updated_at = utc_now()
+        session.add(document)
     _record_event(
         session=session,
         document=document,

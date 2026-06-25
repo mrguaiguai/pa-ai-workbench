@@ -27,6 +27,7 @@ class DocumentRead(BaseModel):
     file_size: int | None = None
     mime_type: str | None = None
     knowledge_backend: str
+    knowledge_base_id: str | None = None
     external_doc_id: str | None = None
     summary: str | None = None
     status: str
@@ -89,13 +90,49 @@ class DocumentLifecycleActionResponse(BaseModel):
     source: str = "weknora_api"
 
 
+class NativeConfirmationRead(BaseModel):
+    required: bool = True
+    method: str | None = None
+    token_id: str | None = None
+
+
+class NativeMutationAuditRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    capability: str
+    operation: str
+    target_type: str
+    target_id: str | None = None
+    source: str
+    status: str
+    confirmation_required: bool
+    confirmation_method: str | None = None
+    confirm_token_id: str | None = None
+    reason: str | None = None
+    request_summary_json: str | None = None
+    response_summary_json: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+
+
+class NativeMutationAuditListResponse(BaseModel):
+    items: list[NativeMutationAuditRead]
+    total: int
+
+
 class DocumentChunkMutationRequest(BaseModel):
     confirm: bool = False
+    confirm_token: str | None = Field(default=None, max_length=120)
     reason: str | None = Field(default=None, max_length=300)
 
 
 class DocumentChunkEnabledRequest(DocumentChunkMutationRequest):
     is_enabled: bool
+
+
+class DocumentChunkContentRequest(DocumentChunkMutationRequest):
+    content: str = Field(min_length=1, max_length=20000)
 
 
 class DocumentSpansResponse(BaseModel):
@@ -150,6 +187,29 @@ class DocumentChunkActionResponse(BaseModel):
     evidence_type: str = "live_api"
     source: str = "weknora_api"
     audit_step: str
+    audit: NativeMutationAuditRead | None = None
+    confirmation: NativeConfirmationRead | None = None
+
+
+class DocumentChunkSimilarResultRead(BaseModel):
+    id: str
+    external_doc_id: str | None = None
+    knowledge_base_id: str | None = None
+    chunk_index: int = 0
+    content: str
+    score: float = 0
+    match_type: int | str | None = None
+    retriever_type: str | None = None
+    retriever_engine: str | None = None
+    matched_content: str | None = None
+    source_id: str | None = None
+
+
+class DocumentChunkSimilarResponse(BaseModel):
+    items: list[DocumentChunkSimilarResultRead]
+    total: int
+    evidence_type: str = "live_api"
+    source: str = "weknora_api"
 
 
 class DocumentChunkListResponse(BaseModel):
@@ -589,6 +649,9 @@ class ModelStatusResponse(BaseModel):
     embedding_provider: str
     mock_mode: bool
     configured: bool
+    config_source: str = "pa_env_bridge"
+    bridge_status: str = "blocked"
+    native_source_of_truth_endpoint: str = "/api/model/native/overview"
     chat: ModelProviderStatus
     embedding: ModelProviderStatus
 
@@ -885,6 +948,16 @@ class NativeWikiPageDeleteRequest(BaseModel):
 
 class NativeWikiConfirmRequest(BaseModel):
     confirm_token: str
+
+
+class NativeWikiIssueCreateRequest(BaseModel):
+    confirm_token: str
+    slug: str
+    issue_type: str = "manual"
+    description: str
+    suspected_knowledge_ids: list[str] = Field(default_factory=list)
+    status: str = "pending"
+    reported_by: str = "pa"
 
 
 class NativeWikiIssueStatusRequest(BaseModel):

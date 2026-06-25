@@ -35,7 +35,6 @@ import {
   ResultPanel,
   TaskProgress,
   WarningList,
-  WeKnoraFirstStatusStrip,
   parseWarningsJson,
 } from "../components/workbench";
 
@@ -441,8 +440,6 @@ export function AnalysisPage() {
 
   return (
     <div className="analysis-page">
-      <WeKnoraFirstStatusStrip page="知识问答" />
-
       <aside className="analysis-conversations" aria-label="会话列表">
         <div className="analysis-panel-heading">
           <span>会话</span>
@@ -512,7 +509,7 @@ export function AnalysisPage() {
         ) : null}
       </section>
 
-      <aside className="analysis-tools" aria-label="分析参数">
+      <aside className="analysis-tools" aria-label="发起分析">
         <form className="analysis-form" onSubmit={onSubmit}>
           <div className="analysis-panel-heading">
             <span>分析流</span>
@@ -575,38 +572,44 @@ export function AnalysisPage() {
                 onChange={(event) => setForm({ ...form, query: event.target.value })}
               />
             </label>
-            <label>
-              <span>标题</span>
-              <input
-                value={form.title}
-                onChange={(event) => setForm({ ...form, title: event.target.value })}
-              />
-            </label>
-            <label>
-              <span>业务域</span>
-              <input
-                value={form.businessArea}
-                onChange={(event) => setForm({ ...form, businessArea: event.target.value })}
-              />
-            </label>
-            <label>
-              <span>资料类型</span>
-              <input
-                value={form.documentType}
-                onChange={(event) => setForm({ ...form, documentType: event.target.value })}
-              />
-            </label>
-            <label>
-              <span>额外要求</span>
-              <textarea
-                rows={4}
-                value={form.extraRequirements}
-                onChange={(event) =>
-                  setForm({ ...form, extraRequirements: event.target.value })
-                }
-              />
-            </label>
           </div>
+
+          <details className="advanced-controls analysis-advanced-controls">
+            <summary>高级选项</summary>
+            <div className="form-grid analysis-fields advanced-filter-grid">
+              <label>
+                <span>标题</span>
+                <input
+                  value={form.title}
+                  onChange={(event) => setForm({ ...form, title: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>业务域</span>
+                <input
+                  value={form.businessArea}
+                  onChange={(event) => setForm({ ...form, businessArea: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>资料类型</span>
+                <input
+                  value={form.documentType}
+                  onChange={(event) => setForm({ ...form, documentType: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>额外要求</span>
+                <textarea
+                  rows={4}
+                  value={form.extraRequirements}
+                  onChange={(event) =>
+                    setForm({ ...form, extraRequirements: event.target.value })
+                  }
+                />
+              </label>
+            </div>
+          </details>
 
           <button className="primary-action" type="submit" disabled={isRunning}>
             {isRunning ? <Loader2 size={16} aria-hidden="true" /> : <Send size={16} />}
@@ -616,55 +619,58 @@ export function AnalysisPage() {
 
         {latestTask ? <TaskProgress task={latestTask} /> : null}
 
-        <section className="native-agent-panel" aria-label="原生 AgentQA">
-          <div className="analysis-panel-heading">
-            <span>原生 AgentQA</span>
-            <strong>{selectedAgent?.name ?? "未选择"}</strong>
-          </div>
-
-          {agentState === "loading" ? (
-            <EmptyState text="加载 Agent" loading compact />
-          ) : agentState === "error" ? (
-            <ErrorState message="原生 Agent 列表不可用" />
-          ) : (
-            <>
-              <AgentPicker
-                agents={agentCatalog?.agents ?? []}
-                selectedAgentId={selectedAgentId}
-                onSelect={setSelectedAgentId}
-              />
-              <NativeAgentStatus catalog={agentCatalog} selectedAgent={selectedAgent} />
-            </>
-          )}
-
-          <button
-            className="secondary-action"
-            type="button"
-            disabled={agentRunState === "loading" || !selectedAgentId}
-            onClick={runNativeAgent}
-          >
-            {agentRunState === "loading" ? (
-              <Loader2 size={16} aria-hidden="true" />
-            ) : (
-              <Bot size={16} aria-hidden="true" />
-            )}
-            <span>{agentRunState === "loading" ? "运行中" : "运行原生 Agent"}</span>
-          </button>
-
-          {agentRun ? (
-            <div className="native-agent-result">
-              <span>{agentRun.runtime.source}</span>
-              <strong>
-                references {agentRun.runtime.reference_count} / citations{" "}
-                {agentRun.runtime.saved_citation_count}
-              </strong>
-              <p>{agentRun.runtime.citation_blocked ? "Citation blocker 已记录" : "Citation 已绑定"}</p>
-              {agentRun.runtime.tool_names.length > 0 ? (
-                <small>{agentRun.runtime.tool_names.join(", ")}</small>
-              ) : null}
+        <details className="advanced-controls analysis-native-details">
+          <summary>高级工具</summary>
+          <section className="native-agent-panel" aria-label="原生 AgentQA">
+            <div className="analysis-panel-heading">
+              <span>原生 AgentQA</span>
+              <strong>{selectedAgent?.name ?? "未选择"}</strong>
             </div>
-          ) : null}
-        </section>
+
+            {agentState === "loading" ? (
+              <EmptyState text="加载 Agent" loading compact />
+            ) : agentState === "error" ? (
+              <ErrorState message="原生 Agent 列表不可用" />
+            ) : (
+              <>
+                <AgentPicker
+                  agents={agentCatalog?.agents ?? []}
+                  selectedAgentId={selectedAgentId}
+                  onSelect={setSelectedAgentId}
+                />
+                <NativeAgentStatus catalog={agentCatalog} selectedAgent={selectedAgent} />
+              </>
+            )}
+
+            <button
+              className="secondary-action"
+              type="button"
+              disabled={agentRunState === "loading" || !selectedAgentId}
+              onClick={runNativeAgent}
+            >
+              {agentRunState === "loading" ? (
+                <Loader2 size={16} aria-hidden="true" />
+              ) : (
+                <Bot size={16} aria-hidden="true" />
+              )}
+              <span>{agentRunState === "loading" ? "运行中" : "运行原生 Agent"}</span>
+            </button>
+
+            {agentRun ? (
+              <div className="native-agent-result">
+                <span>{agentRun.runtime.source}</span>
+                <strong>
+                  references {agentRun.runtime.reference_count} / citations{" "}
+                  {agentRun.runtime.saved_citation_count}
+                </strong>
+                <p>{agentRun.runtime.citation_blocked ? "Citation blocker 已记录" : "Citation 已绑定"}</p>
+                {agentRun.runtime.tool_names.length > 0 ? (
+                  <small>{agentRun.runtime.tool_names.join(", ")}</small>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+        </details>
 
         <section className="wiki-draft-action" aria-label="Wiki 草稿">
           <div className="analysis-panel-heading">
@@ -790,6 +796,8 @@ function NativeAgentStatus({
       <span>agents {catalog.agents.length}</span>
       <span>presets {catalog.presets.length}</span>
       <span>copy {catalog.surfaces.copy ?? "backlog"}</span>
+      <span>mutations {catalog.surfaces.mutations ?? "backlog"}</span>
+      <span>ownership {catalog.surfaces.ownership ?? "pending"}</span>
       {selectedAgent ? (
         <span>{selectedAgent.allowed_tools.length} tools</span>
       ) : null}

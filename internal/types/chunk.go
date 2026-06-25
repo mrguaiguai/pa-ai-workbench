@@ -104,6 +104,29 @@ type VideoInfo struct {
 	URL string `json:"url"          gorm:"type:text"`
 }
 
+// ChunkSearchResult is the public response shape for "search by chunk".
+// It keeps the source chunk fields clients need for navigation while
+// preserving the retrieval score and matched index content for traceability.
+type ChunkSearchResult struct {
+	ID                 string        `json:"id"`
+	Content            string        `json:"content"`
+	KnowledgeID        string        `json:"knowledge_id"`
+	KnowledgeBaseID    string        `json:"knowledge_base_id"`
+	ChunkIndex         int           `json:"chunk_index"`
+	ChunkType          ChunkType     `json:"chunk_type"`
+	ParentChunkID      string        `json:"parent_chunk_id"`
+	ImageInfo          string        `json:"image_info"`
+	IsEnabled          bool          `json:"is_enabled"`
+	Score              float64       `json:"score"`
+	MatchType          MatchType     `json:"match_type"`
+	RetrieverType      RetrieverType `json:"retriever_type"`
+	RetrieverEngine    string        `json:"retriever_engine"`
+	MatchedContent     string        `json:"matched_content,omitempty"`
+	SourceID           string        `json:"source_id,omitempty"`
+	ChunkMetadata      JSON          `json:"chunk_metadata,omitempty"`
+	ExcludeSelfApplied bool          `json:"exclude_self_applied"`
+}
+
 // Chunk represents a document chunk
 // Chunks are meaningful text segments extracted from original documents
 // and are the basic units of knowledge base retrieval

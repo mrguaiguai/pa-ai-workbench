@@ -32,6 +32,7 @@ class Document(TimestampMixin, table=True):
     file_size: int | None = Field(default=None)
     mime_type: str | None = Field(default=None)
     knowledge_backend: str = Field(default="mock", index=True)
+    knowledge_base_id: str | None = Field(default=None, index=True)
     external_doc_id: str | None = Field(default=None, index=True)
     summary: str | None = Field(default=None)
     status: str = Field(default="uploaded", index=True)
@@ -158,6 +159,26 @@ class KnowledgeBaseSelectionSnapshot(TimestampMixin, table=True):
     source: str = Field(default="weknora_api", index=True)
     status: str = Field(default="active", index=True)
     metadata_json: str | None = Field(default=None)
+
+
+class NativeMutationAudit(SQLModel, table=True):
+    __tablename__ = "native_mutation_audits"
+
+    id: str = Field(default_factory=lambda: new_id("audit"), primary_key=True)
+    capability: str = Field(index=True)
+    operation: str = Field(index=True)
+    target_type: str = Field(index=True)
+    target_id: str | None = Field(default=None, index=True)
+    source: str = Field(default="weknora_api", index=True)
+    status: str = Field(index=True)
+    confirmation_required: bool = Field(default=True)
+    confirmation_method: str | None = Field(default=None, index=True)
+    confirm_token_id: str | None = Field(default=None, index=True)
+    reason: str | None = Field(default=None)
+    request_summary_json: str | None = Field(default=None)
+    response_summary_json: str | None = Field(default=None)
+    error_message: str | None = Field(default=None)
+    created_at: datetime = Field(default_factory=utc_now, nullable=False)
 
 
 class WikiPage(TimestampMixin, table=True):

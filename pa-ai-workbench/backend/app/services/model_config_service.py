@@ -56,8 +56,15 @@ def native_model_config_overview(limit: int = 10) -> dict[str, Any]:
     try:
         models = backend.list_models()
         overview["surfaces"]["model_catalog"] = _model_catalog_surface(models, item_limit)
+        overview["surfaces"]["config_source"] = _config_source_surface(models)
+        overview["surfaces"]["pa_bridge_alignment"] = _pa_bridge_alignment_surface(
+            overview["surfaces"]["pa_runtime"],
+            models,
+        )
     except KnowledgeBackendUnavailableError as exc:
         _block_surface(overview, "model_catalog", exc)
+        _block_surface(overview, "config_source", exc)
+        _block_surface(overview, "pa_bridge_alignment", exc)
 
     try:
         parser_payload = backend.list_parser_engines()
@@ -87,6 +94,10 @@ def native_model_config_overview(limit: int = 10) -> dict[str, Any]:
     overview["summary"] = {
         "provider_count": len(providers),
         "model_count": len(models),
+        "yaml_managed_model_count": int(
+            overview["surfaces"].get("config_source", {}).get("yaml_managed_count") or 0
+        ),
+        "pa_bridge_alignment": overview["surfaces"].get("pa_bridge_alignment", {}).get("status"),
         "parser_engine_count": len(parser_payload.get("engines") or []),
         "storage_engine_count": len(storage_payload.get("engines") or []),
         "admin_tests": "blocked_admin_only",
@@ -144,8 +155,155 @@ def _model_catalog_surface(models: list[dict[str, Any]], item_limit: int) -> dic
             int(model.get("configured_credential_field_count") or 0)
             for model in models
         ),
+        "yaml_managed_count": sum(1 for model in models if model.get("managed_by") == "yaml"),
         "items": models[:item_limit],
     }
+
+
+def _config_source_surface(models: list[dict[str, Any]]) -> dict[str, Any]:
+    yaml_models = [
+        model
+        for model in models
+        if model.get("is_builtin") and model.get("managed_by") == "yaml"
+    ]
+    type_counts = Counter(str(model.get("type") or "unknown") for model in yaml_models)
+    required_types = ("KnowledgeQA", "Embedding")
+    missing_required_types = [
+        model_type
+        for model_type in required_types
+        if int(type_counts.get(model_type) or 0) == 0
+    ]
+    recommended_missing_types = [
+        model_type
+        for model_type in ("Rerank",)
+        if int(type_counts.get(model_type) or 0) == 0
+    ]
+    if not yaml_models:
+        status = "blocked"
+        reason = (
+            "no native model rows are marked is_builtin=true and managed_by=yaml; "
+            "config/builtin_models.yaml or BUILTIN_MODELS_CONFIG is not proven as source of truth"
+        )
+    elif missing_required_types:
+        status = "partial"
+        reason = "yaml-managed model config is present but missing required model types"
+    else:
+        status = "live"
+        reason = "yaml-managed built-in model config is the native source of truth"
+    return {
+        "status": status,
+        "source": "config/builtin_models.yaml_or_BUILTIN_MODELS_CONFIG",
+        "reason": reason,
+        "yaml_managed_count": len(yaml_models),
+        "type_counts": dict(sorted(type_counts.items())),
+        "required_types": list(required_types),
+        "missing_required_types": missing_required_types,
+        "recommended_missing_types": recommended_missing_types,
+        "default_yaml_count": sum(1 for model in yaml_models if model.get("is_default")),
+    }
+
+
+def _pa_bridge_alignment_surface(
+    pa_runtime: dict[str, Any],
+    models: list[dict[str, Any]],
+) -> dict[str, Any]:
+    yaml_models = [
+        model
+        for model in models
+        if model.get("is_builtin") and model.get("managed_by") == "yaml"
+    ]
+    checks = {
+        "chat": _runtime_model_alignment(
+            runtime_model=pa_runtime.get("chat_model"),
+            runtime_provider=pa_runtime.get("chat_provider"),
+            model_type="KnowledgeQA",
+            yaml_models=yaml_models,
+        ),
+        "embedding": _runtime_model_alignment(
+            runtime_model=pa_runtime.get("embedding_model"),
+            runtime_provider=pa_runtime.get("embedding_provider"),
+            model_type="Embedding",
+            yaml_models=yaml_models,
+        ),
+    }
+    blocked = [
+        name
+        for name, check in checks.items()
+        if check.get("status") == "blocked"
+    ]
+    partial = [
+        name
+        for name, check in checks.items()
+        if check.get("status") == "partial"
+    ]
+    runtime_live = pa_runtime.get("status") == "live"
+    if not runtime_live:
+        status = "blocked"
+        reason = "PA chat/embedding env bridge is not live-configured"
+    elif blocked:
+        status = "blocked"
+        reason = "PA env bridge cannot be aligned because native YAML-managed models are missing"
+    elif partial:
+        status = "partial"
+        reason = "PA env bridge is live but differs from native YAML-managed defaults"
+    else:
+        status = "live"
+        reason = "PA env bridge is live and aligned with native YAML-managed model config"
+    return {
+        "status": status,
+        "reason": reason,
+        "source": "pa_env_bridge_to_native_builtin_models",
+        "checks": checks,
+    }
+
+
+def _runtime_model_alignment(
+    *,
+    runtime_model: str | None,
+    runtime_provider: str | None,
+    model_type: str,
+    yaml_models: list[dict[str, Any]],
+) -> dict[str, Any]:
+    candidates = [
+        model
+        for model in yaml_models
+        if str(model.get("type") or "") == model_type
+    ]
+    if not candidates:
+        return {
+            "status": "blocked",
+            "model_type": model_type,
+            "candidate_count": 0,
+            "reason": "no YAML-managed native model candidate",
+        }
+    runtime_name = _norm(runtime_model)
+    runtime_provider_norm = _norm(runtime_provider)
+    default_candidates = [model for model in candidates if model.get("is_default")]
+    comparable = default_candidates or candidates
+    name_match = any(_norm(model.get("name")) == runtime_name for model in comparable)
+    provider_match = any(_norm(model.get("provider")) == runtime_provider_norm for model in comparable)
+    if name_match and provider_match:
+        status = "live"
+        reason = "runtime model name and provider match native YAML-managed config"
+    elif name_match:
+        status = "partial"
+        reason = "runtime model name matches but provider differs or is unavailable"
+    else:
+        status = "partial"
+        reason = "runtime model name differs from native YAML-managed config"
+    return {
+        "status": status,
+        "model_type": model_type,
+        "candidate_count": len(candidates),
+        "default_candidate_count": len(default_candidates),
+        "name_match": name_match,
+        "provider_match": provider_match,
+        "reason": reason,
+    }
+
+
+def _norm(value: Any) -> str:
+    return str(value or "").strip().lower().replace("-", "_")
 
 
 def _parser_engine_surface(payload: dict[str, Any], item_limit: int) -> dict[str, Any]:

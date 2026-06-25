@@ -15,6 +15,13 @@ def get_model_status(settings: Settings) -> ModelStatusResponse:
         embedding_provider=embedding.provider,
         mock_mode=settings.mock_model_mode,
         configured=chat.configured and embedding.configured,
+        config_source="pa_env_bridge",
+        bridge_status=(
+            "live"
+            if chat.configured and embedding.configured and not chat.mock and not embedding.mock
+            else "blocked"
+        ),
+        native_source_of_truth_endpoint="/api/model/native/overview",
         chat=chat,
         embedding=embedding,
     )

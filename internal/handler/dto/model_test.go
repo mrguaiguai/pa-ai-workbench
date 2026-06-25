@@ -47,6 +47,7 @@ func TestModelResponse_BuiltinStripsTenantConfig(t *testing.T) {
 	m := &types.Model{
 		ID:        "builtin-1",
 		IsBuiltin: true,
+		ManagedBy: types.BuiltinModelManagedBy,
 		Parameters: types.ModelParameters{
 			BaseURL:        "https://tenant-private.example.com",
 			APIKey:         "should-not-leak",
@@ -64,10 +65,13 @@ func TestModelResponse_BuiltinStripsTenantConfig(t *testing.T) {
 		"builtin must not leak per-tenant extra_config")
 	assert.True(t, resp.Parameters.SupportsVision,
 		"capability metadata must survive (not per-tenant)")
+	assert.Equal(t, types.BuiltinModelManagedBy, resp.ManagedBy,
+		"managed_by is non-secret lifecycle metadata used by PA to prove YAML ownership")
 
 	body, _ := json.Marshal(resp)
 	assert.False(t, strings.Contains(string(body), "should-not-leak"))
 	assert.False(t, strings.Contains(string(body), "tenant-private.example.com"))
+	assert.True(t, strings.Contains(string(body), `"managed_by":"yaml"`))
 }
 
 func TestModelResponse_NilSafe(t *testing.T) {

@@ -15,6 +15,7 @@ from app.models import WikiCitation
 from app.models import WikiPage as WikiPageModel
 from app.schemas import EvidenceRead
 from app.schemas import NativeWikiConfirmRequest
+from app.schemas import NativeWikiIssueCreateRequest
 from app.schemas import NativeWikiIssueStatusRequest
 from app.schemas import NativeWikiPageDeleteRequest
 from app.schemas import NativeWikiPageSaveRequest
@@ -29,6 +30,7 @@ from app.services.wiki_service import citation_metadata
 from app.services.wiki_service import auto_fix_native_wiki
 from app.services.wiki_service import create_wiki_draft_from_output
 from app.services.wiki_service import create_wiki_page_record
+from app.services.wiki_service import create_native_wiki_issue
 from app.services.wiki_service import create_native_wiki_page
 from app.services.wiki_service import delete_native_wiki_page
 from app.services.wiki_service import get_native_wiki_graph
@@ -61,6 +63,7 @@ from app.services.wiki_service import WikiDraftSourceNotFoundError
 from app.services.wiki_service import WikiPageIndexError
 from app.services.wiki_service import WikiPageConflictError
 from app.services.wiki_service import WikiPageNotFoundError
+from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.schemas import WikiPage
 from knowledge_engine.schemas import WikiPageSummary
 
@@ -217,36 +220,58 @@ def list_native_wiki_issues_api(
     return list_native_wiki_issues(kb_id=kb_id, slug=slug, status=status)
 
 
-@router.post("/native/rebuild-links")
-def rebuild_native_wiki_links_api(
-    payload: NativeWikiConfirmRequest,
+@router.post("/native/issues", status_code=status.HTTP_201_CREATED)
+def create_native_wiki_issue_api(
+    payload: NativeWikiIssueCreateRequest,
+    session: Annotated[Session, Depends(get_session)],
     kb_id: str | None = None,
 ) -> dict[str, Any]:
     try:
-        return rebuild_native_wiki_links(confirm_token=payload.confirm_token, kb_id=kb_id)
+        return create_native_wiki_issue(session=session, payload=payload.model_dump(), kb_id=kb_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KnowledgeBackendUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/native/rebuild-links")
+def rebuild_native_wiki_links_api(
+    payload: NativeWikiConfirmRequest,
+    session: Annotated[Session, Depends(get_session)],
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        return rebuild_native_wiki_links(session=session, confirm_token=payload.confirm_token, kb_id=kb_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KnowledgeBackendUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/native/auto-fix")
 def auto_fix_native_wiki_api(
     payload: NativeWikiConfirmRequest,
+    session: Annotated[Session, Depends(get_session)],
     kb_id: str | None = None,
 ) -> dict[str, Any]:
     try:
-        return auto_fix_native_wiki(confirm_token=payload.confirm_token, kb_id=kb_id)
+        return auto_fix_native_wiki(session=session, confirm_token=payload.confirm_token, kb_id=kb_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KnowledgeBackendUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.put("/native/issues/{issue_id}/status")
 def update_native_wiki_issue_status_api(
     issue_id: str,
     payload: NativeWikiIssueStatusRequest,
+    session: Annotated[Session, Depends(get_session)],
     kb_id: str | None = None,
 ) -> dict[str, Any]:
     try:
         return update_native_wiki_issue_status(
+            session=session,
             issue_id=issue_id,
             status=payload.status,
             confirm_token=payload.confirm_token,
@@ -254,6 +279,8 @@ def update_native_wiki_issue_status_api(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KnowledgeBackendUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/search", response_model=WikiSearchResponse)

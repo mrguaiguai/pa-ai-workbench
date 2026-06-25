@@ -966,6 +966,11 @@ func (s *wikiPageService) UpdateIssueStatus(ctx context.Context, issueID string,
 	return s.repo.UpdateIssueStatus(ctx, issueID, status)
 }
 
+// UpdateIssueStatusForKB updates an issue's status within the owning knowledge base.
+func (s *wikiPageService) UpdateIssueStatusForKB(ctx context.Context, kbID string, issueID string, status string) error {
+	return s.repo.UpdateIssueStatusForKB(ctx, kbID, issueID, status)
+}
+
 // InjectCrossLinks scans affected pages and injects [[wiki-links]] for mentions
 // of other wiki page titles in the content. Pure text replacement, no LLM call.
 // Shares the linkifyContent helper with the ingest pipeline so both paths honor

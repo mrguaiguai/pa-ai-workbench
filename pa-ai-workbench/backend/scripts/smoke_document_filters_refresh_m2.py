@@ -41,6 +41,7 @@ def main() -> int:
     print(f"- indexed: {result['indexed']}")
     print(f"- failed/error: {result['failed_error']}")
     print(f"- unavailable: {result['unavailable']}")
+    print(f"- deleted: {result['deleted']}")
     print(f"- refreshed: {result['refreshed']}")
     return 0
 
@@ -57,6 +58,8 @@ def _run_smoke() -> dict[str, Any]:
             failed_error = list_documents(session=session, status="failed", has_error=True)
             unavailable = list_documents(session=session, status="unavailable")
             weknora = list_documents(session=session, knowledge_backend="weknora_api")
+            deleted = list_documents(session=session, status="deleted")
+            default_records = list_documents(session=session)
             refreshed = refresh_document_statuses(
                 session=session,
                 status="processing",
@@ -80,6 +83,15 @@ def _run_smoke() -> dict[str, Any]:
                 "backend filter failed",
             )
             _assert(
+                {doc.id for doc in deleted} == {docs["deleted"].id, docs["delete_submitted"].id},
+                "deleted filter failed",
+            )
+            _assert(
+                docs["deleted"].id not in {doc.id for doc in default_records}
+                and docs["delete_submitted"].id not in {doc.id for doc in default_records},
+                "default list leaked deleted documents",
+            )
+            _assert(
                 {doc.id for doc in refreshed} == {docs["uploaded"].id, docs["unavailable"].id},
                 "refresh filter failed",
             )
@@ -89,6 +101,7 @@ def _run_smoke() -> dict[str, Any]:
                 "indexed": len(indexed),
                 "failed_error": len(failed_error),
                 "unavailable": len(unavailable),
+                "deleted": len(deleted),
                 "refreshed": len(refreshed),
             }
 
@@ -132,6 +145,20 @@ def _seed_documents(session: Session) -> dict[str, Document]:
             status="indexed",
             source="fixture",
         ),
+        "deleted": Document(
+            title="Deleted Fixture",
+            knowledge_backend="weknora_api",
+            external_doc_id="deleted-fixture",
+            status="deleted",
+            source="fixture",
+        ),
+        "delete_submitted": Document(
+            title="Delete Submitted Fixture",
+            knowledge_backend="weknora_api",
+            external_doc_id="delete-submitted-fixture",
+            status="deleting",
+            source="fixture",
+        ),
     }
     for document in docs.values():
         session.add(document)
@@ -146,6 +173,15 @@ def _seed_documents(session: Session) -> dict[str, Document]:
             status="failed",
             message="synthetic status refresh failure",
             error_message="WeKnora unavailable",
+        )
+    )
+    session.add(
+        DocumentProcessingEvent(
+            document_id=docs["delete_submitted"].id,
+            external_doc_id=docs["delete_submitted"].external_doc_id,
+            step="weknora_delete",
+            status="completed",
+            message="synthetic delete completed",
         )
     )
     session.commit()

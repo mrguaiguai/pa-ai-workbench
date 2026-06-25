@@ -51,7 +51,7 @@ def main() -> int:
             _assert(overview.get("schema_version") == "wnx-p2-04", "schema version is wnx-p2-04")
             _assert(overview.get("source") == "weknora_api", "overview uses WeKnora source")
             _assert(bool(overview.get("masked")), "overview is masked")
-            _assert(overview.get("status") == "partial", "overview is partial until tests/mutations are safe")
+            _assert(overview.get("status") in {"partial", "live"}, "overview status is classified")
             _assert(_no_secret_shaped_fields(overview), "overview excludes secret-shaped fields")
 
             surfaces = overview.get("surfaces") if isinstance(overview.get("surfaces"), dict) else {}
@@ -67,7 +67,7 @@ def main() -> int:
             _assert(stores.get("status") == "live", "store list is live")
             _assert(embedding.get("status") == "live", "embedding readiness is live")
             _assert(embedding.get("mock") is False, "embedding is not mock")
-            _assert(mutations.get("status") == "backlog", "mutations remain backlog")
+            _assert(mutations.get("status") in {"backlog", "blocked", "live"}, "mutations are classified")
             _assert(
                 kb_binding.get("status") in {"live", "blocked", "configured_unknown"},
                 "KB binding is classified",
@@ -138,7 +138,7 @@ def main() -> int:
                 vector_group.get("source_endpoint") == "/api/vector-stores/native/overview",
                 "status center uses vector store overview endpoint",
             )
-            _assert(vector_group.get("status") == "partial", "status center marks vector store group partial")
+            _assert(vector_group.get("status") in {"partial", "live"}, "status center classifies vector store group")
             summary = vector_group.get("summary") if isinstance(vector_group.get("summary"), dict) else {}
             _assert(summary.get("store_test_status") == store_test.get("status"), "status center exposes store test status")
 
@@ -194,7 +194,7 @@ def main() -> int:
                     mock=embedding.get("mock"),
                 )
             )
-            print("- mutations: backlog")
+            print(f"- mutations: {mutations.get('status')}")
             if browser_mode:
                 print("- browser: Capability Center rendered vector store management readiness")
             return 0

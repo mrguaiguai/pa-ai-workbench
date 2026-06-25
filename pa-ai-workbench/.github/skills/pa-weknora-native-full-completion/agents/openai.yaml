@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeKnora Native Full Completion"
+  short_description: "Drive WNFC tasks to a local production knowledge workbench."
+  default_prompt: "Use this skill to execute one WNFC task with live native evidence, automatic progress updates, and no demo shortcuts."

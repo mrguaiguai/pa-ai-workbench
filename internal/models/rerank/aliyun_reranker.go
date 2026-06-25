@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
@@ -20,6 +21,7 @@ type AliyunReranker struct {
 	baseURL       string       // Base URL for API requests
 	client        *http.Client // HTTP client for making API requests
 	customHeaders map[string]string
+	compatibleAPI bool
 }
 
 // SetCustomHeaders 设置用户自定义 HTTP 请求头（类似 OpenAI Python SDK 的 extra_headers）。
@@ -46,10 +48,26 @@ type AliyunRerankParameters struct {
 	TopN            int  `json:"top_n"`            // Number of top results to return
 }
 
+// AliyunCompatibleRerankRequest represents qwen3-rerank's compatible API body.
+type AliyunCompatibleRerankRequest struct {
+	Model     string   `json:"model"`
+	Query     string   `json:"query"`
+	Documents []string `json:"documents"`
+	TopN      int      `json:"top_n,omitempty"`
+}
+
 // AliyunRerankResponse represents the response from Aliyun DashScope reranking request
 type AliyunRerankResponse struct {
 	Output AliyunOutput `json:"output"` // Output containing results
 	Usage  AliyunUsage  `json:"usage"`  // Token usage information
+}
+
+// AliyunCompatibleRerankResponse represents qwen3-rerank's compatible response.
+type AliyunCompatibleRerankResponse struct {
+	ID      string       `json:"id"`
+	Model   string       `json:"model"`
+	Results []RankResult `json:"results"`
+	Usage   AliyunUsage  `json:"usage"`
 }
 
 // AliyunOutput contains the reranking results
@@ -77,22 +95,27 @@ type AliyunUsage struct {
 // NewAliyunReranker creates a new instance of Aliyun reranker with the provided configuration
 func NewAliyunReranker(config *RerankerConfig) (*AliyunReranker, error) {
 	apiKey := config.APIKey
-	baseURL := "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
-	if url := config.BaseURL; url != "" {
-		baseURL = url
-	}
+	baseURL, compatibleAPI := aliyunRerankEndpoint(config.ModelName, config.BaseURL)
 
 	return &AliyunReranker{
-		modelName: config.ModelName,
-		modelID:   config.ModelID,
-		apiKey:    apiKey,
-		baseURL:   baseURL,
-		client:    &http.Client{},
+		modelName:     config.ModelName,
+		modelID:       config.ModelID,
+		apiKey:        apiKey,
+		baseURL:       baseURL,
+		client:        &http.Client{},
+		compatibleAPI: compatibleAPI,
 	}, nil
 }
 
 // Rerank performs document reranking based on relevance to the query using Aliyun DashScope API
 func (r *AliyunReranker) Rerank(ctx context.Context, query string, documents []string) ([]RankResult, error) {
+	if r.compatibleAPI {
+		return r.rerankCompatible(ctx, query, documents)
+	}
+	return r.rerankLegacy(ctx, query, documents)
+}
+
+func (r *AliyunReranker) rerankLegacy(ctx context.Context, query string, documents []string) ([]RankResult, error) {
 	// Build the request body
 	requestBody := &AliyunRerankRequest{
 		Model: r.modelName,
@@ -156,6 +179,69 @@ func (r *AliyunReranker) Rerank(ctx context.Context, query string, documents []s
 	}
 
 	return results, nil
+}
+
+func (r *AliyunReranker) rerankCompatible(ctx context.Context, query string, documents []string) ([]RankResult, error) {
+	requestBody := &AliyunCompatibleRerankRequest{
+		Model:     r.modelName,
+		Query:     query,
+		Documents: documents,
+		TopN:      len(documents),
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", r.baseURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", r.apiKey))
+	secutils.ApplyCustomHeaders(req, r.customHeaders)
+
+	logger.Debugf(ctx, "%s", buildRerankRequestDebug(r.modelName, r.baseURL, query, documents))
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("aliyun compatible rerank API error: Http Status: %s", resp.Status)
+	}
+
+	var response AliyunCompatibleRerankResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("unmarshal response: %w", err)
+	}
+	return response.Results, nil
+}
+
+func aliyunRerankEndpoint(modelName string, baseURL string) (string, bool) {
+	trimmed := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	compatible := strings.EqualFold(strings.TrimSpace(modelName), "qwen3-rerank")
+	if compatible {
+		if trimmed == "" {
+			return "https://dashscope.aliyuncs.com/compatible-api/v1/reranks", true
+		}
+		if strings.HasSuffix(trimmed, "/reranks") {
+			return trimmed, true
+		}
+		return trimmed + "/reranks", true
+	}
+	if trimmed != "" {
+		return trimmed, false
+	}
+	return "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank", false
 }
 
 // GetModelName returns the name of the reranking model

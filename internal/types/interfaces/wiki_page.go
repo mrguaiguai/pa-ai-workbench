@@ -174,6 +174,9 @@ type WikiPageService interface {
 
 	// UpdateIssueStatus updates the status of an issue (e.g. pending -> resolved/ignored).
 	UpdateIssueStatus(ctx context.Context, issueID string, status string) error
+
+	// UpdateIssueStatusForKB updates the status of an issue within a knowledge base.
+	UpdateIssueStatusForKB(ctx context.Context, kbID string, issueID string, status string) error
 }
 
 // WikiPageRepository defines the wiki page data persistence interface.
@@ -297,4 +300,7 @@ type WikiPageRepository interface {
 
 	// UpdateIssueStatus updates an issue's status.
 	UpdateIssueStatus(ctx context.Context, issueID string, status string) error
+
+	// UpdateIssueStatusForKB updates an issue's status scoped to a knowledge base.
+	UpdateIssueStatusForKB(ctx context.Context, kbID string, issueID string, status string) error
 }

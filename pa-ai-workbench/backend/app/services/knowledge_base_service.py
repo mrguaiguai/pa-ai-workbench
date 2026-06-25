@@ -10,8 +10,16 @@ from app.config import Settings
 from app.config import get_settings
 from app.models import KnowledgeBaseSelectionSnapshot
 from app.models import utc_now
+from app.models import NativeMutationAudit
+from app.services.native_audit_service import NativeConfirmationError
+from app.services.native_audit_service import record_native_mutation_audit
+from app.services.native_audit_service import require_native_confirmation
+from app.services.native_audit_service import update_native_mutation_audit
 from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
+
+CONFIRM_KB_MUTATION_TOKEN = "CONFIRM_NATIVE_KB_MUTATION"
+CONFIRM_KB_MUTATION_TOKEN_ID = "native_knowledge_base_mutation"
 
 
 def native_knowledge_base_overview(session: Session, limit: int = 20) -> dict[str, Any]:
@@ -67,7 +75,7 @@ def native_knowledge_base_overview(session: Session, limit: int = 20) -> dict[st
             "snapshot_saved": bool(active and active.get("selection_source") == "pa_active_selection"),
         },
         "tags": _tags_surface(backend, active, item_limit),
-        "mutations": _mutation_backlog(),
+        "mutations": _mutation_surface(),
     }
     overview["status"] = "live" if active else "partial"
     return overview
@@ -94,8 +102,90 @@ def select_active_knowledge_base(session: Session, kb_id: str) -> dict[str, Any]
         "source": "pa_backend_bff",
         "active_selection": _snapshot_to_selection(snapshot, kb=kb, validated=True),
         "tags": tags,
-        "mutation_backlog": _mutation_backlog()["items"],
+        "mutation_backlog": [],
+        "mutation_status": _mutation_surface(),
     }
+
+
+def create_native_knowledge_base(
+    *,
+    session: Session,
+    payload: dict[str, Any],
+    confirm_token: str | None,
+) -> dict[str, Any]:
+    return _mutate_knowledge_base(
+        session=session,
+        action="create",
+        confirm_token=confirm_token,
+        target_type="knowledge_base",
+        target_id=None,
+        request_summary=_kb_request_summary("create", payload=payload),
+        mutate=lambda backend: {
+            "knowledge_base": backend.create_knowledge_base(**_kb_create_payload(payload)),
+        },
+    )
+
+
+def update_native_knowledge_base(
+    *,
+    session: Session,
+    kb_id: str,
+    payload: dict[str, Any],
+    confirm_token: str | None,
+) -> dict[str, Any]:
+    return _mutate_knowledge_base(
+        session=session,
+        action="update",
+        confirm_token=confirm_token,
+        target_type="knowledge_base",
+        target_id=_safe_public_id(kb_id),
+        request_summary=_kb_request_summary("update", kb_id=kb_id, payload=payload),
+        mutate=lambda backend: {
+            "knowledge_base": backend.update_knowledge_base(
+                kb_id,
+                name=str(payload.get("name") or "").strip(),
+                description=payload.get("description"),
+            ),
+        },
+    )
+
+
+def delete_native_knowledge_base(
+    *,
+    session: Session,
+    kb_id: str,
+    confirm_token: str | None,
+) -> dict[str, Any]:
+    return _mutate_knowledge_base(
+        session=session,
+        action="delete",
+        confirm_token=confirm_token,
+        target_type="knowledge_base",
+        target_id=_safe_public_id(kb_id),
+        request_summary={"action": "delete", "kb_id_present": bool(str(kb_id or "").strip())},
+        mutate=lambda backend: {
+            "deleted": bool(backend.delete_knowledge_base(kb_id).get("success")),
+        },
+    )
+
+
+def toggle_native_knowledge_base_pin(
+    *,
+    session: Session,
+    kb_id: str,
+    confirm_token: str | None,
+) -> dict[str, Any]:
+    return _mutate_knowledge_base(
+        session=session,
+        action="pin_toggle",
+        confirm_token=confirm_token,
+        target_type="knowledge_base_pin",
+        target_id=_safe_public_id(kb_id),
+        request_summary={"action": "pin_toggle", "kb_id_present": bool(str(kb_id or "").strip())},
+        mutate=lambda backend: {
+            "knowledge_base": backend.toggle_knowledge_base_pin(kb_id),
+        },
+    )
 
 
 def active_knowledge_base_id(session: Session) -> str | None:
@@ -215,7 +305,7 @@ def _tags_surface(
         "status": "live",
         "count": len(tags),
         "items": tags[:limit],
-        "mutation_status": "backlog",
+        "mutation_status": "live",
     }
 
 
@@ -226,13 +316,18 @@ def _safe_tags(backend: WeKnoraApiBackend, kb_id: object, limit: int) -> list[di
         return []
 
 
-def _mutation_backlog() -> dict[str, Any]:
+def _mutation_surface() -> dict[str, Any]:
     return {
-        "status": "backlog",
+        "status": "live",
+        "kb_mutations": "live",
+        "pin_mutations": "live",
+        "tag_mutations": "live",
+        "confirm_token_required": CONFIRM_KB_MUTATION_TOKEN,
+        "confirm_token_id": CONFIRM_KB_MUTATION_TOKEN_ID,
         "items": [
-            "KB create/update/delete requires confirmation and audit trail",
-            "pin/tag mutations require a dedicated confirmation UX",
-            "PA must not mutate production KBs from a status-only surface",
+            "KB create/update/delete",
+            "KB pin toggle",
+            "tag create/update/delete via organization surface",
         ],
     }
 
@@ -243,8 +338,193 @@ def _backlog_surfaces() -> dict[str, Any]:
         "read": {"status": "backlog"},
         "active_selection": {"status": "backlog"},
         "tags": {"status": "backlog"},
-        "mutations": _mutation_backlog(),
+        "mutations": _mutation_surface(),
     }
+
+
+def _mutate_knowledge_base(
+    *,
+    session: Session,
+    action: str,
+    confirm_token: str | None,
+    target_type: str,
+    target_id: str | None,
+    request_summary: dict[str, Any],
+    mutate: Any,
+) -> dict[str, Any]:
+    settings = get_settings()
+    response = _kb_response(settings, f"wnfc-p5-01-kb-{action}")
+    if settings.knowledge_backend != "weknora_api":
+        response["status"] = "backlog"
+        response["surfaces"][action] = {"status": "backlog", "reason": "weknora_api backend is required"}
+        return response
+    try:
+        confirmation = require_native_confirmation(
+            confirm=None,
+            confirm_token=confirm_token,
+            expected_token=CONFIRM_KB_MUTATION_TOKEN,
+            token_id=CONFIRM_KB_MUTATION_TOKEN_ID,
+            action=f"native knowledge base {action}",
+        )
+    except NativeConfirmationError:
+        response["surfaces"][action] = _kb_confirmation_blocked(action)
+        response["warnings"].append(f"blocked: native knowledge base {action} requires explicit confirmation")
+        return response
+
+    audit = record_native_mutation_audit(
+        session=session,
+        capability="knowledge_base",
+        operation=f"weknora_kb_{action}",
+        target_type=target_type,
+        target_id=target_id,
+        status="started",
+        confirmation=confirmation,
+        request_summary=request_summary,
+    )
+    session.commit()
+
+    try:
+        result = mutate(_weknora_backend(settings))
+    except (KnowledgeBackendUnavailableError, ValueError) as exc:
+        update_native_mutation_audit(
+            audit=audit,
+            status="failed",
+            response_summary={"action": action, "success": False},
+            error_message=str(exc),
+        )
+        session.commit()
+        response["status"] = "partial"
+        response["surfaces"][action] = {"status": "partial", "reason": f"kb_{action}: {_error_code_from_exception(exc)}"}
+        response["audit"] = _audit_surface(audit)
+        response["confirmation"] = _confirmation_read(confirmation)
+        response["warnings"].append(f"partial: kb_{action}: {_error_code_from_exception(exc)}")
+        return response
+
+    surface = {"status": "live", **_kb_result_surface(result)}
+    update_native_mutation_audit(
+        audit=audit,
+        status="succeeded",
+        response_summary={"action": action, "success": True, **_kb_surface_summary(surface)},
+    )
+    session.commit()
+    response["status"] = "live"
+    response["surfaces"][action] = surface
+    response["audit"] = _audit_surface(audit)
+    response["confirmation"] = _confirmation_read(confirmation)
+    return response
+
+
+def _kb_response(settings: Settings, schema_version: str) -> dict[str, Any]:
+    return {
+        "schema_version": schema_version,
+        "source": "weknora_api" if settings.knowledge_backend == "weknora_api" else settings.knowledge_backend,
+        "status": "blocked",
+        "masked": True,
+        "surfaces": {},
+        "warnings": [],
+    }
+
+
+def _kb_create_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("knowledge base name is required")
+    return {
+        "name": name[:128],
+        "description": str(payload.get("description") or "").strip()[:500],
+        "kb_type": str(payload.get("type") or "document").strip()[:32] or "document",
+        "is_temporary": bool(payload.get("is_temporary")),
+    }
+
+
+def _kb_request_summary(action: str, *, payload: dict[str, Any], kb_id: str | None = None) -> dict[str, Any]:
+    return {
+        "action": action,
+        "kb_id_present": bool(str(kb_id or "").strip()),
+        "name_present": bool(str(payload.get("name") or "").strip()),
+        "description_present": bool(str(payload.get("description") or "").strip()),
+        "type": str(payload.get("type") or "document").strip()[:32],
+        "is_temporary": bool(payload.get("is_temporary")),
+    }
+
+
+def _kb_result_surface(result: dict[str, Any]) -> dict[str, Any]:
+    safe: dict[str, Any] = {}
+    kb = result.get("knowledge_base") if isinstance(result.get("knowledge_base"), dict) else None
+    if kb:
+        safe["knowledge_base"] = _public_kb(kb)
+    if "deleted" in result:
+        safe["deleted"] = bool(result.get("deleted"))
+    return safe
+
+
+def _kb_surface_summary(surface: dict[str, Any]) -> dict[str, Any]:
+    kb = surface.get("knowledge_base") if isinstance(surface.get("knowledge_base"), dict) else {}
+    return {
+        "status": surface.get("status"),
+        "deleted": surface.get("deleted"),
+        "kb_id_present": bool(kb.get("id")),
+        "is_pinned": kb.get("is_pinned"),
+        "type": kb.get("type"),
+    }
+
+
+def _public_kb(kb: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": kb.get("id"),
+        "name": kb.get("name"),
+        "description_present": bool(kb.get("description")),
+        "type": kb.get("type"),
+        "is_temporary": bool(kb.get("is_temporary")),
+        "is_pinned": bool(kb.get("is_pinned")),
+        "knowledge_count": kb.get("knowledge_count"),
+        "chunk_count": kb.get("chunk_count"),
+        "source": kb.get("source") or "weknora_api",
+    }
+
+
+def _kb_confirmation_blocked(action: str) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "reason": f"confirm_token={CONFIRM_KB_MUTATION_TOKEN} is required",
+        "action": action,
+        "confirm_token_id": CONFIRM_KB_MUTATION_TOKEN_ID,
+    }
+
+
+def _audit_surface(audit: NativeMutationAudit) -> dict[str, Any]:
+    return {
+        "id": audit.id,
+        "capability": audit.capability,
+        "operation": audit.operation,
+        "target_type": audit.target_type,
+        "target_id": audit.target_id,
+        "status": audit.status,
+        "confirm_token_id": audit.confirm_token_id,
+    }
+
+
+def _confirmation_read(confirmation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "required": bool(confirmation.get("required")),
+        "method": confirmation.get("method"),
+        "token_id": confirmation.get("token_id"),
+    }
+
+
+def _safe_public_id(value: object) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if len(text) <= 12:
+        return text
+    return f"{text[:6]}...{text[-4:]}"
+
+
+def _error_code_from_exception(exc: Exception) -> str:
+    if isinstance(exc, KnowledgeBackendUnavailableError):
+        return exc.error_code
+    return exc.__class__.__name__
 
 
 def _weknora_backend(settings: Settings) -> WeKnoraApiBackend:

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/application/service"
@@ -69,6 +70,17 @@ func getSlugParam(c *gin.Context) string {
 	// gin wildcard params include a leading "/"
 	slug = strings.TrimPrefix(slug, "/")
 	return strings.TrimSpace(slug)
+}
+
+func truncateString(value string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= maxLen {
+		return value
+	}
+	return string(runes[:maxLen])
 }
 
 // ListPages godoc
@@ -523,6 +535,86 @@ func (h *WikiPageHandler) ListIssues(c *gin.Context) {
 	c.JSON(http.StatusOK, issues)
 }
 
+// CreateIssue godoc
+// @Summary      Create wiki page issue
+// @Description  Create a review issue for a wiki page
+// @Tags         Wiki
+// @Accept       json
+// @Produce      json
+// @Param        kb_id   path  string  true  "Knowledge base ID"
+// @Param        request body  object  true  "Issue payload"
+// @Success      200  {object}  types.WikiPageIssue
+// @Failure      400  {object}  errors.AppError
+// @Security     Bearer
+// @Router       /knowledgebase/{kb_id}/wiki/issues [post]
+func (h *WikiPageHandler) CreateIssue(c *gin.Context) {
+	kbID, tenantID, err := h.validateWikiKB(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req struct {
+		Slug                  string   `json:"slug" binding:"required"`
+		IssueType             string   `json:"issue_type"`
+		Description           string   `json:"description" binding:"required"`
+		SuspectedKnowledgeIDs []string `json:"suspected_knowledge_ids"`
+		Status                string   `json:"status"`
+		ReportedBy            string   `json:"reported_by"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
+		return
+	}
+
+	slug := strings.TrimSpace(req.Slug)
+	description := strings.TrimSpace(req.Description)
+	if slug == "" || description == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Slug and description are required"})
+		return
+	}
+
+	issueType := strings.TrimSpace(req.IssueType)
+	if issueType == "" {
+		issueType = "manual"
+	}
+	status := strings.TrimSpace(req.Status)
+	if status == "" {
+		status = "pending"
+	}
+	validStatuses := map[string]bool{"pending": true, "ignored": true, "resolved": true}
+	if !validStatuses[status] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status. Must be pending, ignored, or resolved"})
+		return
+	}
+	reportedBy := strings.TrimSpace(req.ReportedBy)
+	if reportedBy == "" {
+		reportedBy = "api"
+	}
+
+	now := time.Now()
+	issue := &types.WikiPageIssue{
+		TenantID:              tenantID,
+		KnowledgeBaseID:       kbID,
+		Slug:                  truncateString(slug, 255),
+		IssueType:             truncateString(issueType, 50),
+		Description:           truncateString(description, 2000),
+		SuspectedKnowledgeIDs: types.SanitizeStrings(req.SuspectedKnowledgeIDs),
+		Status:                status,
+		ReportedBy:            truncateString(reportedBy, 100),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+	}
+
+	created, err := h.wikiService.CreateIssue(c.Request.Context(), issue)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, created)
+}
+
 // UpdateIssueStatus godoc
 // @Summary      Update wiki page issue status
 // @Description  Update the status of a flagged wiki page issue
@@ -537,7 +629,7 @@ func (h *WikiPageHandler) ListIssues(c *gin.Context) {
 // @Security     Bearer
 // @Router       /knowledgebase/{kb_id}/wiki/issues/{issue_id}/status [put]
 func (h *WikiPageHandler) UpdateIssueStatus(c *gin.Context) {
-	_, _, err := h.validateWikiKB(c)
+	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -563,7 +655,11 @@ func (h *WikiPageHandler) UpdateIssueStatus(c *gin.Context) {
 		return
 	}
 
-	if err := h.wikiService.UpdateIssueStatus(c.Request.Context(), issueID, req.Status); err != nil {
+	if err := h.wikiService.UpdateIssueStatusForKB(c.Request.Context(), kbID, issueID, req.Status); err != nil {
+		if stderrors.Is(err, repository.ErrWikiPageNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Wiki issue not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

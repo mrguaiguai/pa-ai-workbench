@@ -56,12 +56,42 @@ type SkillMetadata struct {
 	BasePath    string // Path to skill directory for later loading
 }
 
+// SkillMutationInput is the product API contract for managed SKILL.md files.
+// It intentionally covers only the primary instruction file; uploading scripts
+// or arbitrary resources needs a stronger sandbox and review contract.
+type SkillMutationInput struct {
+	Name         string
+	Description  string
+	Instructions string
+}
+
 // SkillFile represents an additional file within a skill directory (Level 3)
 type SkillFile struct {
 	Name     string // Filename (e.g., "FORMS.md", "scripts/validate.py")
 	Path     string // Absolute path to the file
 	Content  string // File content
 	IsScript bool   // Whether this is an executable script
+}
+
+// SkillFileSummary is an API-safe file listing for a skill directory. It does
+// not include file contents or executable output.
+type SkillFileSummary struct {
+	Name     string `json:"name"`
+	IsScript bool   `json:"is_script"`
+}
+
+// SkillTestResult is a non-executing validation result for a managed skill.
+type SkillTestResult struct {
+	Name                  string             `json:"name"`
+	Description           string             `json:"description"`
+	Valid                 bool               `json:"valid"`
+	InstructionsPresent   bool               `json:"instructions_present"`
+	InstructionsCharCount int                `json:"instructions_char_count"`
+	FileCount             int                `json:"file_count"`
+	ScriptCount           int                `json:"script_count"`
+	SandboxMode           string             `json:"sandbox_mode"`
+	SandboxAvailable      bool               `json:"sandbox_available"`
+	Files                 []SkillFileSummary `json:"files"`
 }
 
 // Validate checks if the skill metadata is valid according to Claude's specification

@@ -2,13 +2,30 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlmodel import Session
+
 from app.config import Settings
 from app.config import get_settings
+from app.models import NativeMutationAudit
+from app.services.native_audit_service import NativeConfirmationError
+from app.services.native_audit_service import confirmation_surface
+from app.services.native_audit_service import record_native_mutation_audit
+from app.services.native_audit_service import require_native_confirmation
+from app.services.native_audit_service import update_native_mutation_audit
 from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
 
 
 MCP_TEST_CONFIRM_TOKEN = "TEST_NATIVE_MCP_SERVICE"
+MCP_MUTATION_CONFIRM_TOKEN = "CONFIRM_NATIVE_MCP_MUTATION"
+MCP_MUTATION_CONFIRM_TOKEN_ID = "native_mcp_mutation"
+MCP_MUTATION_ACTIONS = {
+    "create": "weknora_mcp_service_create",
+    "update": "weknora_mcp_service_update",
+    "delete": "weknora_mcp_service_delete",
+    "credentials_update": "weknora_mcp_credentials_update",
+    "credentials_clear": "weknora_mcp_credentials_clear",
+}
 
 
 def native_mcp_overview(limit: int = 5) -> dict[str, Any]:
@@ -56,12 +73,14 @@ def native_mcp_overview(limit: int = 5) -> dict[str, Any]:
         name="resources",
         native_endpoint="/api/v1/mcp-services/{id}/resources",
     )
+    overview["surfaces"]["prompts"] = _mcp_prompts_blocker_surface()
     overview["surfaces"]["approval"] = _approval_overview_surface(
         backend,
         enabled_services[:service_limit],
     )
     overview["surfaces"]["safe_test"] = _safe_test_overview_surface(safe_services)
-    overview["surfaces"]["mutations"] = _mcp_mutation_backlog()
+    overview["surfaces"]["tool_execution"] = _mcp_tool_execution_blocker_surface()
+    overview["surfaces"]["mutations"] = _mcp_mutation_surface()
     overview["status"] = "partial"
     return overview
 
@@ -113,6 +132,7 @@ def native_mcp_service_detail(service_id: str) -> dict[str, Any]:
         name="resources",
         native_endpoint="/api/v1/mcp-services/{id}/resources",
     )
+    response["surfaces"]["prompts"] = _mcp_prompts_blocker_surface()
     response["surfaces"]["approval"] = _approval_detail_surface(backend, service_id)
     response["surfaces"]["safe_test"] = {
         "status": "blocked",
@@ -120,7 +140,8 @@ def native_mcp_service_detail(service_id: str) -> dict[str, Any]:
         "confirm_token": MCP_TEST_CONFIRM_TOKEN,
         "endpoint": f"/api/mcp/native/services/{service_id}/test",
     }
-    response["surfaces"]["mutations"] = _mcp_mutation_backlog()
+    response["surfaces"]["tool_execution"] = _mcp_tool_execution_blocker_surface()
+    response["surfaces"]["mutations"] = _mcp_mutation_surface()
     response["status"] = "partial"
     return response
 
@@ -130,7 +151,7 @@ def test_native_mcp_service(service_id: str, confirm_token: str | None) -> dict[
     response = _base_response(settings)
     response["schema_version"] = "wnx-p2-02-test"
     response["management_mode"] = "safe_read_confirmed_test"
-    response["surfaces"]["mutations"] = _mcp_mutation_backlog()
+    response["surfaces"]["mutations"] = _mcp_mutation_surface()
     if settings.knowledge_backend != "weknora_api":
         response["status"] = "backlog"
         response["surfaces"]["safe_test"] = {
@@ -174,6 +195,7 @@ def test_native_mcp_service(service_id: str, confirm_token: str | None) -> dict[
     response["surfaces"]["safe_test"] = {
         "status": "live" if success else "partial",
         "success": success,
+        "reason": result.get("reason") if not success else None,
         "tool_count": int(result.get("tool_count") or 0),
         "resource_count": int(result.get("resource_count") or 0),
         "sample_tools": result.get("sample_tools") if isinstance(result.get("sample_tools"), list) else [],
@@ -191,7 +213,117 @@ def test_native_mcp_service(service_id: str, confirm_token: str | None) -> dict[
         "status": "live" if success else "partial",
         "count": int(result.get("resource_count") or 0),
     }
+    response["surfaces"]["prompts"] = _mcp_prompts_blocker_surface()
+    response["surfaces"]["tool_execution"] = _mcp_tool_execution_blocker_surface(
+        reason="no_live_mcp_tool_available"
+        if int(result.get("tool_count") or 0) <= 0
+        else "pa_confirmed_mcp_tool_execution_workflow_missing",
+    )
     return response
+
+
+def create_native_mcp_service(
+    *,
+    session: Session,
+    name: str,
+    transport_type: str,
+    url: str | None = None,
+    description: str = "",
+    enabled: bool = False,
+    confirm_token: str | None = None,
+) -> dict[str, Any]:
+    return _mutate_native_mcp_service(
+        session=session,
+        action="create",
+        confirm_token=confirm_token,
+        service_id=None,
+        payload={
+            "name": name,
+            "transport_type": transport_type,
+            "url": url,
+            "description": description,
+            "enabled": enabled,
+        },
+    )
+
+
+def update_native_mcp_service(
+    *,
+    session: Session,
+    service_id: str,
+    name: str | None = None,
+    description: str | None = None,
+    enabled: bool | None = None,
+    transport_type: str | None = None,
+    url: str | None = None,
+    confirm_token: str | None = None,
+) -> dict[str, Any]:
+    return _mutate_native_mcp_service(
+        session=session,
+        action="update",
+        confirm_token=confirm_token,
+        service_id=service_id,
+        payload={
+            "name": name,
+            "description": description,
+            "enabled": enabled,
+            "transport_type": transport_type,
+            "url": url,
+        },
+    )
+
+
+def delete_native_mcp_service(
+    *,
+    session: Session,
+    service_id: str,
+    confirm_token: str | None = None,
+) -> dict[str, Any]:
+    return _mutate_native_mcp_service(
+        session=session,
+        action="delete",
+        confirm_token=confirm_token,
+        service_id=service_id,
+        payload={},
+    )
+
+
+def update_native_mcp_credentials(
+    *,
+    session: Session,
+    service_id: str,
+    api_key: str | None = None,
+    token: str | None = None,
+    confirm_token: str | None = None,
+) -> dict[str, Any]:
+    return _mutate_native_mcp_service(
+        session=session,
+        action="credentials_update",
+        confirm_token=confirm_token,
+        service_id=service_id,
+        payload={
+            "api_key_provided": bool(api_key),
+            "token_provided": bool(token),
+            "_api_key": api_key,
+            "_token": token,
+        },
+    )
+
+
+def clear_native_mcp_credential(
+    *,
+    session: Session,
+    service_id: str,
+    field: str,
+    confirm_token: str | None = None,
+) -> dict[str, Any]:
+    return _mutate_native_mcp_service(
+        session=session,
+        action="credentials_clear",
+        confirm_token=confirm_token,
+        service_id=service_id,
+        payload={"field": field},
+    )
 
 
 def _base_response(settings: Settings) -> dict[str, Any]:
@@ -215,6 +347,145 @@ def _weknora_backend(settings: Settings) -> WeKnoraApiBackend:
         kb_mapping_config=settings.weknora_kb_mappings,
         kb_allow_default=settings.weknora_kb_allow_default,
     )
+
+
+def _mutate_native_mcp_service(
+    *,
+    session: Session,
+    action: str,
+    confirm_token: str | None,
+    service_id: str | None,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    settings = get_settings()
+    response = _base_response(settings)
+    response["schema_version"] = "wnfc-p2-01-mcp-mutation"
+    response["management_mode"] = "confirmed_mcp_crud_credentials"
+    response["surfaces"]["mutations"] = _mcp_mutation_surface()
+    action_name = MCP_MUTATION_ACTIONS.get(action, f"weknora_mcp_{action}")
+    if settings.knowledge_backend != "weknora_api":
+        response["status"] = "backlog"
+        response["surfaces"]["mutation"] = {
+            "status": "backlog",
+            "action": action,
+            "reason": "weknora_api backend is required for native MCP mutations",
+        }
+        return response
+
+    service_id = str(service_id or "").strip()
+    if action != "create" and not service_id:
+        response["surfaces"]["mutation"] = {
+            "status": "blocked",
+            "action": action,
+            "success": False,
+            "reason": "service_id is required",
+        }
+        return response
+
+    try:
+        confirmation = require_native_confirmation(
+            confirm=False,
+            confirm_token=confirm_token,
+            expected_token=MCP_MUTATION_CONFIRM_TOKEN,
+            token_id=MCP_MUTATION_CONFIRM_TOKEN_ID,
+            action=action_name,
+        )
+    except NativeConfirmationError:
+        response["surfaces"]["mutation"] = _mcp_mutation_blocked_surface(action)
+        response["warnings"].append(f"blocked: MCP {action} requires explicit confirmation")
+        return response
+
+    backend = _weknora_backend(settings)
+    audit = record_native_mutation_audit(
+        session=session,
+        capability="mcp",
+        operation=action_name,
+        target_type="mcp_service",
+        target_id=service_id or None,
+        status="started",
+        confirmation=confirmation,
+        request_summary=_mcp_request_summary(action, service_id, payload),
+    )
+    session.commit()
+    try:
+        result = _perform_mcp_mutation(backend, action, service_id, payload)
+    except KnowledgeBackendUnavailableError as exc:
+        update_native_mutation_audit(
+            audit=audit,
+            status="failed",
+            response_summary={"action": action, "success": False},
+            error_message=str(exc),
+        )
+        session.commit()
+        response["status"] = "partial"
+        response["surfaces"]["mutation"] = {
+            "status": "partial",
+            "action": action,
+            "success": False,
+            "reason": f"native_mcp_{action}: {_error_code(exc)}",
+        }
+        response["audit"] = _audit_surface(audit)
+        response["confirmation"] = _confirmation_read(confirmation)
+        response["warnings"].append(f"partial: native_mcp_{action}: {_error_code(exc)}")
+        return response
+
+    if action == "create":
+        audit.target_id = str(result.get("id") or "")
+    update_native_mutation_audit(
+        audit=audit,
+        status="succeeded",
+        response_summary=_mcp_response_summary(action, result),
+    )
+    session.commit()
+    response["status"] = "partial"
+    response["surfaces"]["mutation"] = {
+        "status": "live",
+        "action": action,
+        "success": True,
+        "result": result,
+    }
+    response["audit"] = _audit_surface(audit)
+    response["confirmation"] = _confirmation_read(confirmation)
+    return response
+
+
+def _perform_mcp_mutation(
+    backend: WeKnoraApiBackend,
+    action: str,
+    service_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    if action == "create":
+        return backend.create_mcp_service(
+            name=str(payload.get("name") or "").strip(),
+            description=str(payload.get("description") or "").strip(),
+            enabled=bool(payload.get("enabled")),
+            transport_type=str(payload.get("transport_type") or "").strip(),
+            url=_optional_text(payload.get("url")),
+        )
+    if action == "update":
+        return backend.update_mcp_service(
+            service_id,
+            name=_optional_text(payload.get("name")),
+            description=_optional_text(payload.get("description")),
+            enabled=payload.get("enabled") if isinstance(payload.get("enabled"), bool) else None,
+            transport_type=_optional_text(payload.get("transport_type")),
+            url=_optional_text(payload.get("url")),
+        )
+    if action == "delete":
+        return backend.delete_mcp_service(service_id)
+    if action == "credentials_update":
+        return backend.update_mcp_service_credentials(
+            service_id,
+            api_key=_optional_text(payload.get("_api_key")),
+            token=_optional_text(payload.get("_token")),
+        )
+    if action == "credentials_clear":
+        return backend.clear_mcp_service_credential(
+            service_id,
+            str(payload.get("field") or "").strip(),
+        )
+    raise ValueError(f"unsupported MCP mutation action: {action}")
 
 
 def _service_read_surface(services: list[dict[str, Any]]) -> dict[str, Any]:
@@ -250,6 +521,37 @@ def _external_probe_surface(
         "surface": name,
         "native_endpoint": native_endpoint,
         "safe_test_endpoint": "/api/mcp/native/services/{service_id}/test",
+    }
+
+
+def _mcp_prompts_blocker_surface() -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "reason": "native_mcp_prompt_api_missing",
+        "count": 0,
+        "native_endpoint": None,
+        "required_native_surface": (
+            "MCP prompts list/read route or native client support is required "
+            "before PA can expose prompts truthfully."
+        ),
+    }
+
+
+def _mcp_tool_execution_blocker_surface(
+    *, reason: str = "requires_live_mcp_tool_and_confirmed_execution_path",
+) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "reason": reason,
+        "count": 0,
+        "confirmation_required": True,
+        "audit_required": True,
+        "history_required": True,
+        "required_evidence": (
+            "A real initialized MCP service must expose at least one low-risk "
+            "tool, and PA must prove confirmation-gated execution with timeout, "
+            "NativeMutationAudit/history, and masked output."
+        ),
     }
 
 
@@ -333,20 +635,122 @@ def _safe_test_overview_surface(services: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
-def _mcp_mutation_backlog() -> dict[str, Any]:
+def _mcp_mutation_surface() -> dict[str, Any]:
     return {
-        "status": "backlog",
+        "status": "partial",
         "items": [
-            "service create/update/delete",
-            "credential forms",
-            "tool execution",
-            "approval mutation",
+            "service create/update/delete live with confirm_token and NativeMutationAudit",
+            "credential update/clear live with masked metadata only",
+            "tool execution remains separate approval-gated work",
         ],
         "reason": (
-            "WNX-P2-02 exposes safe read and confirmation-gated tests only; "
-            "mutation/execution requires a separate approval and audit design."
+            "WNFC-P2-01 enables MCP service CRUD and credentials; "
+            "tool/resource execution is handled by WNFC-P2-02/P2-03."
+        ),
+        "confirm_token_id": MCP_MUTATION_CONFIRM_TOKEN_ID,
+        "confirmation": confirmation_surface(
+            token_id=MCP_MUTATION_CONFIRM_TOKEN_ID,
+            confirm_token=MCP_MUTATION_CONFIRM_TOKEN,
+            reason="native MCP CRUD and credential mutations require explicit operator confirmation",
         ),
     }
+
+
+def _mcp_mutation_blocked_surface(action: str) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "action": action,
+        "success": False,
+        "reason": "confirmation_required_before_native_mcp_mutation",
+        "confirmation": confirmation_surface(
+            token_id=MCP_MUTATION_CONFIRM_TOKEN_ID,
+            confirm_token=MCP_MUTATION_CONFIRM_TOKEN,
+            reason="native MCP CRUD and credential mutations require explicit operator confirmation",
+        ),
+    }
+
+
+def _mcp_request_summary(action: str, service_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "action": action,
+        "service_id": service_id,
+        "name": payload.get("name"),
+        "enabled": payload.get("enabled"),
+        "transport_type": payload.get("transport_type"),
+        "url_configured": bool(payload.get("url")),
+        "credential_field_count": int(bool(payload.get("api_key_provided")))
+        + int(bool(payload.get("token_provided"))),
+        "field": payload.get("field"),
+    }
+
+
+def _mcp_response_summary(action: str, result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "action": action,
+        "success": True,
+        "service": _public_mcp_service_item(result) if action in {"create", "update"} else None,
+        "credential_status": _public_mcp_credential_item(result)
+        if action in {"credentials_update", "credentials_clear"}
+        else None,
+        "deleted": bool(result.get("status") == "deleted") if action == "delete" else None,
+    }
+
+
+def _public_mcp_service_item(service: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": service.get("id"),
+        "name": service.get("name"),
+        "enabled": bool(service.get("enabled")),
+        "transport_type": service.get("transport_type"),
+        "is_builtin": bool(service.get("is_builtin")),
+        "credential_field_count": int(service.get("credential_field_count") or 0),
+        "configured_credential_field_count": int(service.get("configured_credential_field_count") or 0),
+        "credentials_configured": bool(service.get("credentials_configured")),
+        "source": service.get("source") or "weknora_api",
+    }
+
+
+def _public_mcp_credential_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "masked": True,
+        "field_count": int(item.get("field_count") or 0),
+        "configured_field_count": int(item.get("configured_field_count") or 0),
+        "credentials_configured": bool(item.get("credentials_configured")),
+        "cleared": bool(item.get("cleared")),
+        "field": item.get("field"),
+        "source": item.get("source") or "weknora_api",
+    }
+
+
+def _audit_surface(audit: NativeMutationAudit) -> dict[str, Any]:
+    return {
+        "id": audit.id,
+        "capability": audit.capability,
+        "operation": audit.operation,
+        "target_type": audit.target_type,
+        "target_id": audit.target_id,
+        "source": audit.source,
+        "status": audit.status,
+        "confirmation_required": audit.confirmation_required,
+        "confirmation_method": audit.confirmation_method,
+        "confirm_token_id": audit.confirm_token_id,
+        "created_at": audit.created_at.isoformat(),
+    }
+
+
+def _confirmation_read(confirmation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "required": bool(confirmation.get("required", True)),
+        "method": confirmation.get("method"),
+        "token_id": confirmation.get("token_id"),
+    }
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _error_code(exc: Exception) -> str:

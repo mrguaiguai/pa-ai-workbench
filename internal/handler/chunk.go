@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
@@ -164,10 +165,10 @@ func (h *ChunkHandler) ListKnowledgeChunks(c *gin.Context) {
 
 // UpdateChunkRequest defines the request structure for updating a chunk
 type UpdateChunkRequest struct {
-	Content    string    `json:"content"`
+	Content    *string   `json:"content"`
 	Embedding  []float32 `json:"embedding"`
 	ChunkIndex int       `json:"chunk_index"`
-	IsEnabled  bool      `json:"is_enabled"`
+	IsEnabled  *bool     `json:"is_enabled"`
 	StartAt    int       `json:"start_at"`
 	EndAt      int       `json:"end_at"`
 	ImageInfo  string    `json:"image_info"`
@@ -239,11 +240,13 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		return
 	}
 
-	if req.Content != "" {
-		chunk.Content = req.Content
+	if req.Content != nil {
+		chunk.Content = *req.Content
 	}
 
-	chunk.IsEnabled = req.IsEnabled
+	if req.IsEnabled != nil {
+		chunk.IsEnabled = *req.IsEnabled
+	}
 
 	if err := h.service.UpdateChunk(ctx, chunk); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
@@ -256,6 +259,141 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    chunk,
+	})
+}
+
+// SearchSimilarChunks godoc
+// @Summary      按分块搜索相似分块
+// @Description  使用指定分块内容作为查询，在其所属知识库中检索相似分块
+// @Tags         分块管理
+// @Accept       json
+// @Produce      json
+// @Param        id                 path   string  true   "分块ID"
+// @Param        top_k              query  int     false  "返回数量"  default(8)
+// @Param        vector_threshold   query  number  false  "向量阈值"
+// @Param        keyword_threshold  query  number  false  "关键词阈值"
+// @Param        include_self       query  bool    false  "是否包含源分块"  default(false)
+// @Success      200                {object}  map[string]interface{}  "相似分块列表"
+// @Failure      400                {object}  errors.AppError         "请求参数错误"
+// @Failure      404                {object}  errors.AppError         "分块不存在"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /chunks/by-id/{id}/search [get]
+func (h *ChunkHandler) SearchSimilarChunks(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Info(ctx, "Start searching similar chunks by chunk ID")
+
+	chunkID := secutils.SanitizeForLog(c.Param("id"))
+	if chunkID == "" {
+		logger.Error(ctx, "Chunk ID is empty")
+		c.Error(errors.NewBadRequestError("Chunk ID cannot be empty"))
+		return
+	}
+
+	topK := parsePositiveIntQuery(c, "top_k", 8, 50)
+	vectorThreshold := parseFloatQuery(c, "vector_threshold", 0)
+	keywordThreshold := parseFloatQuery(c, "keyword_threshold", 0)
+	includeSelf, _ := strconv.ParseBool(c.DefaultQuery("include_self", "false"))
+
+	results, err := h.service.SearchSimilarChunks(ctx, chunkID, topK, vectorThreshold, keywordThreshold, includeSelf)
+	if err != nil {
+		if err == service.ErrChunkNotFound {
+			logger.Warnf(ctx, "Chunk not found, chunk ID: %s", chunkID)
+			c.Error(errors.NewNotFoundError("Chunk not found"))
+			return
+		}
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	for _, result := range results {
+		if result.Content != "" {
+			result.Content = secutils.SanitizeForDisplay(result.Content)
+		}
+		if result.MatchedContent != "" {
+			result.MatchedContent = secutils.SanitizeForDisplay(result.MatchedContent)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    results,
+		"total":   len(results),
+	})
+}
+
+func parsePositiveIntQuery(c *gin.Context, name string, defaultValue int, maxValue int) int {
+	value, err := strconv.Atoi(c.DefaultQuery(name, strconv.Itoa(defaultValue)))
+	if err != nil || value < 1 {
+		return defaultValue
+	}
+	if maxValue > 0 && value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
+func parseFloatQuery(c *gin.Context, name string, defaultValue float64) float64 {
+	value, err := strconv.ParseFloat(c.DefaultQuery(name, strconv.FormatFloat(defaultValue, 'f', -1, 64)), 64)
+	if err != nil || value < 0 {
+		return defaultValue
+	}
+	return value
+}
+
+// AddGeneratedQuestion godoc
+// @Summary      新增生成的问题
+// @Description  给分块新增一条生成问题并建立检索索引
+// @Tags         分块管理
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                   true  "分块ID"
+// @Param        request  body      object{question=string}  true  "问题内容"
+// @Success      200      {object}  map[string]interface{}   "新增成功"
+// @Failure      400      {object}  errors.AppError          "请求参数错误"
+// @Failure      404      {object}  errors.AppError          "分块不存在"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /chunks/by-id/{id}/questions [post]
+func (h *ChunkHandler) AddGeneratedQuestion(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Info(ctx, "Start adding generated question to chunk")
+
+	chunkID := secutils.SanitizeForLog(c.Param("id"))
+	if chunkID == "" {
+		logger.Error(ctx, "Chunk ID is empty")
+		c.Error(errors.NewBadRequestError("Chunk ID cannot be empty"))
+		return
+	}
+
+	var req struct {
+		Question string `json:"question" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Errorf(ctx, "Failed to parse request parameters: %s", secutils.SanitizeForLog(err.Error()))
+		c.Error(errors.NewBadRequestError("Question is required"))
+		return
+	}
+
+	chunk, generatedQuestion, err := h.service.AddGeneratedQuestion(ctx, chunkID, req.Question)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+	if chunk.Content != "" {
+		chunk.Content = secutils.SanitizeForDisplay(chunk.Content)
+	}
+
+	logger.Infof(ctx, "Generated question added successfully, chunk ID: %s, question ID: %s",
+		secutils.SanitizeForLog(chunkID), secutils.SanitizeForLog(generatedQuestion.ID))
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data": gin.H{
+			"chunk":              chunk,
+			"generated_question": generatedQuestion,
+		},
 	})
 }
 

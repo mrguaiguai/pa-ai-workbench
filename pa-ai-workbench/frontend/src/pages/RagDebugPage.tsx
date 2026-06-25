@@ -22,7 +22,6 @@ import {
   EmptyState,
   ErrorState,
   WarningList,
-  WeKnoraFirstStatusStrip,
 } from "../components/workbench";
 
 type DebugForm = {
@@ -133,8 +132,6 @@ export function RagDebugPage() {
 
   return (
     <div className="rag-debug-page">
-      <WeKnoraFirstStatusStrip page="RAG 调试" />
-
       <form className="rag-debug-controls" onSubmit={runDebug}>
         <label className="field-group wide">
           <span>检索问题</span>
@@ -174,39 +171,44 @@ export function RagDebugPage() {
               <option value="wiki_page">Wiki</option>
             </select>
           </label>
-
-          <label className="field-group">
-            <span>文档 ID</span>
-            <input
-              value={form.documentIds}
-              onChange={(event) => setFormField(setForm, "documentIds", event.target.value)}
-            />
-          </label>
-
-          <label className="field-group">
-            <span>知识库 ID</span>
-            <input
-              value={form.kbId}
-              onChange={(event) => setFormField(setForm, "kbId", event.target.value)}
-            />
-          </label>
-
-          <label className="field-group">
-            <span>业务域</span>
-            <input
-              value={form.businessArea}
-              onChange={(event) => setFormField(setForm, "businessArea", event.target.value)}
-            />
-          </label>
-
-          <label className="field-group">
-            <span>资料类型</span>
-            <input
-              value={form.documentType}
-              onChange={(event) => setFormField(setForm, "documentType", event.target.value)}
-            />
-          </label>
         </div>
+
+        <details className="advanced-controls">
+          <summary>高级筛选</summary>
+          <div className="rag-debug-grid advanced-filter-grid">
+            <label className="field-group">
+              <span>文档 ID</span>
+              <input
+                value={form.documentIds}
+                onChange={(event) => setFormField(setForm, "documentIds", event.target.value)}
+              />
+            </label>
+
+            <label className="field-group">
+              <span>知识库 ID</span>
+              <input
+                value={form.kbId}
+                onChange={(event) => setFormField(setForm, "kbId", event.target.value)}
+              />
+            </label>
+
+            <label className="field-group">
+              <span>业务域</span>
+              <input
+                value={form.businessArea}
+                onChange={(event) => setFormField(setForm, "businessArea", event.target.value)}
+              />
+            </label>
+
+            <label className="field-group">
+              <span>资料类型</span>
+              <input
+                value={form.documentType}
+                onChange={(event) => setFormField(setForm, "documentType", event.target.value)}
+              />
+            </label>
+          </div>
+        </details>
 
         <div className="rag-debug-actions">
           <button

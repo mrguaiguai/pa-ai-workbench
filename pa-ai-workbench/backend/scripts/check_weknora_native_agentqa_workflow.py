@@ -61,7 +61,8 @@ def main() -> int:
             _assert(catalog.get("source") == "weknora_api", "agent catalog uses WeKnora source")
             _assert(len(agents) > 0, "native agent catalog returned agents")
             _assert(surfaces.get("list") == "live", "agent list surface is live")
-            _assert(surfaces.get("copy") == "backlog", "agent copy is explicit backlog")
+            _assert(surfaces.get("copy") == "live", "agent copy surface is live")
+            _assert(surfaces.get("mutations") == "live", "agent mutation surface is live")
             agent_id = _select_agent_id(catalog, agents)
             _assert(bool(agent_id), "selected native agent id is available")
 
@@ -105,7 +106,7 @@ def main() -> int:
             print("WeKnora native AgentQA/custom Agent workflow")
             print("- decision: PASS")
             print("- evidence_type: live_api")
-            print(f"- catalog: agents={len(agents)} presets={len(catalog.get('presets') or [])} copy=backlog")
+            print(f"- catalog: agents={len(agents)} presets={len(catalog.get('presets') or [])} copy=live mutations=live")
             print(
                 "- agentqa: answer_events={answers} references={refs} saved_citations={citations} citation_blocked={blocked}".format(
                     answers=int(_event_count(runtime, "answer")),

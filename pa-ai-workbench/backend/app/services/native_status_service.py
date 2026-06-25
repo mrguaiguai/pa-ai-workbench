@@ -36,7 +36,7 @@ CAPABILITY_ORDER = [
 
 def native_status_center(limit: int = 5) -> dict[str, Any]:
     settings = get_settings()
-    item_limit = max(min(limit, 10), 1)
+    item_limit = max(min(limit, 20), 1)
     groups: dict[str, dict[str, Any]] = {}
 
     weknora_status = _call("weknora_status", lambda: get_weknora_status(settings))
@@ -85,13 +85,22 @@ def native_status_center(limit: int = 5) -> dict[str, Any]:
     groups["chunk_management"] = _baseline_group(
         capability_id="chunk_management",
         label="Chunk management",
-        status="partial",
+        status="live",
         configured=_weknora_core_configured(settings),
         source_endpoint="/api/documents/{id}/chunks",
-        next_action="WNX-P1-03",
+        next_action="WNFC-P6-02",
         summary={
             "live_status_surface": True,
-            "mutation_status": "backlog",
+            "basic_mutations_status": "live",
+            "content_rewrite_status": "live",
+            "generated_question_seed_status": "live",
+            "generated_question_delete_status": "live",
+            "search_by_chunk_status": "live",
+            "details": [
+                "native UpdateChunk refreshes the main chunk content index by source_id when content changes",
+                "generated-question delete is confirmation-gated through PA and validated with real question-generation metadata",
+                "native search-by-chunk route is exposed through PA BFF and Library browser controls",
+            ],
         },
     )
     groups["knowledge_search_rag"] = _baseline_group(
@@ -191,7 +200,7 @@ def native_status_center(limit: int = 5) -> dict[str, Any]:
         overview=organization_overview,
         configured=_organization_configured(organization_overview),
         source_endpoint="/api/organization/native/overview",
-        native_endpoint="/api/v1/knowledge-bases/{kb_id}/tags, /api/v1/skills",
+        native_endpoint="/api/v1/knowledge-bases/{kb_id}/tags, /api/v1/user/favorites, /api/v1/skills",
         next_action="WNX-P2-06",
         summary=_organization_summary(organization_overview),
     )
@@ -268,7 +277,11 @@ def _workspace_group(settings: Settings, weknora_status: dict[str, Any]) -> dict
             "default_used": mapping.get("default_used"),
             "mapping_configured": bool(mapping.get("mapping_configured")),
             "management_endpoint": "/api/knowledge-bases/native/overview",
-            "unsafe_mutations": "backlog_until_confirmation_and_audit_trail",
+            "mutations_status": "live",
+            "kb_mutations": "live",
+            "pin_mutations": "live",
+            "tag_mutations": "live",
+            "confirm_token_id": "native_knowledge_base_mutation",
         }
     return _group(
         capability_id="workspace_knowledge_base",
@@ -278,7 +291,8 @@ def _workspace_group(settings: Settings, weknora_status: dict[str, Any]) -> dict
         source_endpoint="/api/knowledge-bases/native/overview",
         native_endpoint=(
             "/api/v1/tenants/{workspace_id}, /api/v1/knowledge-bases, "
-            "/api/v1/knowledge-bases/{kb_id}, /api/v1/knowledge-bases/{kb_id}/tags"
+            "/api/v1/knowledge-bases/{kb_id}, /api/v1/knowledge-bases/{kb_id}/pin, "
+            "/api/v1/knowledge-bases/{kb_id}/tags"
         ),
         next_action="WNX-P3-02",
         summary=summary,
@@ -464,6 +478,8 @@ def _mcp_summary(overview: dict[str, Any]) -> dict[str, Any]:
     services = surfaces.get("services", {})
     tools = surfaces.get("tools", {})
     resources = surfaces.get("resources", {})
+    prompts = surfaces.get("prompts", {})
+    tool_execution = surfaces.get("tool_execution", {})
     approval = surfaces.get("approval", {})
     service_read = surfaces.get("service_read", {})
     safe_test = surfaces.get("safe_test", {})
@@ -479,6 +495,10 @@ def _mcp_summary(overview: dict[str, Any]) -> dict[str, Any]:
         "tools_count": int(tools.get("count") or 0),
         "resources_status": resources.get("status"),
         "resources_count": int(resources.get("count") or 0),
+        "prompts_status": prompts.get("status"),
+        "prompts_count": int(prompts.get("count") or 0),
+        "tool_execution_status": tool_execution.get("status"),
+        "tool_execution_count": int(tool_execution.get("count") or 0),
         "approval_status": approval.get("status"),
         "approval_count": int(approval.get("count") or 0),
     }
@@ -581,7 +601,15 @@ def _organization_summary(overview: dict[str, Any]) -> dict[str, Any]:
         "favorites_status": favorites.get("status"),
         "favorites_count": int(favorites.get("count") or 0),
         "skills_available": skills.get("skills_available"),
+        "skill_read_status": skills.get("read_status"),
+        "skill_management_status": skills.get("management_status"),
+        "skill_management_scope": skills.get("management_scope"),
+        "skill_test_status": skills.get("test_status"),
+        "skill_script_upload_status": skills.get("script_upload_status"),
         "mutations_status": mutations.get("status"),
+        "tag_mutations": mutations.get("tag_mutations"),
+        "favorite_mutations": mutations.get("favorite_mutations"),
+        "skill_mutations": mutations.get("skill_mutations"),
     }
 
 
@@ -592,10 +620,17 @@ def _model_config_summary(overview: dict[str, Any]) -> dict[str, Any]:
     parser_engines = surfaces.get("parser_engines", {})
     storage_engines = surfaces.get("storage_engines", {})
     pa_runtime = surfaces.get("pa_runtime", {})
+    config_source = surfaces.get("config_source", {})
+    pa_bridge_alignment = surfaces.get("pa_bridge_alignment", {})
     admin_tests = surfaces.get("admin_tests", {})
     return {
         "provider_count": int(provider_catalog.get("count") or 0),
         "model_count": int(model_catalog.get("count") or 0),
+        "yaml_managed_model_count": int(config_source.get("yaml_managed_count") or 0),
+        "config_source_status": config_source.get("status"),
+        "config_source": config_source.get("source"),
+        "missing_required_model_types": config_source.get("missing_required_types") or [],
+        "pa_bridge_alignment_status": pa_bridge_alignment.get("status"),
         "parser_engine_count": int(parser_engines.get("count") or 0),
         "storage_engine_count": int(storage_engines.get("count") or 0),
         "chat_provider": pa_runtime.get("chat_provider"),

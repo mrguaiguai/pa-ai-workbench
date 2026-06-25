@@ -22,7 +22,6 @@ import {
   ErrorState,
   StatusBadge,
   WarningList,
-  WeKnoraFirstStatusStrip,
   parseWarningsJson,
 } from "../components/workbench";
 
@@ -304,8 +303,6 @@ export function HistoryPage() {
 
   return (
     <div className="history-page">
-      <WeKnoraFirstStatusStrip page="历史" />
-
       <aside className="history-list-panel" aria-label="生成历史列表">
         <section className="history-filter-panel">
           <div className="history-panel-heading">
@@ -366,66 +363,69 @@ export function HistoryPage() {
                 ))}
               </select>
             </label>
-            <label>
-              <span>引用来源</span>
-              <select
-                value={filters.citationSource}
-                onChange={(event) =>
-                  setFilters({ ...filters, citationSource: event.target.value })
-                }
-              >
-                <option value="all">全部</option>
-                <option value="weknora_api">真实 WeKnora</option>
-                <option value="mock">模拟证据</option>
-                <option value="none">无证据</option>
-                <option value="unknown">未知</option>
-              </select>
-            </label>
-            <label>
-              <span>证据类型</span>
-              <select
-                value={filters.sourceType}
-                onChange={(event) =>
-                  setFilters({ ...filters, sourceType: event.target.value })
-                }
-              >
-                <option value="all">全部</option>
-                <option value="document_chunk">文档分块</option>
-                <option value="wiki_page">Wiki 页面</option>
-                <option value="unknown">未知</option>
-              </select>
-            </label>
-            <label>
-              <span>证据状态</span>
-              <select
-                value={filters.evidenceState}
-                onChange={(event) =>
-                  setFilters({ ...filters, evidenceState: event.target.value })
-                }
-              >
-                <option value="all">全部</option>
-                <option value="citation_blocked">引用阻断</option>
-                <option value="no_evidence">无证据</option>
-                <option value="mock_only">仅模拟证据</option>
-                <option value="weknora">WeKnora</option>
-                <option value="mixed">混合来源</option>
-                <option value="other">其他来源</option>
-                <option value="unknown">未知</option>
-              </select>
-            </label>
-            <label>
-              <span>警告</span>
-              <select
-                value={filters.warningFilter}
-                onChange={(event) =>
-                  setFilters({ ...filters, warningFilter: event.target.value })
-                }
-              >
-                <option value="all">全部</option>
-                <option value="with_warnings">有警告</option>
-                <option value="no_warnings">无警告</option>
-              </select>
-            </label>
+            <details className="advanced-controls history-filter-advanced">
+              <summary>高级筛选</summary>
+              <label>
+                <span>引用来源</span>
+                <select
+                  value={filters.citationSource}
+                  onChange={(event) =>
+                    setFilters({ ...filters, citationSource: event.target.value })
+                  }
+                >
+                  <option value="all">全部</option>
+                  <option value="weknora_api">在线知识服务</option>
+                  <option value="mock">模拟证据</option>
+                  <option value="none">无证据</option>
+                  <option value="unknown">未知</option>
+                </select>
+              </label>
+              <label>
+                <span>证据类型</span>
+                <select
+                  value={filters.sourceType}
+                  onChange={(event) =>
+                    setFilters({ ...filters, sourceType: event.target.value })
+                  }
+                >
+                  <option value="all">全部</option>
+                  <option value="document_chunk">文档分块</option>
+                  <option value="wiki_page">Wiki 页面</option>
+                  <option value="unknown">未知</option>
+                </select>
+              </label>
+              <label>
+                <span>证据状态</span>
+                <select
+                  value={filters.evidenceState}
+                  onChange={(event) =>
+                    setFilters({ ...filters, evidenceState: event.target.value })
+                  }
+                >
+                  <option value="all">全部</option>
+                  <option value="citation_blocked">引用阻断</option>
+                  <option value="no_evidence">无证据</option>
+                  <option value="mock_only">仅模拟证据</option>
+                  <option value="weknora">在线知识服务</option>
+                  <option value="mixed">混合来源</option>
+                  <option value="other">其他来源</option>
+                  <option value="unknown">未知</option>
+                </select>
+              </label>
+              <label>
+                <span>警告</span>
+                <select
+                  value={filters.warningFilter}
+                  onChange={(event) =>
+                    setFilters({ ...filters, warningFilter: event.target.value })
+                  }
+                >
+                  <option value="all">全部</option>
+                  <option value="with_warnings">有警告</option>
+                  <option value="no_warnings">无警告</option>
+                </select>
+              </label>
+            </details>
           </div>
         </section>
 

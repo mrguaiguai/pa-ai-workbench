@@ -236,6 +236,8 @@ func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler, g *r
 		chunks.GET("/:knowledge_id", g.Viewer(), g.KBAccessReadFromKnowledgeIDParam("knowledge_id"), handler.ListKnowledgeChunks)
 		// 通过chunk_id获取单个chunk（不需要knowledge_id） — Viewer+ 且对父 KB 有 read 权限
 		chunks.GET("/by-id/:id", g.Viewer(), g.KBAccessReadFromChunkIDParam("id"), handler.GetChunkByIDOnly)
+		// 使用 chunk 内容作为查询，在父 KB 中检索相似 chunk — Viewer+ 且对父 KB 有 read 权限
+		chunks.GET("/by-id/:id/search", g.Viewer(), g.KBAccessReadFromChunkIDParam("id"), handler.SearchSimilarChunks)
 		// 删除分块 — KB owner OR Admin+，且对父 KB 有 write 权限
 		chunks.DELETE("/:knowledge_id/:id", g.OwnedChunkKBOrAdmin(), g.KBAccessWriteFromKnowledgeIDParam("knowledge_id"), handler.DeleteChunk)
 		// 删除知识下的所有分块 — KB owner OR Admin+，且对父 KB 有 write 权限
@@ -247,6 +249,7 @@ func RegisterChunkRoutes(r *gin.RouterGroup, handler *handler.ChunkHandler, g *r
 		// kb -> creator_id) 还没接通，被临时降级成 Contributor，导致一个
 		// 「能编辑所有 chunk 的同样规则在这条路由上反而更宽松」的不一致。
 		// 现在通过 KBCreatorLookupFromChunkIDParam 把那一跳补上，统一矩阵。
+		chunks.POST("/by-id/:id/questions", g.OwnedChunkKBOrAdminFromChunkID(), g.KBAccessWriteFromChunkIDParam("id"), handler.AddGeneratedQuestion)
 		chunks.DELETE("/by-id/:id/questions", g.OwnedChunkKBOrAdminFromChunkID(), g.KBAccessWriteFromChunkIDParam("id"), handler.DeleteGeneratedQuestion)
 	}
 }
@@ -960,14 +963,24 @@ func RegisterUserFavoriteRoutes(r *gin.RouterGroup, h *handler.UserResourceFavor
 
 // RegisterSkillRoutes registers skill routes.
 //
-// PR 2 currently only exposes a read-only `ListSkills`; gated to
-// Viewer+. Future skill upload / enable endpoints must use Admin+ since
-// skills run sandboxed code on tenant resources.
+// Read routes are Viewer+. Mutating routes are Admin+ because skill
+// instructions influence agent behaviour. This managed API intentionally
+// edits only SKILL.md; arbitrary script/resource upload remains out of scope.
 func RegisterSkillRoutes(r *gin.RouterGroup, skillHandler *handler.SkillHandler, g *rbacGuards) {
 	skills := r.Group("/skills")
 	{
 		// List all preloaded skills — Viewer+
 		skills.GET("", g.Viewer(), skillHandler.ListSkills)
+		// Create a managed SKILL.md — Admin+
+		skills.POST("", g.Admin(), skillHandler.CreateSkill)
+		// Validate a skill without executing scripts — Admin+
+		skills.POST("/:name/test", g.Admin(), skillHandler.TestSkill)
+		// Get one skill's SKILL.md details — Viewer+
+		skills.GET("/:name", g.Viewer(), skillHandler.GetSkill)
+		// Update a managed SKILL.md — Admin+
+		skills.PUT("/:name", g.Admin(), skillHandler.UpdateSkill)
+		// Delete a managed skill directory — Admin+
+		skills.DELETE("/:name", g.Admin(), skillHandler.DeleteSkill)
 	}
 }
 
@@ -1599,6 +1612,7 @@ func RegisterWikiPageRoutes(r *gin.RouterGroup, wikiHandler *handler.WikiPageHan
 
 		// Issues
 		wiki.GET("/issues", g.Viewer(), wikiHandler.ListIssues)
+		wiki.POST("/issues", g.OwnedWikiKBOrAdmin(), wikiHandler.CreateIssue)
 		wiki.PUT("/issues/:issue_id/status", g.OwnedWikiKBOrAdmin(), wikiHandler.UpdateIssueStatus)
 	}
 }

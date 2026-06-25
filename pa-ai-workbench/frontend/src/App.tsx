@@ -40,10 +40,9 @@ const navItems: NavItem[] = [
   { id: "/", label: "首页", icon: Home },
   { id: "/library", label: "资料库", icon: Library },
   { id: "/analysis", label: "智能分析", icon: MessageSquareText },
-  { id: "/rag-debug", label: "RAG 调试", icon: Search },
   { id: "/wiki", label: "Wiki", icon: BookOpenText },
   { id: "/history", label: "历史", icon: FileClock },
-  { id: "/capabilities", label: "能力中心", icon: Gauge },
+  { id: "/capabilities", label: "设置", icon: Gauge },
 ];
 
 const pageMeta: Record<RouteId, { title: string; eyebrow: string; icon: typeof Home }> = {
@@ -53,7 +52,7 @@ const pageMeta: Record<RouteId, { title: string; eyebrow: string; icon: typeof H
   "/rag-debug": { title: "RAG 检索调试", eyebrow: "检索调试", icon: Search },
   "/wiki": { title: "Wiki 知识库", eyebrow: "Wiki", icon: Search },
   "/history": { title: "生成历史", eyebrow: "历史", icon: FileClock },
-  "/capabilities": { title: "能力中心", eyebrow: "配置状态", icon: Gauge },
+  "/capabilities": { title: "设置与调试", eyebrow: "设置", icon: Gauge },
 };
 
 function getHashRoute(): RouteId {
@@ -95,7 +94,6 @@ export function App() {
           </div>
           <div>
             <div className="brand-name">PA 智能工作台</div>
-            <div className="brand-subtitle">独立产品</div>
           </div>
         </div>
 
@@ -128,7 +126,12 @@ export function App() {
             <span>{currentPage.eyebrow}</span>
             <strong>{currentPage.title}</strong>
           </div>
-          <button className="icon-button" type="button" aria-label="设置">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="设置"
+            onClick={() => navigateTo("/capabilities")}
+          >
             <Settings size={18} aria-hidden="true" />
           </button>
         </header>

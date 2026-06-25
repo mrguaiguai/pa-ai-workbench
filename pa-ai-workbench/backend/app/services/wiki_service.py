@@ -14,6 +14,10 @@ from app.models import GeneratedOutput
 from app.models import utc_now
 from app.models import WikiCitation
 from app.models import WikiPage as WikiPageModel
+from app.services.native_audit_service import NativeConfirmationError
+from app.services.native_audit_service import record_native_mutation_audit
+from app.services.native_audit_service import require_native_confirmation
+from app.services.native_audit_service import update_native_mutation_audit
 from app.schemas import WikiDraftFromOutputRequest
 from app.schemas import WikiCitationPayload
 from app.schemas import WikiPageCreateRequest
@@ -61,7 +65,12 @@ NATIVE_WIKI_CONFIRM_UPDATE = "UPDATE_NATIVE_WIKI_PAGE"
 NATIVE_WIKI_CONFIRM_DELETE = "DELETE_NATIVE_WIKI_PAGE"
 NATIVE_WIKI_CONFIRM_REBUILD_LINKS = "REBUILD_NATIVE_WIKI_LINKS"
 NATIVE_WIKI_CONFIRM_AUTO_FIX = "AUTO_FIX_NATIVE_WIKI"
+NATIVE_WIKI_CONFIRM_CREATE_ISSUE = "CREATE_NATIVE_WIKI_ISSUE"
 NATIVE_WIKI_CONFIRM_ISSUE_STATUS = "UPDATE_NATIVE_WIKI_ISSUE_STATUS"
+NATIVE_WIKI_CONFIRM_REBUILD_LINKS_ID = "native_wiki_rebuild_links"
+NATIVE_WIKI_CONFIRM_AUTO_FIX_ID = "native_wiki_auto_fix"
+NATIVE_WIKI_CONFIRM_CREATE_ISSUE_ID = "native_wiki_create_issue"
+NATIVE_WIKI_CONFIRM_ISSUE_STATUS_ID = "native_wiki_issue_status"
 
 
 class SqlModelWikiStore(WikiStore):
@@ -712,6 +721,7 @@ def native_wiki_overview(
             "delete-page",
             "rebuild-links",
             "auto-fix",
+            "create-issue",
             "issue-status-update",
         ],
         "confirmation_required": True,
@@ -721,6 +731,7 @@ def native_wiki_overview(
             "delete": NATIVE_WIKI_CONFIRM_DELETE,
             "rebuild_links": NATIVE_WIKI_CONFIRM_REBUILD_LINKS,
             "auto_fix": NATIVE_WIKI_CONFIRM_AUTO_FIX,
+            "create_issue": NATIVE_WIKI_CONFIRM_CREATE_ISSUE,
             "issue_status": NATIVE_WIKI_CONFIRM_ISSUE_STATUS,
         },
     }
@@ -895,45 +906,244 @@ def list_native_wiki_issues(
     }
 
 
-def rebuild_native_wiki_links(confirm_token: str, kb_id: str | None = None) -> dict[str, Any]:
-    _require_native_wiki_confirmation(confirm_token, NATIVE_WIKI_CONFIRM_REBUILD_LINKS)
-    backend, resolved_kb_id = _native_wiki_backend(kb_id)
-    return {
-        **backend.rebuild_wiki_links(kb_id=resolved_kb_id),
-        "mutation": "rebuild-links",
-        "confirmation_required": True,
-    }
+def create_native_wiki_issue(
+    *,
+    session: Session,
+    payload: dict[str, Any],
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    status = str(payload.get("status") or "pending").strip()
+    if status not in {"pending", "ignored", "resolved"}:
+        raise ValueError("Native Wiki issue status must be pending, ignored, or resolved.")
+    slug = str(payload.get("slug") or "").strip()
+    description = str(payload.get("description") or "").strip()
+    if not slug or not description:
+        raise ValueError("Native Wiki issue slug and description are required.")
+
+    return _mutate_native_wiki_global(
+        session=session,
+        action="create_issue",
+        confirm_token=payload.get("confirm_token"),
+        expected_token=NATIVE_WIKI_CONFIRM_CREATE_ISSUE,
+        token_id=NATIVE_WIKI_CONFIRM_CREATE_ISSUE_ID,
+        target_type="wiki_issue",
+        target_id=_safe_public_id(slug),
+        kb_id=kb_id,
+        request_summary={
+            "action": "create_issue",
+            "slug_present": True,
+            "description_present": True,
+            "status": status,
+            "kb_id_present": bool(str(kb_id or "").strip()),
+        },
+        mutate=lambda backend, resolved_kb_id: {
+            **backend.create_wiki_issue(
+                slug=slug,
+                description=description,
+                kb_id=resolved_kb_id,
+                issue_type=str(payload.get("issue_type") or "manual").strip() or "manual",
+                suspected_knowledge_ids=[
+                    str(item).strip()
+                    for item in (payload.get("suspected_knowledge_ids") or [])
+                    if str(item).strip()
+                ],
+                status=status,
+                reported_by=str(payload.get("reported_by") or "pa").strip() or "pa",
+            ),
+            "mutation": "create-issue",
+            "confirmation_required": True,
+        },
+    )
 
 
-def auto_fix_native_wiki(confirm_token: str, kb_id: str | None = None) -> dict[str, Any]:
-    _require_native_wiki_confirmation(confirm_token, NATIVE_WIKI_CONFIRM_AUTO_FIX)
-    backend, resolved_kb_id = _native_wiki_backend(kb_id)
-    return {
-        **backend.auto_fix_wiki(kb_id=resolved_kb_id),
-        "mutation": "auto-fix",
-        "confirmation_required": True,
-    }
+def rebuild_native_wiki_links(
+    *,
+    session: Session,
+    confirm_token: str,
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    return _mutate_native_wiki_global(
+        session=session,
+        action="rebuild_links",
+        confirm_token=confirm_token,
+        expected_token=NATIVE_WIKI_CONFIRM_REBUILD_LINKS,
+        token_id=NATIVE_WIKI_CONFIRM_REBUILD_LINKS_ID,
+        target_type="wiki_kb",
+        target_id=kb_id,
+        kb_id=kb_id,
+        request_summary={"action": "rebuild_links", "kb_id_present": bool(str(kb_id or "").strip())},
+        mutate=lambda backend, resolved_kb_id: {
+            **backend.rebuild_wiki_links(kb_id=resolved_kb_id),
+            "mutation": "rebuild-links",
+            "confirmation_required": True,
+        },
+    )
+
+
+def auto_fix_native_wiki(
+    *,
+    session: Session,
+    confirm_token: str,
+    kb_id: str | None = None,
+) -> dict[str, Any]:
+    return _mutate_native_wiki_global(
+        session=session,
+        action="auto_fix",
+        confirm_token=confirm_token,
+        expected_token=NATIVE_WIKI_CONFIRM_AUTO_FIX,
+        token_id=NATIVE_WIKI_CONFIRM_AUTO_FIX_ID,
+        target_type="wiki_kb",
+        target_id=kb_id,
+        kb_id=kb_id,
+        request_summary={"action": "auto_fix", "kb_id_present": bool(str(kb_id or "").strip())},
+        mutate=lambda backend, resolved_kb_id: {
+            **backend.auto_fix_wiki(kb_id=resolved_kb_id),
+            "mutation": "auto-fix",
+            "confirmation_required": True,
+        },
+    )
 
 
 def update_native_wiki_issue_status(
+    *,
+    session: Session,
     issue_id: str,
     status: str,
     confirm_token: str,
     kb_id: str | None = None,
 ) -> dict[str, Any]:
-    _require_native_wiki_confirmation(confirm_token, NATIVE_WIKI_CONFIRM_ISSUE_STATUS)
     if status not in {"pending", "ignored", "resolved"}:
         raise ValueError("Native Wiki issue status must be pending, ignored, or resolved.")
+    return _mutate_native_wiki_global(
+        session=session,
+        action="issue_status",
+        confirm_token=confirm_token,
+        expected_token=NATIVE_WIKI_CONFIRM_ISSUE_STATUS,
+        token_id=NATIVE_WIKI_CONFIRM_ISSUE_STATUS_ID,
+        target_type="wiki_issue",
+        target_id=_safe_public_id(issue_id),
+        kb_id=kb_id,
+        request_summary={
+            "action": "issue_status",
+            "issue_id_present": bool(str(issue_id or "").strip()),
+            "status": status,
+            "kb_id_present": bool(str(kb_id or "").strip()),
+        },
+        mutate=lambda backend, resolved_kb_id: {
+            **backend.update_wiki_issue_status(
+                issue_id=issue_id,
+                status=status,
+                kb_id=resolved_kb_id,
+            ),
+            "mutation": "issue-status",
+            "confirmation_required": True,
+        },
+    )
+
+
+def _mutate_native_wiki_global(
+    *,
+    session: Session,
+    action: str,
+    confirm_token: str | None,
+    expected_token: str,
+    token_id: str,
+    target_type: str,
+    target_id: str | None,
+    kb_id: str | None,
+    request_summary: dict[str, Any],
+    mutate: Any,
+) -> dict[str, Any]:
+    try:
+        confirmation = require_native_confirmation(
+            confirm=None,
+            confirm_token=confirm_token,
+            expected_token=expected_token,
+            token_id=token_id,
+            action=f"native wiki {action}",
+        )
+    except NativeConfirmationError as exc:
+        raise ValueError(str(exc)) from exc
+
     backend, resolved_kb_id = _native_wiki_backend(kb_id)
+    audit = record_native_mutation_audit(
+        session=session,
+        capability="wiki",
+        operation=f"weknora_wiki_{action}",
+        target_type=target_type,
+        target_id=_safe_public_id(target_id or resolved_kb_id),
+        status="started",
+        confirmation=confirmation,
+        request_summary={**request_summary, "resolved_kb_id_present": bool(resolved_kb_id)},
+    )
+    session.commit()
+
+    try:
+        result = mutate(backend, resolved_kb_id)
+    except (KnowledgeBackendUnavailableError, ValueError) as exc:
+        update_native_mutation_audit(
+            audit=audit,
+            status="failed",
+            response_summary={"action": action, "success": False},
+            error_message=str(exc),
+        )
+        session.commit()
+        raise
+
+    update_native_mutation_audit(
+        audit=audit,
+        status="succeeded",
+        response_summary={"action": action, "success": True, **_wiki_global_result_summary(result)},
+    )
+    session.commit()
     return {
-        **backend.update_wiki_issue_status(
-            issue_id=issue_id,
-            status=status,
-            kb_id=resolved_kb_id,
-        ),
-        "mutation": "issue-status",
-        "confirmation_required": True,
+        **result,
+        "audit": _audit_surface(audit),
+        "confirmation": _confirmation_read(confirmation),
     }
+
+
+def _wiki_global_result_summary(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": result.get("status"),
+        "mutation": result.get("mutation"),
+        "fixed_count": result.get("fixed_count"),
+        "issue_status": result.get("status") if result.get("mutation") == "issue-status" else None,
+        "kb_id_present": bool(result.get("kb_id")),
+    }
+
+
+def _audit_surface(audit: Any) -> dict[str, Any]:
+    return {
+        "id": audit.id,
+        "capability": audit.capability,
+        "operation": audit.operation,
+        "target_type": audit.target_type,
+        "target_id": audit.target_id,
+        "source": audit.source,
+        "status": audit.status,
+        "confirmation_required": audit.confirmation_required,
+        "confirmation_method": audit.confirmation_method,
+        "confirm_token_id": audit.confirm_token_id,
+        "created_at": audit.created_at.isoformat(),
+    }
+
+
+def _confirmation_read(confirmation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "required": bool(confirmation.get("required")),
+        "method": confirmation.get("method"),
+        "token_id": confirmation.get("token_id"),
+    }
+
+
+def _safe_public_id(value: object) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if len(text) <= 12:
+        return text
+    return f"{text[:6]}...{text[-4:]}"
 
 
 def _sync_page_to_weknora(

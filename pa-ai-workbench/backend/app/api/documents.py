@@ -13,12 +13,15 @@ from sqlmodel import Session
 from app.database import get_session
 from app.schemas import DocumentBulkRefreshResponse
 from app.schemas import DocumentChunkActionResponse
+from app.schemas import DocumentChunkContentRequest
 from app.schemas import DocumentChunkEnabledRequest
 from app.schemas import DocumentLifecycleActionResponse
 from app.schemas import DocumentListResponse
 from app.schemas import DocumentChunkListResponse
 from app.schemas import DocumentChunkMutationRequest
 from app.schemas import DocumentChunkRead
+from app.schemas import DocumentChunkSimilarResponse
+from app.schemas import DocumentChunkSimilarResultRead
 from app.schemas import DocumentIndexResponse
 from app.schemas import DocumentManualCreateRequest
 from app.schemas import DocumentParseResponse
@@ -29,6 +32,8 @@ from app.schemas import DocumentRetryIndexResponse
 from app.schemas import DocumentSpansResponse
 from app.schemas import DocumentUploadResponse
 from app.schemas import DocumentUrlCreateRequest
+from app.schemas import NativeConfirmationRead
+from app.schemas import NativeMutationAuditRead
 from app.services.document_service import cancel_native_document_parse
 from app.services.document_service import create_document
 from app.services.document_service import create_document_from_url
@@ -51,6 +56,8 @@ from app.services.document_service import reparse_native_document
 from app.services.document_service import reindex_document_chunks
 from app.services.document_service import refresh_document_statuses
 from app.services.document_service import retry_index_document
+from app.services.document_service import rewrite_native_document_chunk_content
+from app.services.document_service import search_native_document_chunk_similar
 from app.services.document_service import set_native_document_chunk_enabled
 from app.services.document_service import document_processing_summary
 
@@ -130,6 +137,7 @@ def list_document_records(
     processing_state: Annotated[str | None, Query()] = None,
     has_error: Annotated[bool | None, Query()] = None,
     knowledge_backend: Annotated[str | None, Query()] = None,
+    knowledge_base_id: Annotated[str | None, Query()] = None,
     refresh_status: Annotated[bool, Query()] = False,
 ) -> DocumentListResponse:
     documents = list_documents(
@@ -138,6 +146,7 @@ def list_document_records(
         processing_state=processing_state,
         has_error=has_error,
         knowledge_backend=knowledge_backend,
+        knowledge_base_id=knowledge_base_id,
         refresh_status=refresh_status,
     )
     return DocumentListResponse(
@@ -153,6 +162,7 @@ def refresh_document_records(
     processing_state: Annotated[str | None, Query()] = None,
     has_error: Annotated[bool | None, Query()] = None,
     knowledge_backend: Annotated[str | None, Query()] = None,
+    knowledge_base_id: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> DocumentBulkRefreshResponse:
     documents = refresh_document_statuses(
@@ -161,6 +171,7 @@ def refresh_document_records(
         processing_state=processing_state,
         has_error=has_error,
         knowledge_backend=knowledge_backend,
+        knowledge_base_id=knowledge_base_id,
         limit=limit,
     )
     return DocumentBulkRefreshResponse(
@@ -262,6 +273,29 @@ def read_document_chunk_detail(
     return DocumentChunkRead.model_validate(chunk)
 
 
+@router.get("/{document_id}/chunks/{chunk_id}/similar", response_model=DocumentChunkSimilarResponse)
+def search_document_chunk_similar(
+    document_id: str,
+    chunk_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    top_k: Annotated[int, Query(ge=1, le=50)] = 8,
+) -> DocumentChunkSimilarResponse:
+    document = _require_document(session, document_id)
+    try:
+        items = search_native_document_chunk_similar(
+            session=session,
+            document=document,
+            chunk_id=chunk_id,
+            top_k=top_k,
+        )
+    except DocumentWorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return DocumentChunkSimilarResponse(
+        items=[DocumentChunkSimilarResultRead.model_validate(item) for item in items],
+        total=len(items),
+    )
+
+
 @router.patch("/{document_id}/chunks/{chunk_id}/enabled", response_model=DocumentChunkActionResponse)
 def set_document_chunk_enabled(
     document_id: str,
@@ -271,12 +305,13 @@ def set_document_chunk_enabled(
 ) -> DocumentChunkActionResponse:
     document = _require_document(session, document_id)
     try:
-        chunk = set_native_document_chunk_enabled(
+        chunk, audit = set_native_document_chunk_enabled(
             session=session,
             document=document,
             chunk_id=chunk_id,
             is_enabled=payload.is_enabled,
             confirm=payload.confirm,
+            confirm_token=payload.confirm_token,
             reason=payload.reason,
         )
     except DocumentWorkflowError as exc:
@@ -288,6 +323,38 @@ def set_document_chunk_enabled(
         action="toggle",
         audit_step="weknora_chunk_toggle",
         message="WeKnora chunk toggle completed.",
+        audit=audit,
+    )
+
+
+@router.patch("/{document_id}/chunks/{chunk_id}/content", response_model=DocumentChunkActionResponse)
+def rewrite_document_chunk_content(
+    document_id: str,
+    chunk_id: str,
+    payload: DocumentChunkContentRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> DocumentChunkActionResponse:
+    document = _require_document(session, document_id)
+    try:
+        chunk, audit = rewrite_native_document_chunk_content(
+            session=session,
+            document=document,
+            chunk_id=chunk_id,
+            content=payload.content,
+            confirm=payload.confirm,
+            confirm_token=payload.confirm_token,
+            reason=payload.reason,
+        )
+    except DocumentWorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _chunk_action_response(
+        session=session,
+        document=document,
+        chunk=chunk,
+        action="rewrite_content",
+        audit_step="weknora_chunk_content_rewrite",
+        message="WeKnora chunk content rewrite completed.",
+        audit=audit,
     )
 
 
@@ -300,11 +367,12 @@ def delete_document_chunk_record(
 ) -> DocumentChunkActionResponse:
     document = _require_document(session, document_id)
     try:
-        message = delete_native_document_chunk(
+        message, audit = delete_native_document_chunk(
             session=session,
             document=document,
             chunk_id=chunk_id,
             confirm=payload.confirm,
+            confirm_token=payload.confirm_token,
             reason=payload.reason,
         )
     except DocumentWorkflowError as exc:
@@ -316,6 +384,7 @@ def delete_document_chunk_record(
         action="delete_chunk",
         audit_step="weknora_chunk_delete",
         message=message,
+        audit=audit,
     )
 
 
@@ -332,12 +401,13 @@ def delete_document_chunk_generated_question(
 ) -> DocumentChunkActionResponse:
     document = _require_document(session, document_id)
     try:
-        chunk = delete_native_generated_question(
+        chunk, audit = delete_native_generated_question(
             session=session,
             document=document,
             chunk_id=chunk_id,
             question_id=question_id,
             confirm=payload.confirm,
+            confirm_token=payload.confirm_token,
             reason=payload.reason,
         )
     except DocumentWorkflowError as exc:
@@ -349,6 +419,7 @@ def delete_document_chunk_generated_question(
         action="delete_generated_question",
         audit_step="weknora_chunk_question_delete",
         message="WeKnora generated question delete completed.",
+        audit=audit,
     )
 
 
@@ -516,6 +587,7 @@ def _chunk_action_response(
     action: str,
     message: str,
     audit_step: str,
+    audit=None,
 ) -> DocumentChunkActionResponse:
     return DocumentChunkActionResponse(
         document=_document_read(session, document),
@@ -523,6 +595,16 @@ def _chunk_action_response(
         action=action,
         message=message,
         audit_step=audit_step,
+        audit=NativeMutationAuditRead.model_validate(audit) if audit is not None else None,
+        confirmation=(
+            NativeConfirmationRead(
+                required=bool(audit.confirmation_required),
+                method=audit.confirmation_method,
+                token_id=audit.confirm_token_id,
+            )
+            if audit is not None
+            else None
+        ),
     )
 
 

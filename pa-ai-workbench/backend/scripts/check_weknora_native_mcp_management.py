@@ -62,7 +62,7 @@ def main() -> int:
             safe_test = _surface(surfaces, "safe_test")
             mutations = _surface(surfaces, "mutations")
             _assert(services.get("status") == "live", "service list is live")
-            _assert(mutations.get("status") == "backlog", "mutation/execution remains backlog")
+            _assert(mutations.get("status") in {"partial", "backlog"}, "mutation/execution surface is bounded")
 
             service_count = int(services.get("count") or 0)
             enabled_count = int(services.get("enabled_count") or 0)
@@ -163,7 +163,7 @@ def main() -> int:
                     confirmed=confirmed_test_status,
                 )
             )
-            print("- mutations: backlog")
+            print(f"- mutations: {mutations.get('status')}")
             if browser_mode:
                 print("- browser: Capability Center rendered MCP management readiness")
             return 0

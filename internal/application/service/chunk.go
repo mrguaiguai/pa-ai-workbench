@@ -6,6 +6,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -23,6 +26,8 @@ type chunkService struct {
 	retrieveEngine  interfaces.RetrieveEngineRegistry
 	ownership       retriever.TenantStoreOwnership
 }
+
+const maxGeneratedQuestionChars = 2000
 
 // NewChunkService creates a new chunk service
 // It initializes a service with the provided chunk repository
@@ -196,8 +201,20 @@ func (s *chunkService) ListPagedChunksByKnowledgeID(ctx context.Context,
 func (s *chunkService) UpdateChunk(ctx context.Context, chunk *types.Chunk) error {
 	logger.Infof(ctx, "Updating chunk, ID: %s, knowledge ID: %s", chunk.ID, chunk.KnowledgeID)
 
+	tenantID := types.MustTenantIDFromContext(ctx)
+	previousChunk, err := s.chunkRepository.GetChunkByID(ctx, tenantID, chunk.ID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_id":     chunk.ID,
+			"knowledge_id": chunk.KnowledgeID,
+			"tenant_id":    tenantID,
+		})
+		return err
+	}
+	contentChanged := previousChunk.Content != chunk.Content
+
 	// Update the chunk in the repository
-	err := s.chunkRepository.UpdateChunk(ctx, chunk)
+	err = s.chunkRepository.UpdateChunk(ctx, chunk)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"chunk_id":     chunk.ID,
@@ -206,8 +223,100 @@ func (s *chunkService) UpdateChunk(ctx context.Context, chunk *types.Chunk) erro
 		return err
 	}
 
+	if contentChanged {
+		if err := s.refreshChunkContentIndex(ctx, previousChunk, chunk); err != nil {
+			logger.ErrorWithFields(ctx, err, map[string]interface{}{
+				"chunk_id":          chunk.ID,
+				"knowledge_id":      chunk.KnowledgeID,
+				"knowledge_base_id": chunk.KnowledgeBaseID,
+			})
+			return fmt.Errorf("failed to refresh chunk content index: %w", err)
+		}
+	}
+
 	logger.Info(ctx, "Chunk updated successfully")
 	return nil
+}
+
+func (s *chunkService) refreshChunkContentIndex(ctx context.Context, previousChunk, chunk *types.Chunk) error {
+	if chunk == nil || previousChunk == nil {
+		return nil
+	}
+	if !isChunkContentIndexable(previousChunk) && !isChunkContentIndexable(chunk) {
+		return nil
+	}
+
+	tenantID := types.MustTenantIDFromContext(ctx)
+	kb, err := s.kbRepository.GetKnowledgeBaseByID(ctx, chunk.KnowledgeBaseID)
+	if err != nil {
+		return fmt.Errorf("failed to get knowledge base: %w", err)
+	}
+	kb.EnsureDefaults()
+	if !kb.NeedsEmbeddingModel() || kb.EmbeddingModelID == "" {
+		logger.Infof(ctx, "Skip chunk content index refresh because KB has no embedding-backed index, chunk ID: %s", chunk.ID)
+		return nil
+	}
+
+	retrieveEngine, err := retriever.CreateRetrieveEngineForKB(
+		ctx, s.retrieveEngine, s.ownership, tenantID, kb.VectorStoreID)
+	if err != nil {
+		return fmt.Errorf("failed to create retrieve engine: %w", err)
+	}
+
+	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+	if err != nil {
+		return fmt.Errorf("failed to get embedding model: %w", err)
+	}
+
+	// Delete only the main content index entry. Generated-question indexes
+	// share chunk_id but use source_id "{chunk_id}-{question_id}", so deleting
+	// by chunk_id here would erase unrelated generated-question vectors.
+	if isChunkContentIndexable(previousChunk) {
+		if err := retrieveEngine.DeleteBySourceIDList(
+			ctx,
+			[]string{chunk.ID},
+			embeddingModel.GetDimensions(),
+			kb.Type,
+		); err != nil {
+			return fmt.Errorf("failed to delete existing chunk content index: %w", err)
+		}
+	}
+
+	if !isChunkContentIndexable(chunk) {
+		logger.Infof(ctx, "Chunk content became non-indexable; old content index removed, chunk ID: %s", chunk.ID)
+		return nil
+	}
+
+	indexInfo := []*types.IndexInfo{{
+		Content:         chunk.EmbeddingContent(),
+		SourceID:        chunk.ID,
+		SourceType:      types.ChunkSourceType,
+		ChunkID:         chunk.ID,
+		KnowledgeID:     chunk.KnowledgeID,
+		KnowledgeBaseID: chunk.KnowledgeBaseID,
+		KnowledgeType:   kb.Type,
+		TagID:           chunk.TagID,
+		IsEnabled:       chunk.IsEnabled,
+		IsRecommended:   chunk.Flags.HasFlag(types.ChunkFlagRecommended),
+	}}
+	if err := retrieveEngine.BatchIndex(ctx, embeddingModel, indexInfo); err != nil {
+		return fmt.Errorf("failed to index updated chunk content: %w", err)
+	}
+	return nil
+}
+
+func isChunkContentIndexable(chunk *types.Chunk) bool {
+	if chunk == nil || strings.TrimSpace(chunk.Content) == "" {
+		return false
+	}
+	switch chunk.ChunkType {
+	case "", types.ChunkTypeText, types.ChunkTypeSummary, types.ChunkTypeTableColumn,
+		types.ChunkTypeTableSummary, types.ChunkTypeFAQ, types.ChunkTypeImageOCR,
+		types.ChunkTypeImageCaption, types.ChunkTypeWikiPage:
+		return true
+	default:
+		return false
+	}
 }
 
 // UpdateChunks updates chunks in batch
@@ -351,6 +460,111 @@ func (s *chunkService) ListChunkByParentID(
 	return chunks, nil
 }
 
+// AddGeneratedQuestion adds a single generated question to a chunk and indexes it.
+func (s *chunkService) AddGeneratedQuestion(ctx context.Context, chunkID string, question string) (*types.Chunk, *types.GeneratedQuestion, error) {
+	normalizedQuestion := strings.TrimSpace(question)
+	if normalizedQuestion == "" {
+		return nil, nil, fmt.Errorf("question cannot be empty")
+	}
+	if len([]rune(normalizedQuestion)) > maxGeneratedQuestionChars {
+		return nil, nil, fmt.Errorf("question is too long")
+	}
+
+	tenantID := types.MustTenantIDFromContext(ctx)
+	chunk, err := s.chunkRepository.GetChunkByID(ctx, tenantID, chunkID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_id":  chunkID,
+			"tenant_id": tenantID,
+		})
+		return nil, nil, fmt.Errorf("failed to get chunk: %w", err)
+	}
+	if strings.TrimSpace(chunk.Content) == "" {
+		return nil, nil, fmt.Errorf("cannot add generated question to an empty chunk")
+	}
+
+	meta, err := chunk.DocumentMetadata()
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_id": chunkID,
+		})
+		return nil, nil, fmt.Errorf("failed to parse chunk metadata: %w", err)
+	}
+	if meta == nil {
+		meta = &types.DocumentChunkMetadata{}
+	}
+
+	for _, existing := range meta.GeneratedQuestions {
+		if strings.EqualFold(strings.TrimSpace(existing.Question), normalizedQuestion) {
+			return nil, nil, fmt.Errorf("generated question already exists for chunk %s", chunkID)
+		}
+	}
+
+	kb, err := s.kbRepository.GetKnowledgeBaseByID(ctx, chunk.KnowledgeBaseID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"knowledge_base_id": chunk.KnowledgeBaseID,
+		})
+		return nil, nil, fmt.Errorf("failed to get knowledge base: %w", err)
+	}
+
+	retrieveEngine, err := retriever.CreateRetrieveEngineForKB(
+		ctx, s.retrieveEngine, s.ownership, tenantID, kb.VectorStoreID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_id": chunkID,
+		})
+		return nil, nil, fmt.Errorf("failed to create retrieve engine: %w", err)
+	}
+
+	embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"embedding_model_id": kb.EmbeddingModelID,
+		})
+		return nil, nil, fmt.Errorf("failed to get embedding model: %w", err)
+	}
+
+	generatedQuestion := &types.GeneratedQuestion{
+		ID:       fmt.Sprintf("q%d", time.Now().UnixNano()),
+		Question: normalizedQuestion,
+	}
+	sourceID := fmt.Sprintf("%s-%s", chunkID, generatedQuestion.ID)
+	indexInfo := []*types.IndexInfo{{
+		Content:         normalizedQuestion,
+		SourceID:        sourceID,
+		SourceType:      types.ChunkSourceType,
+		ChunkID:         chunk.ID,
+		KnowledgeID:     chunk.KnowledgeID,
+		KnowledgeBaseID: chunk.KnowledgeBaseID,
+		KnowledgeType:   kb.Type,
+		TagID:           chunk.TagID,
+		IsEnabled:       chunk.IsEnabled,
+	}}
+	if err := retrieveEngine.BatchIndex(ctx, embeddingModel, indexInfo); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_id": chunkID,
+		})
+		return nil, nil, fmt.Errorf("failed to index generated question: %w", err)
+	}
+
+	meta.GeneratedQuestions = append(meta.GeneratedQuestions, *generatedQuestion)
+	if err := chunk.SetDocumentMetadata(meta); err != nil {
+		_ = retrieveEngine.DeleteBySourceIDList(ctx, []string{sourceID}, embeddingModel.GetDimensions(), kb.Type)
+		return nil, nil, fmt.Errorf("failed to set chunk metadata: %w", err)
+	}
+	if err := s.chunkRepository.UpdateChunk(ctx, chunk); err != nil {
+		_ = retrieveEngine.DeleteBySourceIDList(ctx, []string{sourceID}, embeddingModel.GetDimensions(), kb.Type)
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"chunk_id": chunkID,
+		})
+		return nil, nil, fmt.Errorf("failed to update chunk: %w", err)
+	}
+
+	logger.Infof(ctx, "Successfully added generated question %s to chunk %s", generatedQuestion.ID, chunkID)
+	return chunk, generatedQuestion, nil
+}
+
 // DeleteGeneratedQuestion deletes a single generated question from a chunk by question ID
 // This updates the chunk metadata and removes the corresponding vector index
 func (s *chunkService) DeleteGeneratedQuestion(ctx context.Context, chunkID string, questionID string) error {
@@ -453,4 +667,177 @@ func (s *chunkService) DeleteGeneratedQuestion(ctx context.Context, chunkID stri
 
 	logger.Infof(ctx, "Successfully deleted generated question %s from chunk %s", questionID, chunkID)
 	return nil
+}
+
+type chunkSearchHit struct {
+	index           *types.IndexWithScore
+	retrieverType   types.RetrieverType
+	retrieverEngine string
+}
+
+// SearchSimilarChunks searches a chunk's owning KB using the chunk content as the query.
+func (s *chunkService) SearchSimilarChunks(
+	ctx context.Context,
+	chunkID string,
+	topK int,
+	vectorThreshold float64,
+	keywordThreshold float64,
+	includeSelf bool,
+) ([]*types.ChunkSearchResult, error) {
+	tenantID := types.MustTenantIDFromContext(ctx)
+	if topK <= 0 {
+		topK = 8
+	}
+	if topK > 50 {
+		topK = 50
+	}
+
+	sourceChunk, err := s.chunkRepository.GetChunkByID(ctx, tenantID, chunkID)
+	if err != nil {
+		return nil, err
+	}
+	queryText := sourceChunk.EmbeddingContent()
+	if strings.TrimSpace(queryText) == "" {
+		return []*types.ChunkSearchResult{}, nil
+	}
+
+	kb, err := s.kbRepository.GetKnowledgeBaseByID(ctx, sourceChunk.KnowledgeBaseID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get knowledge base: %w", err)
+	}
+	kb.EnsureDefaults()
+
+	retrieveEngine, err := retriever.CreateRetrieveEngineForKB(
+		ctx, s.retrieveEngine, s.ownership, tenantID, kb.VectorStoreID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create retrieve engine: %w", err)
+	}
+
+	searchTopK := topK
+	if !includeSelf {
+		searchTopK++
+	}
+
+	var retrieveParams []types.RetrieveParams
+	if retrieveEngine.SupportRetriever(types.VectorRetrieverType) &&
+		kb.IsVectorEnabled() && kb.EmbeddingModelID != "" {
+		embeddingModel, err := s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get embedding model: %w", err)
+		}
+		queryEmbedding, err := embeddingModel.Embed(ctx, queryText)
+		if err != nil {
+			return nil, fmt.Errorf("failed to embed chunk content: %w", err)
+		}
+		vectorParams := types.RetrieveParams{
+			Query:            queryText,
+			Embedding:        queryEmbedding,
+			KnowledgeBaseIDs: []string{sourceChunk.KnowledgeBaseID},
+			TopK:             searchTopK,
+			Threshold:        vectorThreshold,
+			RetrieverType:    types.VectorRetrieverType,
+		}
+		if kb.Type == types.KnowledgeBaseTypeFAQ {
+			vectorParams.KnowledgeType = types.KnowledgeTypeFAQ
+		}
+		retrieveParams = append(retrieveParams, vectorParams)
+	}
+	if retrieveEngine.SupportRetriever(types.KeywordsRetrieverType) &&
+		kb.IsKeywordEnabled() && kb.Type != types.KnowledgeBaseTypeFAQ {
+		retrieveParams = append(retrieveParams, types.RetrieveParams{
+			Query:            queryText,
+			KnowledgeBaseIDs: []string{sourceChunk.KnowledgeBaseID},
+			TopK:             searchTopK,
+			Threshold:        keywordThreshold,
+			RetrieverType:    types.KeywordsRetrieverType,
+		})
+	}
+	if len(retrieveParams) == 0 {
+		return []*types.ChunkSearchResult{}, nil
+	}
+
+	retrieveResults, err := retrieveEngine.Retrieve(ctx, retrieveParams)
+	if err != nil {
+		return nil, err
+	}
+
+	bestHits := make(map[string]*chunkSearchHit)
+	for _, result := range retrieveResults {
+		if result == nil {
+			continue
+		}
+		for _, index := range result.Results {
+			if index == nil || index.ChunkID == "" {
+				continue
+			}
+			if !includeSelf && index.ChunkID == sourceChunk.ID {
+				continue
+			}
+			if existing, ok := bestHits[index.ChunkID]; ok && existing.index.Score >= index.Score {
+				continue
+			}
+			bestHits[index.ChunkID] = &chunkSearchHit{
+				index:           index,
+				retrieverType:   result.RetrieverType,
+				retrieverEngine: string(result.RetrieverEngineType),
+			}
+		}
+	}
+	if len(bestHits) == 0 {
+		return []*types.ChunkSearchResult{}, nil
+	}
+
+	hits := make([]*chunkSearchHit, 0, len(bestHits))
+	chunkIDs := make([]string, 0, len(bestHits))
+	for _, hit := range bestHits {
+		hits = append(hits, hit)
+		chunkIDs = append(chunkIDs, hit.index.ChunkID)
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		return hits[i].index.Score > hits[j].index.Score
+	})
+	if len(hits) > topK {
+		hits = hits[:topK]
+		chunkIDs = chunkIDs[:0]
+		for _, hit := range hits {
+			chunkIDs = append(chunkIDs, hit.index.ChunkID)
+		}
+	}
+
+	chunks, err := s.chunkRepository.ListChunksByID(ctx, tenantID, chunkIDs)
+	if err != nil {
+		return nil, err
+	}
+	chunkByID := make(map[string]*types.Chunk, len(chunks))
+	for _, chunk := range chunks {
+		chunkByID[chunk.ID] = chunk
+	}
+
+	results := make([]*types.ChunkSearchResult, 0, len(hits))
+	for _, hit := range hits {
+		chunk := chunkByID[hit.index.ChunkID]
+		if chunk == nil {
+			continue
+		}
+		results = append(results, &types.ChunkSearchResult{
+			ID:                 chunk.ID,
+			Content:            chunk.Content,
+			KnowledgeID:        chunk.KnowledgeID,
+			KnowledgeBaseID:    chunk.KnowledgeBaseID,
+			ChunkIndex:         chunk.ChunkIndex,
+			ChunkType:          chunk.ChunkType,
+			ParentChunkID:      chunk.ParentChunkID,
+			ImageInfo:          chunk.ImageInfo,
+			IsEnabled:          chunk.IsEnabled,
+			Score:              hit.index.Score,
+			MatchType:          hit.index.MatchType,
+			RetrieverType:      hit.retrieverType,
+			RetrieverEngine:    hit.retrieverEngine,
+			MatchedContent:     hit.index.Content,
+			SourceID:           hit.index.SourceID,
+			ChunkMetadata:      chunk.Metadata,
+			ExcludeSelfApplied: !includeSelf,
+		})
+	}
+	return results, nil
 }

@@ -8,6 +8,7 @@ import time
 from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 from urllib.error import HTTPError
 from urllib.error import URLError
@@ -596,6 +597,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "chunk_count": _optional_int(payload.get("chunk_count")),
             "is_processing": bool(payload.get("is_processing")),
             "vector_store": self._knowledge_base_vector_store_safe_dict(payload),
+            "question_generation": self._knowledge_base_question_generation_safe_dict(payload),
             "source": "weknora_api",
         }
 
@@ -605,6 +607,175 @@ class WeKnoraApiBackend(KnowledgeEngine):
         payload = self._unwrap_data(data)
         items = _items_from_payload(payload)
         return [self._knowledge_base_safe_dict(item) for item in items if isinstance(item, dict)]
+
+    def create_temporary_faq_knowledge_base(self, *, name: str, description: str | None = None) -> dict:
+        self._require_configured()
+        model_defaults = self._knowledge_base_model_defaults()
+        data = self._request_json(
+            "POST",
+            "/api/v1/knowledge-bases",
+            {
+                "name": name,
+                "type": "faq",
+                "description": description or "Temporary FAQ validation knowledge base",
+                # Native list APIs hide is_temporary=true KBs, but WNFC browser
+                # evidence needs PA overview to discover this isolated test KB.
+                "is_temporary": False,
+                "faq_config": {
+                    "index_mode": "question_answer",
+                    "question_index_mode": "combined",
+                },
+                **model_defaults,
+            },
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        kb = self._knowledge_base_safe_dict(payload)
+        kb["_native_kb_id"] = _optional_str(payload.get("id"))
+        return kb
+
+    def create_temporary_wiki_knowledge_base(self, *, name: str, description: str | None = None) -> dict:
+        self._require_configured()
+        data = self._request_json(
+            "POST",
+            "/api/v1/knowledge-bases",
+            {
+                "name": name,
+                "type": "document",
+                "description": description or "Temporary Wiki validation knowledge base",
+                "is_temporary": False,
+                "indexing_strategy": {
+                    "vector_enabled": False,
+                    "keyword_enabled": False,
+                    "wiki_enabled": True,
+                    "graph_enabled": False,
+                },
+                "wiki_config": {},
+            },
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        kb = self._knowledge_base_safe_dict(payload)
+        kb["_native_kb_id"] = _optional_str(payload.get("id"))
+        return kb
+
+    def create_temporary_question_generation_knowledge_base(
+        self,
+        *,
+        name: str,
+        description: str | None = None,
+        question_count: int = 1,
+    ) -> dict:
+        self._require_configured()
+        model_defaults = self._knowledge_base_model_defaults()
+        data = self._request_json(
+            "POST",
+            "/api/v1/knowledge-bases",
+            {
+                "name": name,
+                "type": "document",
+                "description": description or "Temporary chunk generated-question validation knowledge base",
+                "is_temporary": False,
+                "question_generation_config": {
+                    "enabled": True,
+                    "question_count": max(min(int(question_count or 1), 3), 1),
+                },
+                **model_defaults,
+            },
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        kb = self._knowledge_base_safe_dict(payload)
+        kb["_native_kb_id"] = _optional_str(payload.get("id"))
+        return kb
+
+    def create_knowledge_base(
+        self,
+        *,
+        name: str,
+        description: str | None = None,
+        kb_type: str = "document",
+        is_temporary: bool = False,
+    ) -> dict:
+        self._require_configured()
+        resolved_name = str(name or "").strip()
+        if not resolved_name:
+            raise KnowledgeBackendUnavailableError(
+                "knowledge base name is required for create",
+                error_code="kb_name_required",
+                operation="create_knowledge_base",
+            )
+        data = self._request_json(
+            "POST",
+            "/api/v1/knowledge-bases",
+            {
+                "name": resolved_name,
+                "type": str(kb_type or "document").strip() or "document",
+                "description": description or "",
+                "is_temporary": bool(is_temporary),
+                **self._knowledge_base_model_defaults(),
+            },
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        kb = self._knowledge_base_safe_dict(payload)
+        kb["_native_kb_id"] = _optional_str(payload.get("id"))
+        return kb
+
+    def update_knowledge_base(self, kb_id: str, *, name: str, description: str | None = None) -> dict:
+        self._require_configured()
+        encoded_id = quote(str(kb_id or ""), safe="")
+        resolved_name = str(name or "").strip()
+        if not encoded_id or not resolved_name:
+            raise KnowledgeBackendUnavailableError(
+                "knowledge base id and name are required for update",
+                error_code="kb_update_target_required",
+                operation="update_knowledge_base",
+            )
+        data = self._request_json(
+            "PUT",
+            f"/api/v1/knowledge-bases/{encoded_id}",
+            {
+                "name": resolved_name,
+                "description": description or "",
+                "config": {},
+            },
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        return self._knowledge_base_safe_dict(payload)
+
+    def delete_knowledge_base(self, kb_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(str(kb_id or ""), safe="")
+        if not encoded_id:
+            raise KnowledgeBackendUnavailableError(
+                "knowledge base id is required for delete",
+                error_code="kb_id_required",
+                operation="delete_knowledge_base",
+            )
+        data = self._request_json("DELETE", f"/api/v1/knowledge-bases/{encoded_id}")
+        return {"success": bool(isinstance(data, dict) and data.get("success", True)), "source": "weknora_api"}
+
+    def toggle_knowledge_base_pin(self, kb_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(str(kb_id or ""), safe="")
+        if not encoded_id:
+            raise KnowledgeBackendUnavailableError(
+                "knowledge base id is required for pin toggle",
+                error_code="kb_id_required",
+                operation="toggle_knowledge_base_pin",
+            )
+        data = self._request_json("PUT", f"/api/v1/knowledge-bases/{encoded_id}/pin", {})
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        return self._knowledge_base_safe_dict(payload)
 
     def list_knowledge_base_tags(self, kb_id: str, *, limit: int = 20) -> list[dict]:
         self._require_configured()
@@ -622,6 +793,109 @@ class WeKnoraApiBackend(KnowledgeEngine):
         payload = self._unwrap_data(data)
         tags = _items_from_payload(payload)
         return [_knowledge_tag_safe_dict(tag) for tag in tags if isinstance(tag, dict)]
+
+    def create_knowledge_base_tag(self, kb_id: str, payload: dict) -> dict:
+        self._require_configured()
+        resolved_kb_id = str(kb_id or "").strip()
+        if not resolved_kb_id:
+            raise KnowledgeBackendUnavailableError(
+                "knowledge base id is required for tag create",
+                error_code="kb_id_required",
+                operation="tag_mutation",
+            )
+        data = self._request_json(
+            "POST",
+            f"/api/v1/knowledge-bases/{quote(resolved_kb_id, safe='')}/tags",
+            {
+                "name": str(payload.get("name") or "").strip(),
+                "color": str(payload.get("color") or "").strip(),
+                "sort_order": int(payload.get("sort_order") or 0),
+            },
+        )
+        result = self._unwrap_data(data)
+        return _knowledge_tag_safe_dict(result if isinstance(result, dict) else {})
+
+    def update_knowledge_base_tag(self, kb_id: str, tag_id: str, payload: dict) -> dict:
+        self._require_configured()
+        resolved_kb_id = str(kb_id or "").strip()
+        resolved_tag_id = str(tag_id or "").strip()
+        if not resolved_kb_id or not resolved_tag_id:
+            raise KnowledgeBackendUnavailableError(
+                "knowledge base id and tag id are required for tag update",
+                error_code="tag_target_required",
+                operation="tag_mutation",
+            )
+        body: dict[str, object] = {}
+        if "name" in payload:
+            body["name"] = str(payload.get("name") or "").strip()
+        if "color" in payload:
+            body["color"] = str(payload.get("color") or "").strip()
+        if "sort_order" in payload:
+            body["sort_order"] = int(payload.get("sort_order") or 0)
+        data = self._request_json(
+            "PUT",
+            "/api/v1/knowledge-bases/{kb_id}/tags/{tag_id}".format(
+                kb_id=quote(resolved_kb_id, safe=""),
+                tag_id=quote(resolved_tag_id, safe=""),
+            ),
+            body,
+        )
+        result = self._unwrap_data(data)
+        return _knowledge_tag_safe_dict(result if isinstance(result, dict) else {})
+
+    def delete_knowledge_base_tag(
+        self,
+        kb_id: str,
+        tag_id: str,
+        *,
+        force: bool = False,
+        content_only: bool = False,
+    ) -> dict:
+        self._require_configured()
+        resolved_kb_id = str(kb_id or "").strip()
+        resolved_tag_id = str(tag_id or "").strip()
+        if not resolved_kb_id or not resolved_tag_id:
+            raise KnowledgeBackendUnavailableError(
+                "knowledge base id and tag id are required for tag delete",
+                error_code="tag_target_required",
+                operation="tag_mutation",
+            )
+        query = urlencode({"force": _bool_string(force), "content_only": _bool_string(content_only)})
+        data = self._request_json(
+            "DELETE",
+            "/api/v1/knowledge-bases/{kb_id}/tags/{tag_id}?{query}".format(
+                kb_id=quote(resolved_kb_id, safe=""),
+                tag_id=quote(resolved_tag_id, safe=""),
+                query=query,
+            ),
+            {},
+        )
+        payload = self._unwrap_data(data)
+        if isinstance(payload, dict):
+            return {
+                "success": bool(payload.get("success", True)),
+                "source": "weknora_api",
+            }
+        return {"success": bool(isinstance(data, dict) and data.get("success", True)), "source": "weknora_api"}
+
+    def _knowledge_base_model_defaults(self) -> dict[str, Any]:
+        model_defaults: dict[str, Any] = {}
+        if not self.default_kb_id:
+            return model_defaults
+        try:
+            default_data = self._request_json(
+                "GET",
+                f"/api/v1/knowledge-bases/{quote(str(self.default_kb_id), safe='')}",
+            )
+            default_payload = self._unwrap_data(default_data)
+            if isinstance(default_payload, dict):
+                for key in ("embedding_model_id", "summary_model_id"):
+                    value = _optional_str(default_payload.get(key))
+                    if value:
+                        model_defaults[key] = value
+        except KnowledgeBackendUnavailableError:
+            return {}
+        return model_defaults
 
     def upload_document(self, file_path: str, metadata: dict) -> KnowledgeDocument:
         self._require_configured()
@@ -839,16 +1113,18 @@ class WeKnoraApiBackend(KnowledgeEngine):
         chunk_id: str,
         *,
         content: str | None = None,
-        is_enabled: bool,
+        is_enabled: bool | None = None,
     ) -> dict:
         self._require_configured()
         encoded_doc_id = quote(str(external_doc_id or "").strip(), safe="")
         encoded_chunk_id = quote(str(chunk_id or "").strip(), safe="")
         if not encoded_doc_id or not encoded_chunk_id:
             raise KnowledgeBackendUnavailableError("document id and chunk id are required")
-        payload: dict[str, object] = {"is_enabled": is_enabled}
+        payload: dict[str, object] = {}
         if content is not None:
             payload["content"] = content
+        if is_enabled is not None:
+            payload["is_enabled"] = is_enabled
         data = self._request_json(
             "PUT",
             f"/api/v1/chunks/{encoded_doc_id}/{encoded_chunk_id}",
@@ -880,6 +1156,57 @@ class WeKnoraApiBackend(KnowledgeEngine):
             {"question_id": normalized_question_id},
         )
         return self._document_action_result(data, chunk_id, action="delete_generated_question")
+
+    def search_similar_chunks_by_chunk(
+        self,
+        chunk_id: str,
+        *,
+        top_k: int = 8,
+    ) -> list[dict]:
+        self._require_configured()
+        encoded_chunk_id = quote(str(chunk_id or "").strip(), safe="")
+        if not encoded_chunk_id:
+            raise KnowledgeBackendUnavailableError("chunk id is required")
+        query = urlencode({"top_k": min(max(int(top_k), 1), 50)})
+        try:
+            data = self._request_json("GET", f"/api/v1/chunks/by-id/{encoded_chunk_id}/search?{query}")
+        except KnowledgeBackendUnavailableError as exc:
+            if getattr(exc, "status_code", None) != 404:
+                raise
+            return self._search_similar_chunks_by_chunk_fallback(chunk_id, top_k=top_k)
+        items = self._unwrap_items(data)
+        return [item for item in items if isinstance(item, dict)]
+
+    def _search_similar_chunks_by_chunk_fallback(self, chunk_id: str, *, top_k: int) -> list[dict]:
+        chunk = self.get_document_chunk_by_id(chunk_id)
+        query_text = str(chunk.get("content") or "").strip()
+        if not query_text:
+            return []
+        external_doc_id = _optional_str(chunk.get("external_doc_id"))
+        filters: dict[str, object] = {}
+        if external_doc_id:
+            filters["knowledge_ids"] = [external_doc_id]
+        evidence_items = self.retrieve(query_text, filters, top_k=top_k)
+        results: list[dict] = []
+        for evidence in evidence_items:
+            metadata = evidence.metadata if isinstance(evidence.metadata, dict) else {}
+            results.append(
+                {
+                    "id": evidence.chunk_id,
+                    "chunk_id": evidence.chunk_id,
+                    "knowledge_id": evidence.external_doc_id,
+                    "knowledge_base_id": metadata.get("knowledge_base_id"),
+                    "chunk_index": metadata.get("chunk_index"),
+                    "content": evidence.text,
+                    "score": evidence.score,
+                    "match_type": metadata.get("match_type") or "content_query_fallback",
+                    "retriever_type": metadata.get("retriever_type") or "knowledge_search",
+                    "retriever_engine": metadata.get("retriever_engine") or "native_retrieve_fallback",
+                    "matched_content": metadata.get("matched_content"),
+                    "source_id": metadata.get("source_id") or evidence.chunk_id,
+                }
+            )
+        return results
 
     def retrieve(
         self,
@@ -1273,6 +1600,44 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if isinstance(item, dict)
         ]
 
+    def create_wiki_issue(
+        self,
+        *,
+        slug: str,
+        description: str,
+        kb_id: str | None = None,
+        issue_type: str = "manual",
+        suspected_knowledge_ids: list[str] | None = None,
+        status: str = "pending",
+        reported_by: str = "pa",
+    ) -> dict:
+        self._require_configured()
+        resolved_kb_id = self._wiki_kb_id(kb_id)
+        data = self._request_json(
+            "POST",
+            f"{self._wiki_base_path(resolved_kb_id)}/issues",
+            {
+                "slug": slug.strip(),
+                "issue_type": issue_type.strip() or "manual",
+                "description": description.strip(),
+                "suspected_knowledge_ids": suspected_knowledge_ids or [],
+                "status": status.strip() or "pending",
+                "reported_by": reported_by.strip() or "pa",
+            },
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            raise KnowledgeBackendUnavailableError("WeKnora Wiki issue create returned invalid JSON")
+        return {
+            "id": _optional_str(payload.get("id")),
+            "slug": _optional_str(payload.get("slug")),
+            "issue_type": _optional_str(payload.get("issue_type")),
+            "status": _optional_str(payload.get("status")),
+            "reported_by": _optional_str(payload.get("reported_by")),
+            "source": "weknora_api",
+            "kb_id": resolved_kb_id,
+        }
+
     def get_wiki_log(
         self,
         kb_id: str | None = None,
@@ -1387,6 +1752,70 @@ class WeKnoraApiBackend(KnowledgeEngine):
         items = self._unwrap_items(data)
         return [item for item in items if isinstance(item, dict)]
 
+    def get_agent(self, agent_id: str) -> dict:
+        self._require_configured()
+        normalized_agent_id = str(agent_id or "").strip()
+        if not normalized_agent_id:
+            raise KnowledgeBackendUnavailableError(
+                "agent id is required",
+                error_code="agent_id_required",
+                operation="get_agent",
+            )
+        data = self._request_json("GET", f"/api/v1/agents/{quote(normalized_agent_id, safe='')}")
+        payload = self._unwrap_data(data)
+        return payload if isinstance(payload, dict) else {}
+
+    def create_agent(self, payload: dict) -> dict:
+        self._require_configured()
+        data = self._request_json("POST", "/api/v1/agents", _agent_mutation_payload(payload, require_name=True))
+        result = self._unwrap_data(data)
+        return result if isinstance(result, dict) else {}
+
+    def update_agent(self, agent_id: str, payload: dict) -> dict:
+        self._require_configured()
+        normalized_agent_id = str(agent_id or "").strip()
+        if not normalized_agent_id:
+            raise KnowledgeBackendUnavailableError(
+                "agent id is required",
+                error_code="agent_id_required",
+                operation="update_agent",
+            )
+        data = self._request_json(
+            "PUT",
+            f"/api/v1/agents/{quote(normalized_agent_id, safe='')}",
+            _agent_mutation_payload(payload, require_name=True),
+        )
+        result = self._unwrap_data(data)
+        return result if isinstance(result, dict) else {}
+
+    def copy_agent(self, agent_id: str) -> dict:
+        self._require_configured()
+        normalized_agent_id = str(agent_id or "").strip()
+        if not normalized_agent_id:
+            raise KnowledgeBackendUnavailableError(
+                "agent id is required",
+                error_code="agent_id_required",
+                operation="copy_agent",
+            )
+        data = self._request_json("POST", f"/api/v1/agents/{quote(normalized_agent_id, safe='')}/copy", {})
+        result = self._unwrap_data(data)
+        return result if isinstance(result, dict) else {}
+
+    def delete_agent(self, agent_id: str) -> dict:
+        self._require_configured()
+        normalized_agent_id = str(agent_id or "").strip()
+        if not normalized_agent_id:
+            raise KnowledgeBackendUnavailableError(
+                "agent id is required",
+                error_code="agent_id_required",
+                operation="delete_agent",
+            )
+        data = self._request_json("DELETE", f"/api/v1/agents/{quote(normalized_agent_id, safe='')}", {})
+        return {
+            "success": bool(isinstance(data, dict) and data.get("success", True)),
+            "source": "weknora_api",
+        }
+
     def list_agent_type_presets(self) -> list[dict]:
         self._require_configured()
         data = self._request_json("GET", "/api/v1/agents/type-presets")
@@ -1453,6 +1882,105 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return {}
         return self._mcp_service_safe_dict(payload)
 
+    def create_mcp_service(
+        self,
+        *,
+        name: str,
+        transport_type: str,
+        url: str | None = None,
+        description: str = "",
+        enabled: bool = False,
+    ) -> dict:
+        self._require_configured()
+        payload = {
+            "name": name,
+            "description": description,
+            "enabled": bool(enabled),
+            "transport_type": transport_type,
+        }
+        if url:
+            payload["url"] = url
+        data = self._request_json("POST", "/api/v1/mcp-services", payload)
+        item = self._unwrap_data(data)
+        if not isinstance(item, dict):
+            return {}
+        return self._mcp_service_safe_dict(item)
+
+    def update_mcp_service(
+        self,
+        service_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        enabled: bool | None = None,
+        transport_type: str | None = None,
+        url: str | None = None,
+    ) -> dict:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        existing = self.get_mcp_service(service_id)
+        payload: dict[str, object] = {
+            "name": name if name is not None else existing.get("name", ""),
+            "description": description if description is not None else "",
+            "enabled": bool(enabled) if enabled is not None else bool(existing.get("enabled")),
+            "transport_type": transport_type if transport_type is not None else existing.get("transport_type", ""),
+        }
+        if url is not None:
+            payload["url"] = url
+        data = self._request_json("PUT", f"/api/v1/mcp-services/{encoded_id}", payload)
+        item = self._unwrap_data(data)
+        if not isinstance(item, dict):
+            return {}
+        return self._mcp_service_safe_dict(item)
+
+    def delete_mcp_service(self, service_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        self._request_json("DELETE", f"/api/v1/mcp-services/{encoded_id}")
+        return {
+            "id": service_id,
+            "status": "deleted",
+            "source": "weknora_api",
+        }
+
+    def update_mcp_service_credentials(
+        self,
+        service_id: str,
+        *,
+        api_key: str | None = None,
+        token: str | None = None,
+    ) -> dict:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        payload: dict[str, str] = {}
+        if api_key:
+            payload["api_key"] = api_key
+        if token:
+            payload["token"] = token
+        data = self._request_json(
+            "PUT",
+            f"/api/v1/mcp-services/{encoded_id}/credentials",
+            payload,
+        )
+        item = self._unwrap_data(data)
+        fields = item.get("fields") if isinstance(item, dict) else {}
+        return self._mcp_credentials_safe_dict(fields if isinstance(fields, dict) else {})
+
+    def clear_mcp_service_credential(self, service_id: str, field: str) -> dict:
+        self._require_configured()
+        normalized_field = str(field or "").strip()
+        encoded_id = quote(service_id, safe="")
+        encoded_field = quote(normalized_field, safe="")
+        self._request_json(
+            "DELETE",
+            f"/api/v1/mcp-services/{encoded_id}/credentials/{encoded_field}",
+        )
+        return {
+            "field": normalized_field,
+            "cleared": True,
+            "source": "weknora_api",
+        }
+
     def test_mcp_service(self, service_id: str) -> dict:
         self._require_configured()
         encoded_id = quote(service_id, safe="")
@@ -1466,6 +1994,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
         resource_items = resources if isinstance(resources, list) else []
         return {
             "success": bool(payload.get("success")),
+            "reason": _shorten(_redact_sensitive_text(str(payload.get("message") or "")), 240),
             "tool_count": len([item for item in tool_items if isinstance(item, dict)]),
             "resource_count": len([item for item in resource_items if isinstance(item, dict)]),
             "sample_tools": [
@@ -1605,6 +2134,85 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return {}
         return self._vector_store_safe_dict(payload)
 
+    def test_vector_store_raw(
+        self,
+        *,
+        engine_type: str,
+        connection_config: dict,
+    ) -> dict:
+        self._require_configured()
+        data = self._request_json(
+            "POST",
+            "/api/v1/vector-stores/test",
+            {
+                "engine_type": engine_type,
+                "connection_config": connection_config,
+            },
+        )
+        payload = data if isinstance(data, dict) else {}
+        version = _optional_str(payload.get("version"))
+        return {
+            "success": bool(payload.get("success")),
+            "version_detected": bool(version),
+            "source": "weknora_api",
+        }
+
+    def create_vector_store(
+        self,
+        *,
+        name: str,
+        engine_type: str,
+        connection_config: dict,
+        index_config: dict | None = None,
+        include_internal_refs: bool = False,
+    ) -> dict:
+        self._require_configured()
+        data = self._request_json(
+            "POST",
+            "/api/v1/vector-stores",
+            {
+                "name": name,
+                "engine_type": engine_type,
+                "connection_config": connection_config,
+                "index_config": index_config or {},
+            },
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        store = self._vector_store_safe_dict(payload)
+        if include_internal_refs:
+            store["_native_store_id"] = _optional_str(payload.get("id"))
+        return store
+
+    def update_vector_store(
+        self,
+        *,
+        store_id: str,
+        name: str,
+    ) -> dict:
+        self._require_configured()
+        encoded_id = quote(store_id, safe="")
+        data = self._request_json(
+            "PUT",
+            f"/api/v1/vector-stores/{encoded_id}",
+            {"name": name},
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        return self._vector_store_safe_dict(payload)
+
+    def delete_vector_store(self, store_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(store_id, safe="")
+        data = self._request_json("DELETE", f"/api/v1/vector-stores/{encoded_id}")
+        payload = data if isinstance(data, dict) else {}
+        return {
+            "success": bool(payload.get("success")),
+            "source": "weknora_api",
+        }
+
     def test_vector_store(self, store_id: str) -> dict:
         self._require_configured()
         encoded_id = quote(store_id, safe="")
@@ -1698,6 +2306,16 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return {}
         return self._data_source_safe_dict(created)
 
+    def delete_data_source(self, data_source_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(data_source_id, safe="")
+        data = self._request_json("DELETE", f"/api/v1/datasource/{encoded_id}")
+        payload = self._unwrap_data(data)
+        status = "deleted"
+        if isinstance(payload, dict):
+            status = _optional_str(payload.get("status")) or status
+        return {"status": status, "deleted": True, "source": "weknora_api"}
+
     def validate_data_source(self, data_source_id: str) -> dict:
         self._require_configured()
         encoded_id = quote(data_source_id, safe="")
@@ -1757,7 +2375,13 @@ class WeKnoraApiBackend(KnowledgeEngine):
             payload = data if isinstance(data, dict) else {}
         return {"status": _optional_str(payload.get("status")) or "active", "source": "weknora_api"}
 
-    def list_faq_entries(self, kb_id: str | None = None, *, limit: int = 5) -> list[dict]:
+    def list_faq_entries(
+        self,
+        kb_id: str | None = None,
+        *,
+        limit: int = 5,
+        include_internal_refs: bool = False,
+    ) -> list[dict]:
         self._require_configured()
         resolved_kb_id = str(kb_id or self.default_kb_id or "").strip()
         if not resolved_kb_id:
@@ -1772,11 +2396,108 @@ class WeKnoraApiBackend(KnowledgeEngine):
             f"/api/v1/knowledge-bases/{quote(resolved_kb_id, safe='')}/faq/entries?{query}",
         )
         items = self._unwrap_items(data)
+        entries: list[dict] = []
+        for item in items:
+            if not isinstance(item, dict) or not item.get("standard_question"):
+                continue
+            entry = self._faq_entry_safe_dict(item)
+            if include_internal_refs:
+                entry["_native_entry_id"] = _optional_int(item.get("id"))
+            entries.append(entry)
+        return entries
+
+    def get_faq_entry(self, kb_id: str, entry_id: int) -> dict:
+        self._require_configured()
+        data = self._request_json(
+            "GET",
+            "/api/v1/knowledge-bases/{kb_id}/faq/entries/{entry_id}".format(
+                kb_id=quote(str(kb_id or ""), safe=""),
+                entry_id=int(entry_id),
+            ),
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        entry = self._faq_entry_safe_dict(payload)
+        entry["_native_entry_id"] = _optional_int(payload.get("id"))
+        return entry
+
+    def create_faq_entry(self, kb_id: str, payload: dict) -> dict:
+        self._require_configured()
+        data = self._request_json(
+            "POST",
+            f"/api/v1/knowledge-bases/{quote(str(kb_id or ''), safe='')}/faq/entry",
+            payload,
+        )
+        item = self._unwrap_data(data)
+        if not isinstance(item, dict):
+            return {}
+        entry = self._faq_entry_safe_dict(item)
+        entry["_native_entry_id"] = _optional_int(item.get("id"))
+        return entry
+
+    def update_faq_entry(self, kb_id: str, entry_id: int, payload: dict) -> dict:
+        self._require_configured()
+        data = self._request_json(
+            "PUT",
+            "/api/v1/knowledge-bases/{kb_id}/faq/entries/{entry_id}".format(
+                kb_id=quote(str(kb_id or ""), safe=""),
+                entry_id=int(entry_id),
+            ),
+            payload,
+        )
+        item = self._unwrap_data(data)
+        if not isinstance(item, dict):
+            return {}
+        entry = self._faq_entry_safe_dict(item)
+        entry["_native_entry_id"] = _optional_int(item.get("id"))
+        return entry
+
+    def delete_faq_entries(self, kb_id: str, entry_ids: list[int]) -> dict:
+        self._require_configured()
+        self._request_json(
+            "DELETE",
+            f"/api/v1/knowledge-bases/{quote(str(kb_id or ''), safe='')}/faq/entries",
+            {"ids": [int(entry_id) for entry_id in entry_ids]},
+        )
+        return {"success": True, "deleted_count": len(entry_ids), "source": "weknora_api"}
+
+    def search_faq_entries(self, kb_id: str, query_text: str, *, match_count: int = 5) -> list[dict]:
+        self._require_configured()
+        data = self._request_json(
+            "POST",
+            f"/api/v1/knowledge-bases/{quote(str(kb_id or ''), safe='')}/faq/search",
+            {"query_text": query_text, "match_count": max(min(int(match_count or 5), 20), 1)},
+        )
+        items = self._unwrap_items(data)
         return [
             self._faq_entry_safe_dict(item)
             for item in items
             if isinstance(item, dict) and item.get("standard_question")
         ]
+
+    def upsert_faq_entries(self, kb_id: str, entries: list[dict], *, dry_run: bool = False) -> dict:
+        self._require_configured()
+        data = self._request_json(
+            "POST",
+            f"/api/v1/knowledge-bases/{quote(str(kb_id or ''), safe='')}/faq/entries",
+            {"entries": entries, "mode": "append", "dry_run": bool(dry_run)},
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        return {
+            "task_id": _optional_str(payload.get("task_id")),
+            "source": "weknora_api",
+        }
+
+    def get_faq_import_progress(self, task_id: str) -> dict:
+        self._require_configured()
+        data = self._request_json("GET", f"/api/v1/faq/import/progress/{quote(str(task_id or ''), safe='')}")
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        return self._faq_import_progress_safe_dict(payload)
 
     def list_user_favorites(self, resource_type: str) -> list[dict]:
         self._require_configured()
@@ -1795,6 +2516,54 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if isinstance(item, dict)
         ]
 
+    def add_user_favorite(self, resource_type: str, resource_id: str) -> dict:
+        self._require_configured()
+        normalized_type = str(resource_type or "").strip()
+        normalized_id = str(resource_id or "").strip()
+        if normalized_type not in {"kb", "agent"}:
+            raise KnowledgeBackendUnavailableError(
+                "unsupported favorite resource type",
+                error_code="favorite_type_unsupported",
+                operation="favorite_mutation",
+            )
+        if not normalized_id:
+            raise KnowledgeBackendUnavailableError(
+                "favorite resource id is required",
+                error_code="favorite_id_required",
+                operation="favorite_mutation",
+            )
+        data = self._request_json(
+            "POST",
+            "/api/v1/user/favorites",
+            {"type": normalized_type, "id": normalized_id},
+        )
+        return {"success": bool(isinstance(data, dict) and data.get("success", True)), "source": "weknora_api"}
+
+    def remove_user_favorite(self, resource_type: str, resource_id: str) -> dict:
+        self._require_configured()
+        normalized_type = str(resource_type or "").strip()
+        normalized_id = str(resource_id or "").strip()
+        if normalized_type not in {"kb", "agent"}:
+            raise KnowledgeBackendUnavailableError(
+                "unsupported favorite resource type",
+                error_code="favorite_type_unsupported",
+                operation="favorite_mutation",
+            )
+        if not normalized_id:
+            raise KnowledgeBackendUnavailableError(
+                "favorite resource id is required",
+                error_code="favorite_id_required",
+                operation="favorite_mutation",
+            )
+        data = self._request_json(
+            "DELETE",
+            "/api/v1/user/favorites/{resource_type}/{resource_id}".format(
+                resource_type=quote(normalized_type, safe=""),
+                resource_id=quote(normalized_id, safe=""),
+            ),
+        )
+        return {"success": bool(isinstance(data, dict) and data.get("success", True)), "source": "weknora_api"}
+
     def list_skills(self) -> dict:
         self._require_configured()
         data = self._request_json("GET", "/api/v1/skills")
@@ -1810,6 +2579,85 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "skills_available": bool(payload.get("skills_available")),
             "source": "weknora_api",
         }
+
+    def get_skill(self, name: str) -> dict:
+        self._require_configured()
+        normalized = str(name or "").strip()
+        if not normalized:
+            raise KnowledgeBackendUnavailableError(
+                "skill name is required",
+                error_code="skill_name_required",
+                operation="skill_read",
+            )
+        data = self._request_json("GET", f"/api/v1/skills/{quote(normalized, safe='')}")
+        payload = data if isinstance(data, dict) else {}
+        item = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        if not isinstance(item, dict):
+            raise KnowledgeBackendUnavailableError(
+                "invalid skill response",
+                error_code="skill_response_invalid",
+                operation="skill_read",
+            )
+        return self._skill_detail_safe_dict(item)
+
+    def create_skill(self, payload: dict) -> dict:
+        self._require_configured()
+        data = self._request_json("POST", "/api/v1/skills", self._skill_mutation_payload(payload))
+        return self._skill_detail_from_response(data, operation="skill_create")
+
+    def update_skill(self, name: str, payload: dict) -> dict:
+        self._require_configured()
+        normalized = str(name or "").strip()
+        if not normalized:
+            raise KnowledgeBackendUnavailableError(
+                "skill name is required",
+                error_code="skill_name_required",
+                operation="skill_update",
+            )
+        data = self._request_json(
+            "PUT",
+            f"/api/v1/skills/{quote(normalized, safe='')}",
+            self._skill_mutation_payload(payload, default_name=normalized),
+        )
+        return self._skill_detail_from_response(data, operation="skill_update")
+
+    def delete_skill(self, name: str) -> dict:
+        self._require_configured()
+        normalized = str(name or "").strip()
+        if not normalized:
+            raise KnowledgeBackendUnavailableError(
+                "skill name is required",
+                error_code="skill_name_required",
+                operation="skill_delete",
+            )
+        data = self._request_json("DELETE", f"/api/v1/skills/{quote(normalized, safe='')}")
+        payload = data if isinstance(data, dict) else {}
+        item = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        return {
+            "name": _optional_str(item.get("name")) or normalized,
+            "deleted": bool(item.get("deleted", payload.get("success", True))),
+            "source": "weknora_api",
+        }
+
+    def test_skill(self, name: str) -> dict:
+        self._require_configured()
+        normalized = str(name or "").strip()
+        if not normalized:
+            raise KnowledgeBackendUnavailableError(
+                "skill name is required",
+                error_code="skill_name_required",
+                operation="skill_test",
+            )
+        data = self._request_json("POST", f"/api/v1/skills/{quote(normalized, safe='')}/test")
+        payload = data if isinstance(data, dict) else {}
+        item = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        if not isinstance(item, dict):
+            raise KnowledgeBackendUnavailableError(
+                "invalid skill test response",
+                error_code="skill_test_response_invalid",
+                operation="skill_test",
+            )
+        return self._skill_test_safe_dict(item)
 
     def list_model_providers(self, model_type: str | None = None) -> list[dict]:
         self._require_configured()
@@ -2250,6 +3098,27 @@ class WeKnoraApiBackend(KnowledgeEngine):
         }
 
     @staticmethod
+    def _mcp_credentials_safe_dict(fields: dict) -> dict:
+        field_count = 0
+        configured_field_count = 0
+        configured_fields: list[str] = []
+        for name, value in fields.items():
+            if not isinstance(value, dict):
+                continue
+            field_count += 1
+            if value.get("configured"):
+                configured_field_count += 1
+                configured_fields.append(_optional_str(name))
+        return {
+            "masked": True,
+            "field_count": field_count,
+            "configured_field_count": configured_field_count,
+            "configured_fields": configured_fields,
+            "credentials_configured": configured_field_count > 0,
+            "source": "weknora_api",
+        }
+
+    @staticmethod
     def _web_search_provider_type_safe_dict(item: dict) -> dict:
         return {
             "id": _optional_str(item.get("id")),
@@ -2304,6 +3173,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
     @staticmethod
     def _vector_store_safe_dict(item: dict) -> dict:
         return {
+            "name": _optional_str(item.get("name")),
             "engine_type": _optional_str(item.get("engine_type")),
             "source": _optional_str(item.get("source")) or "weknora_api",
             "readonly": bool(item.get("readonly")),
@@ -2418,6 +3288,20 @@ class WeKnoraApiBackend(KnowledgeEngine):
         }
 
     @staticmethod
+    def _faq_import_progress_safe_dict(item: dict) -> dict:
+        return {
+            "task_id_present": bool(_optional_str(item.get("task_id"))),
+            "status": _optional_str(item.get("status")),
+            "progress": _optional_int(item.get("progress")),
+            "total": _optional_int(item.get("total")),
+            "processed": _optional_int(item.get("processed")),
+            "success_count": _optional_int(item.get("success_count")),
+            "failed_count": _optional_int(item.get("failed_count")),
+            "dry_run": bool(item.get("dry_run")),
+            "source": "weknora_api",
+        }
+
+    @staticmethod
     def _favorite_safe_dict(item: dict) -> dict:
         return {
             "resource_type": _optional_str(item.get("resource_type")) or _optional_str(item.get("type")),
@@ -2432,6 +3316,102 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "name": _optional_str(item.get("name")),
             "description_present": bool(_optional_str(item.get("description"))),
             "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _skill_detail_safe_dict(item: dict) -> dict:
+        instructions = _optional_str(item.get("instructions"))
+        files = item.get("files")
+        safe_files = []
+        if isinstance(files, list):
+            safe_files = [
+                {
+                    "name": _optional_str(file.get("name")) if isinstance(file, dict) else "",
+                    "is_script": bool(file.get("is_script")) if isinstance(file, dict) else False,
+                }
+                for file in files
+                if isinstance(file, dict)
+            ]
+        return {
+            "name": _optional_str(item.get("name")),
+            "description_present": bool(_optional_str(item.get("description"))),
+            "instructions_present": bool(instructions) or bool(item.get("instructions_present")),
+            "instructions_char_count": _optional_int(item.get("instructions_char_count"))
+            or (len(instructions) if instructions else 0),
+            "file_count": _optional_int(item.get("file_count")) or len(safe_files),
+            "script_count": _optional_int(item.get("script_count"))
+            or sum(1 for file in safe_files if file.get("is_script")),
+            "file_names": [file.get("name") for file in safe_files if file.get("name")],
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _skill_test_safe_dict(item: dict) -> dict:
+        files = item.get("files")
+        safe_files = []
+        if isinstance(files, list):
+            safe_files = [
+                {
+                    "name": _optional_str(file.get("name")) if isinstance(file, dict) else "",
+                    "is_script": bool(file.get("is_script")) if isinstance(file, dict) else False,
+                }
+                for file in files
+                if isinstance(file, dict)
+            ]
+        return {
+            "name": _optional_str(item.get("name")),
+            "description_present": bool(item.get("description_present")) or bool(_optional_str(item.get("description"))),
+            "valid": bool(item.get("valid")),
+            "instructions_present": bool(item.get("instructions_present")),
+            "instructions_char_count": _optional_int(item.get("instructions_char_count")),
+            "file_count": _optional_int(item.get("file_count")) or len(safe_files),
+            "script_count": _optional_int(item.get("script_count"))
+            or sum(1 for file in safe_files if file.get("is_script")),
+            "sandbox_available": bool(item.get("sandbox_available")),
+            "execution_performed": bool(item.get("execution_performed")),
+            "file_names": [file.get("name") for file in safe_files if file.get("name")],
+            "source": "weknora_api",
+        }
+
+    @classmethod
+    def _skill_detail_from_response(cls, data: dict | list, *, operation: str) -> dict:
+        payload = data if isinstance(data, dict) else {}
+        item = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        if not isinstance(item, dict):
+            raise KnowledgeBackendUnavailableError(
+                "invalid skill response",
+                error_code=f"{operation}_response_invalid",
+                operation=operation,
+            )
+        return cls._skill_detail_safe_dict(item)
+
+    @staticmethod
+    def _skill_mutation_payload(payload: dict, default_name: str | None = None) -> dict:
+        name = _optional_str(payload.get("name")) or _optional_str(default_name)
+        description = _optional_str(payload.get("description"))
+        instructions = _optional_str(payload.get("instructions"))
+        if not name:
+            raise KnowledgeBackendUnavailableError(
+                "skill name is required",
+                error_code="skill_name_required",
+                operation="skill_mutation",
+            )
+        if not description:
+            raise KnowledgeBackendUnavailableError(
+                "skill description is required",
+                error_code="skill_description_required",
+                operation="skill_mutation",
+            )
+        if not instructions:
+            raise KnowledgeBackendUnavailableError(
+                "skill instructions are required",
+                error_code="skill_instructions_required",
+                operation="skill_mutation",
+            )
+        return {
+            "name": name,
+            "description": description,
+            "instructions": instructions,
         }
 
     @staticmethod
@@ -2473,6 +3453,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "base_url_configured": bool(_optional_str(parameters.get("base_url"))),
             "is_default": bool(item.get("is_default")),
             "is_builtin": bool(item.get("is_builtin")),
+            "managed_by": _optional_str(item.get("managed_by")),
             "status": _optional_str(item.get("status")) or "unknown",
             "credential_field_count": credential_field_count,
             "configured_credential_field_count": configured_credential_field_count,
@@ -2517,6 +3498,23 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "available": status == "available",
         }
 
+    @staticmethod
+    def _knowledge_base_question_generation_safe_dict(item: dict) -> dict:
+        config = item.get("question_generation_config")
+        if isinstance(config, str):
+            try:
+                parsed = json.loads(config)
+            except json.JSONDecodeError:
+                parsed = {}
+            config = parsed
+        if not isinstance(config, dict):
+            config = {}
+        return {
+            "enabled": bool(config.get("enabled")),
+            "question_count": _optional_int(config.get("question_count")),
+            "source": "weknora_api",
+        }
+
     def _knowledge_base_safe_dict(self, item: dict) -> dict:
         return {
             "id": _optional_str(item.get("id")),
@@ -2533,6 +3531,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "creator_name": _optional_str(item.get("creator_name")),
             "my_permission": _optional_str(item.get("my_permission")),
             "vector_store": self._knowledge_base_vector_store_safe_dict(item),
+            "question_generation": self._knowledge_base_question_generation_safe_dict(item),
             "source": "weknora_api",
         }
 
@@ -3135,6 +4134,25 @@ def _shorten(value: str, limit: int = 240) -> str:
     if len(collapsed) <= limit:
         return collapsed
     return collapsed[: limit - 3] + "..."
+
+
+def _agent_mutation_payload(payload: dict, *, require_name: bool) -> dict:
+    name = str(payload.get("name") or "").strip()
+    if require_name and not name:
+        raise KnowledgeBackendUnavailableError(
+            "agent name is required",
+            error_code="agent_name_required",
+            operation="agent_mutation",
+        )
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    safe_config = dict(config)
+    safe_config["web_search_enabled"] = False
+    return {
+        "name": name[:255],
+        "description": str(payload.get("description") or "").strip()[:1000],
+        "avatar": str(payload.get("avatar") or "").strip()[:64],
+        "config": safe_config,
+    }
 
 
 def _optional_str(value: object) -> str | None:

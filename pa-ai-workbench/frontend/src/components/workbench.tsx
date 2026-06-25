@@ -269,16 +269,16 @@ export function WarningList({
 function statusStripChips(state: WeKnoraFirstStatusStripState): WeKnoraStatusChip[] {
   if (state.state === "loading") {
     return [
-      { label: "live", value: "loading", status: "partial" },
-      { label: "mock", value: "unknown", status: "mock" },
-      { label: "blocked", value: "checking", status: "blocked" },
+      { label: "服务", value: "连接中", status: "partial" },
+      { label: "知识库", value: "检查中", status: "partial" },
+      { label: "阻塞", value: "检查中", status: "blocked" },
     ];
   }
   if (state.state === "error") {
     return [
-      { label: "live", value: "blocked", status: "blocked" },
-      { label: "fallback", value: "unverified", status: "fallback" },
-      { label: "blocked", value: state.error, status: "blocked" },
+      { label: "服务", value: "不可用", status: "blocked" },
+      { label: "状态", value: "待恢复", status: "fallback" },
+      { label: "阻塞", value: state.error, status: "blocked" },
     ];
   }
 
@@ -287,180 +287,84 @@ function statusStripChips(state: WeKnoraFirstStatusStripState): WeKnoraStatusChi
   const kbMapping = status.weknora.kb_mapping;
   const wikiStatus = state.wikiOverview?.status ?? (state.wikiError ? "blocked" : "unknown");
   const mcpStatus = state.mcpOverview?.status ?? (state.mcpError ? "blocked" : "unknown");
-  const webSearchStatus =
-    state.webSearchOverview?.status ?? (state.webSearchError ? "blocked" : "unknown");
-  const vectorStoreStatus =
-    state.vectorStoreOverview?.status ?? (state.vectorStoreError ? "blocked" : "unknown");
   const backlogCount =
     (gates?.backlog.length ?? 0) +
     (kbMapping?.backlog.length ?? 0) +
     (state.wikiOverview?.surfaces.mutations?.status === "backlog" ? 1 : 0) +
-    (state.mcpOverview?.surfaces.mutations?.status === "backlog" ? 1 : 0) +
-    (state.webSearchOverview?.surfaces.mutations?.status === "backlog" ? 1 : 0) +
-    (state.vectorStoreOverview?.surfaces.mutations?.status === "backlog" ? 1 : 0);
+    (state.mcpOverview?.surfaces.mutations?.status === "backlog" ? 1 : 0);
   const blockedCount =
     (gates?.blocked.length ?? 0) +
     (kbMapping?.status === "blocked" ? 1 : 0) +
     (wikiStatus === "blocked" ? 1 : 0) +
-    (mcpStatus === "blocked" ? 1 : 0) +
-    (webSearchStatus === "blocked" ? 1 : 0) +
-    (vectorStoreStatus === "blocked" ? 1 : 0);
-  const partialCount =
-    (gates?.partial.length ?? 0) +
-    (mcpStatus === "partial" ? 1 : 0) +
-    (webSearchStatus === "partial" ? 1 : 0) +
-    (vectorStoreStatus === "partial" ? 1 : 0);
+    (mcpStatus === "blocked" ? 1 : 0);
 
   return [
     {
-      label: "live/native",
-      value: status.weknora.connected ? "connected" : status.weknora.status,
+      label: "WeKnora",
+      value: status.weknora.connected ? "已连接" : status.weknora.status,
       status: status.weknora.connected ? "live" : status.weknora.status,
     },
     {
-      label: "KB mapping",
-      value: kbMapping?.status ?? "unknown",
+      label: "知识库",
+      value: kbMapping?.status === "live" ? "已绑定" : kbMapping?.status ?? "未知",
       status: kbMapping?.status ?? "partial",
     },
     {
-      label: "Wiki native",
-      value: wikiStatus,
+      label: "Wiki",
+      value: wikiStatus === "live" ? "可用" : wikiStatus,
       status: wikiStatus,
     },
     {
-      label: "MCP native",
-      value: mcpStatus,
+      label: "工具",
+      value: mcpStatus === "live" ? "可用" : mcpStatus,
       status: mcpStatus,
     },
     {
-      label: "Web search",
-      value: webSearchStatus,
-      status: webSearchStatus,
-    },
-    {
-      label: "Vector store",
-      value: vectorStoreStatus,
-      status: vectorStoreStatus,
-    },
-    {
-      label: "mock",
-      value: String(gates?.mock.length ?? (status.mock_mode ? 1 : 0)),
-      status: (gates?.mock.length ?? 0) > 0 || status.mock_mode ? "mock" : "live",
-    },
-    {
-      label: "fallback",
-      value: String(gates?.fallback.length ?? 0),
-      status: (gates?.fallback.length ?? 0) > 0 ? "fallback" : "live",
-    },
-    {
-      label: "partial",
-      value: String(partialCount),
-      status: partialCount > 0 ? "partial" : "live",
-    },
-    {
-      label: "blocked",
-      value: String(blockedCount),
-      status: blockedCount > 0 ? "blocked" : "live",
-    },
-    {
-      label: "backlog",
+      label: "待处理",
       value: String(backlogCount),
       status: backlogCount > 0 ? "backlog" : "live",
+    },
+    {
+      label: "阻塞",
+      value: String(blockedCount),
+      status: blockedCount > 0 ? "blocked" : "live",
     },
   ];
 }
 
 function statusStripDetails(state: WeKnoraFirstStatusStripState) {
   if (state.state === "loading") {
-    return [
-      "读取 /api/status",
-      "读取 native Wiki overview",
-      "读取 native MCP overview",
-      "读取 native web search overview",
-      "读取 native vector store overview",
-    ];
+    return ["读取核心状态", "读取知识库与 Wiki 状态"];
   }
   if (state.state === "error") {
-    return ["blocked：PA backend status unreachable", `原因：${state.error}`];
+    return ["后端状态不可达", `原因：${state.error}`];
   }
 
   const status = state.status;
   const gates = status.backend_capabilities.weknora_first_status_gates?.status_categories;
   const kbMapping = status.weknora.kb_mapping;
   const details = [
-    `backend=${status.knowledge_backend}`,
-    `model/mock=${status.mock_mode ? "mock" : "non-mock backend"}`,
-    `citation_trace=${status.backend_capabilities.parity_summary.citation_trace}`,
-    `fail_closed=${status.backend_capabilities.parity_summary.fail_closed ? "yes" : "no"}`,
+    `链路：${status.knowledge_backend === "weknora_api" ? "WeKnora API" : status.knowledge_backend}`,
+    `引用追踪：${status.backend_capabilities.parity_summary.citation_trace}`,
   ];
-  if (kbMapping?.kb_id) {
-    details.push(`kb=${kbMapping.kb_id}`);
-  }
   if (state.wikiOverview) {
-    details.push(`wiki=${state.wikiOverview.status}`);
+    details.push(`Wiki：${state.wikiOverview.status}`);
   }
   if (state.wikiError) {
-    details.push(`wiki blocked：${state.wikiError}`);
-  }
-  if (state.mcpOverview) {
-    const services = state.mcpOverview.surfaces.services;
-    const tools = state.mcpOverview.surfaces.tools;
-    const resources = state.mcpOverview.surfaces.resources;
-    const approval = state.mcpOverview.surfaces.approval;
-    const safeTest = state.mcpOverview.surfaces.safe_test;
-    details.push(`mcp=${state.mcpOverview.status}`);
-    details.push(`mcp services=${surfaceCount(services)}`);
-    details.push(`mcp tools=${surfaceCount(tools)}`);
-    details.push(`mcp resources=${surfaceCount(resources)}`);
-    details.push(`mcp approvals=${surfaceCount(approval)}`);
-    details.push(`mcp safe_test=${safeTest?.status ?? "unknown"}`);
+    details.push(`Wiki 阻塞：${state.wikiError}`);
   }
   if (state.mcpError) {
-    details.push(`mcp blocked：${state.mcpError}`);
-  }
-  if (state.webSearchOverview) {
-    const providerTypes = state.webSearchOverview.surfaces.provider_types;
-    const configuredProviders = state.webSearchOverview.surfaces.configured_providers;
-    const agentqaDependency = state.webSearchOverview.surfaces.agentqa_dependency;
-    const providerTest = state.webSearchOverview.surfaces.provider_test;
-    details.push(`web_search=${state.webSearchOverview.status}`);
-    details.push(`web_search types=${surfaceCount(providerTypes)}`);
-    details.push(`web_search providers=${surfaceCount(configuredProviders)}`);
-    details.push(`web_search AgentQA=${agentqaDependency?.status ?? "unknown"}`);
-    details.push(`web_search provider_test=${providerTest?.status ?? "unknown"}`);
-  }
-  if (state.webSearchError) {
-    details.push(`web_search blocked：${state.webSearchError}`);
-  }
-  if (state.vectorStoreOverview) {
-    const storeTypes = state.vectorStoreOverview.surfaces.store_types;
-    const stores = state.vectorStoreOverview.surfaces.stores;
-    const kbBinding = state.vectorStoreOverview.surfaces.kb_binding;
-    const embedding = state.vectorStoreOverview.surfaces.embedding;
-    const storeTest = state.vectorStoreOverview.surfaces.store_test;
-    details.push(`vector_store=${state.vectorStoreOverview.status}`);
-    details.push(`vector_store types=${surfaceCount(storeTypes)}`);
-    details.push(`vector_store stores=${surfaceCount(stores)}`);
-    details.push(`vector_store store_test=${storeTest?.status ?? "unknown"}`);
-    details.push(`vector_store KB=${kbBinding?.binding_status ?? kbBinding?.status ?? "unknown"}`);
-    details.push(`embedding=${embedding?.status ?? "unknown"}`);
-  }
-  if (state.vectorStoreError) {
-    details.push(`vector_store blocked：${state.vectorStoreError}`);
+    details.push(`工具阻塞：${state.mcpError}`);
   }
   const blocked = gates?.blocked[0];
   if (blocked) {
-    details.push(`blocked：${blocked}`);
+    details.push(`阻塞：${blocked}`);
   }
   const backlog = gates?.backlog[0] || kbMapping?.backlog[0];
   if (backlog) {
-    details.push(`backlog：${backlog}`);
+    details.push(`待处理：${backlog}`);
   }
   return details;
-}
-
-function surfaceCount(surface: { count?: number; [key: string]: unknown } | undefined) {
-  return typeof surface?.count === "number" ? surface.count : 0;
 }
 
 function errorLabel(error: unknown) {

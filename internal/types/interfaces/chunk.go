@@ -145,4 +145,8 @@ type ChunkService interface {
 	// DeleteGeneratedQuestion deletes a single generated question from a chunk by question ID
 	// This updates the chunk metadata and removes the corresponding vector index
 	DeleteGeneratedQuestion(ctx context.Context, chunkID string, questionID string) error
+	// AddGeneratedQuestion adds one generated question to a chunk and indexes it.
+	AddGeneratedQuestion(ctx context.Context, chunkID string, question string) (*types.Chunk, *types.GeneratedQuestion, error)
+	// SearchSimilarChunks searches the owning knowledge base using a chunk's content as the query.
+	SearchSimilarChunks(ctx context.Context, chunkID string, topK int, vectorThreshold float64, keywordThreshold float64, includeSelf bool) ([]*types.ChunkSearchResult, error)
 }

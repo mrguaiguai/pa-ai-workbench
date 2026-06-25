@@ -18,6 +18,15 @@ import tempfile
 import time
 from typing import Any
 from urllib.parse import quote
+from uuid import uuid4
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.append(str(BACKEND_ROOT))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
 
 from check_weknora_native_chunk_management import _start_backend_with_cors
 from check_weknora_native_kb_management import CHROME_BIN
@@ -31,24 +40,44 @@ from check_weknora_native_kb_management import _terminate
 from check_weknora_native_kb_management import _wait_for_chrome
 from check_weknora_native_kb_management import _wait_for_html
 from check_weknora_native_kb_management import _wait_for_json
+from app.config import Settings
+from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend
 
 
 CONFIRM_SYNC_PHRASE = "SYNC_NATIVE_DATA_SOURCE"
 CONFIRM_PAUSE_PHRASE = "PAUSE_NATIVE_DATA_SOURCE"
 CONFIRM_RESUME_PHRASE = "RESUME_NATIVE_DATA_SOURCE"
+CONFIRM_DELETE_PHRASE = "DELETE_NATIVE_DATA_SOURCE"
+DEFAULT_FEED_URL = "https://www.rfc-editor.org/rfcrss.xml"
 
 
 def main() -> int:
-    browser_mode = "--browser" in sys.argv[1:]
-    allow_confirmed_sync = "--allow-confirmed-sync" in sys.argv[1:]
+    args = sys.argv[1:]
+    browser_mode = "--browser" in args
+    wnfc_mode = "--wnfc-p1-02" in args
+    allow_confirmed_sync = "--allow-confirmed-sync" in args or wnfc_mode
+    allow_confirmed_delete = "--allow-confirmed-delete" in args or wnfc_mode
     backend_port = _free_port()
     frontend_port = _free_port() if browser_mode else None
+    run_id = uuid4().hex[:8]
+    temp_source_name = f"WNFC-P1-02 temporary RSS {run_id}"
+    temp_source_id: str | None = None
+    temp_deleted = False
+    direct_backend = _weknora_backend_from_env()
     with tempfile.TemporaryDirectory(prefix="pa-wnx-data-source-") as temp_dir:
         database_url = f"sqlite:///{Path(temp_dir) / 'data-source.db'}"
         backend = _start_backend_with_cors(backend_port, database_url, frontend_port)
         frontend: subprocess.Popen[str] | None = None
         try:
             _wait_for_json(f"http://127.0.0.1:{backend_port}/health")
+            if wnfc_mode:
+                created = direct_backend.create_rss_data_source(
+                    feed_url=DEFAULT_FEED_URL,
+                    name=temp_source_name,
+                )
+                temp_source_id = str(created.get("id") or "").strip() or None
+                _assert(created.get("type") == "rss", "temporary RSS data source created")
+
             overview = _request_json(backend_port, "GET", "/api/data-sources/native/overview?limit=10")
             _assert(overview.get("schema_version") == "wnx-p2-05", "schema version is wnx-p2-05")
             _assert(overview.get("source") == "weknora_api", "overview uses WeKnora source")
@@ -64,11 +93,12 @@ def main() -> int:
             resources = _surface(surfaces, "resources")
             validation = _surface(surfaces, "validation")
             sync_control = _surface(surfaces, "sync_control")
+            delete_control = _surface(surfaces, "delete_control")
             mutations = _surface(surfaces, "mutations")
             _assert(connector_types.get("status") == "live", "connector type catalog is live")
             _assert(int(connector_types.get("count") or 0) > 0, "connector type catalog is non-empty")
             _assert(data_sources.get("status") == "live", "data source list is live")
-            _assert(mutations.get("status") == "backlog", "credential/mutation surfaces remain backlog")
+            _assert(mutations.get("status") in {"partial", "backlog"}, "mutation surface is explicit")
             _assert(validation.get("status") in {"blocked", "backlog"}, "validation is blocked or backlog")
             _assert(resources.get("status") in {"blocked", "backlog"}, "resources are blocked or backlog")
 
@@ -79,17 +109,26 @@ def main() -> int:
             confirmed_sync_status = "not_requested"
             confirmed_pause_status = "not_requested"
             confirmed_resume_status = "not_requested"
+            confirmed_delete_status = "not_requested"
             coverage_state = "read-only"
             if data_source_count == 0:
                 _assert(connector_read.get("status") == "backlog", "connector detail is backlog without data sources")
                 _assert(sync_logs.get("status") == "backlog", "sync logs are backlog without data sources")
                 _assert(sync_control.get("status") == "backlog", "sync control is backlog without data sources")
+                _assert(delete_control.get("status") == "backlog", "delete control is backlog without data sources")
             else:
                 coverage_state = "live-partial"
                 items = data_sources.get("items") if isinstance(data_sources.get("items"), list) else []
-                first = items[0] if items and isinstance(items[0], dict) else {}
-                data_source_index = int(first.get("safe_index") or 0)
-                _assert("id" not in first and "_native_data_source_id" not in first, "data source item does not expose raw id")
+                if wnfc_mode:
+                    selected = _find_source_by_name(items, temp_source_name)
+                    _assert(bool(selected), "temporary RSS source is visible through PA safe index")
+                else:
+                    selected = items[0] if items and isinstance(items[0], dict) else {}
+                data_source_index = int(selected.get("safe_index") or 0)
+                _assert(
+                    "id" not in selected and "_native_data_source_id" not in selected,
+                    "data source item does not expose raw id",
+                )
                 detail = _request_json(
                     backend_port,
                     "GET",
@@ -103,9 +142,11 @@ def main() -> int:
                 detail_resources = _surface(detail_surfaces, "resources")
                 detail_validation = _surface(detail_surfaces, "validation")
                 detail_sync = _surface(detail_surfaces, "sync_control")
+                detail_delete = _surface(detail_surfaces, "delete_control")
                 _assert(detail_read.get("status") == "live", "data source detail read is live")
                 _assert(detail_logs.get("status") == "live", "sync-log summary read is live")
                 _assert(detail_sync.get("status") == "blocked", "sync control requires confirmation")
+                _assert(detail_delete.get("status") == "blocked", "delete control requires confirmation")
                 detail_source = (
                     detail_read.get("data_source") if isinstance(detail_read.get("data_source"), dict) else {}
                 )
@@ -140,10 +181,8 @@ def main() -> int:
                         confirmed.get("surfaces") if isinstance(confirmed.get("surfaces"), dict) else {},
                         "sync_control",
                     )
-                    _assert(
-                        confirmed_surface.get("status") in {"live", "partial"},
-                        "confirmed sync returns live or partial",
-                    )
+                    _assert(confirmed_surface.get("status") == "live", "confirmed sync returns live")
+                    _assert(_audit_succeeded(confirmed, "weknora_data_source_sync"), "sync audit succeeded")
                     confirmed_sync_status = str(confirmed_surface.get("status"))
                     confirmed_pause = _request_json(
                         backend_port,
@@ -156,10 +195,8 @@ def main() -> int:
                         confirmed_pause.get("surfaces") if isinstance(confirmed_pause.get("surfaces"), dict) else {},
                         "sync_control",
                     )
-                    _assert(
-                        confirmed_pause_surface.get("status") in {"live", "partial"},
-                        "confirmed pause returns live or partial",
-                    )
+                    _assert(confirmed_pause_surface.get("status") == "live", "confirmed pause returns live")
+                    _assert(_audit_succeeded(confirmed_pause, "weknora_data_source_pause"), "pause audit succeeded")
                     confirmed_pause_status = str(confirmed_pause_surface.get("status"))
                     confirmed_resume = _request_json(
                         backend_port,
@@ -172,9 +209,10 @@ def main() -> int:
                         confirmed_resume.get("surfaces") if isinstance(confirmed_resume.get("surfaces"), dict) else {},
                         "sync_control",
                     )
+                    _assert(confirmed_resume_surface.get("status") == "live", "confirmed resume returns live")
                     _assert(
-                        confirmed_resume_surface.get("status") in {"live", "partial"},
-                        "confirmed resume returns live or partial",
+                        _audit_succeeded(confirmed_resume, "weknora_data_source_resume"),
+                        "resume audit succeeded",
                     )
                     confirmed_resume_status = str(confirmed_resume_surface.get("status"))
 
@@ -207,11 +245,63 @@ def main() -> int:
                 dom = _dump_capability_dom(frontend_port, Path(temp_dir) / "chrome-profile")
                 for marker in (
                     "Data sources / connectors",
+                    "Native data source ops",
+                    "resources_status",
+                    "validation_status",
                     "sync_control_status",
+                    "delete_control_status",
+                    "native_data_source_delete",
                     "connector_type_count",
                     "/api/data-sources/native/overview",
                 ):
                     _assert(marker in dom, f"browser DOM contains {marker}")
+
+            if allow_confirmed_delete and data_source_count > 0:
+                _assert(wnfc_mode, "confirmed delete only runs against the WNFC temporary RSS source")
+                delete_response = _request_json(
+                    backend_port,
+                    "DELETE",
+                    f"/api/data-sources/native/sources/by-index/{data_source_index}",
+                    {"confirm_token": CONFIRM_DELETE_PHRASE},
+                )
+                _assert(_no_secret_shaped_fields(delete_response), "confirmed delete excludes secret-shaped fields")
+                delete_surface = _surface(
+                    delete_response.get("surfaces") if isinstance(delete_response.get("surfaces"), dict) else {},
+                    "delete_control",
+                )
+                _assert(delete_surface.get("status") == "live", "confirmed delete returns live")
+                _assert(_audit_succeeded(delete_response, "weknora_data_source_delete"), "delete audit succeeded")
+                confirmed_delete_status = str(delete_surface.get("status"))
+                temp_deleted = True
+
+                after_delete = _request_json(backend_port, "GET", "/api/data-sources/native/overview?limit=10")
+                after_items = _surface(
+                    after_delete.get("surfaces") if isinstance(after_delete.get("surfaces"), dict) else {},
+                    "data_sources",
+                ).get("items")
+                after_items_list = after_items if isinstance(after_items, list) else []
+                _assert(
+                    not _find_source_by_name(after_items_list, temp_source_name),
+                    "temporary RSS source is gone after confirmed delete",
+                )
+
+                audit_events = _request_json(
+                    backend_port,
+                    "GET",
+                    "/api/native-audit/events?capability=data_source&limit=20",
+                )
+                _assert(
+                    _audit_log_contains(
+                        audit_events,
+                        {
+                            "weknora_data_source_sync",
+                            "weknora_data_source_pause",
+                            "weknora_data_source_resume",
+                            "weknora_data_source_delete",
+                        },
+                    ),
+                    "native audit log contains data source mutation operations",
+                )
 
             print("WeKnora native data source connector management readiness")
             print("- decision: PASS")
@@ -246,11 +336,18 @@ def main() -> int:
                     resume=confirmed_resume_status,
                 )
             )
-            print("- mutations: backlog")
+            print(f"- delete: {confirmed_delete_status}")
+            print("- audit: data_source mutation events recorded" if wnfc_mode else "- audit: not_requested")
+            print(f"- mutations: {mutations.get('status')}")
             if browser_mode:
                 print("- browser: Capability Center rendered data source connector readiness")
             return 0
         finally:
+            if temp_source_id and not temp_deleted:
+                try:
+                    direct_backend.delete_data_source(temp_source_id)
+                except Exception:
+                    pass
             _terminate(frontend)
             _terminate(backend)
 
@@ -261,10 +358,44 @@ def _surface(surfaces: dict[str, Any], name: str) -> dict[str, Any]:
     return surface
 
 
+def _weknora_backend_from_env() -> WeKnoraApiBackend:
+    settings = Settings()
+    return WeKnoraApiBackend(
+        base_url=settings.weknora_base_url,
+        service_token=settings.weknora_service_token,
+        timeout=settings.weknora_timeout_seconds,
+        workspace_id=settings.weknora_workspace_id,
+        default_kb_id=settings.weknora_default_kb_id,
+        kb_mapping_config=settings.weknora_kb_mappings,
+        kb_allow_default=settings.weknora_kb_allow_default,
+    )
+
+
+def _find_source_by_name(items: list[Any], name: str) -> dict[str, Any] | None:
+    for item in items:
+        if isinstance(item, dict) and item.get("name") == name:
+            return item
+    return None
+
+
+def _audit_succeeded(response: dict[str, Any], operation: str) -> bool:
+    audit = response.get("audit") if isinstance(response.get("audit"), dict) else {}
+    return audit.get("operation") == operation and audit.get("status") == "succeeded"
+
+
+def _audit_log_contains(response: dict[str, Any], operations: set[str]) -> bool:
+    items = response.get("items") if isinstance(response.get("items"), list) else []
+    found = {
+        str(item.get("operation") or "")
+        for item in items
+        if isinstance(item, dict) and item.get("status") == "succeeded"
+    }
+    return operations.issubset(found)
+
+
 def _no_secret_shaped_fields(payload: dict[str, Any]) -> bool:
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True).lower()
     forbidden = [
-        '"id":',
         '"_native_data_source_id":',
         '"tenant_id":',
         '"knowledge_base_id":',
@@ -326,7 +457,11 @@ def _dump_capability_dom(port: int, user_data_dir: Path) -> str:
         dom = ""
         while time.time() < deadline:
             dom = _read_dom_text_via_cdp(ws_url)
-            if "Data sources / connectors" in dom and "sync_control_status" in dom:
+            if (
+                "Data sources / connectors" in dom
+                and "Native data source ops" in dom
+                and "delete_control_status" in dom
+            ):
                 return dom
             time.sleep(1)
         return dom

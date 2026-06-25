@@ -30,7 +30,6 @@ import {
   CitationList,
   EmptyState,
   ErrorState,
-  WeKnoraFirstStatusStrip,
 } from "../components/workbench";
 
 type LoadState = "idle" | "loading" | "error";
@@ -907,8 +906,6 @@ export function WikiPage() {
 
   return (
     <div className="wiki-page">
-      <WeKnoraFirstStatusStrip page="Wiki" />
-
       <aside className="wiki-search-panel" aria-label="Wiki 搜索">
         <form className="wiki-search-form" onSubmit={onSubmit}>
           <div className="wiki-panel-heading">
@@ -946,25 +943,28 @@ export function WikiPage() {
                 onChange={(event) => setForm({ ...form, query: event.target.value })}
               />
             </label>
-            <label>
-              <span>知识库 ID</span>
-              <input
-                value={form.kbId}
-                onChange={(event) => setForm({ ...form, kbId: event.target.value })}
-              />
-            </label>
-            <label>
-              <span>数量</span>
-              <select
-                value={form.limit}
-                onChange={(event) => setForm({ ...form, limit: event.target.value })}
-              >
-                <option value="5">5</option>
-                <option value="10">10</option>
-                <option value="20">20</option>
-                <option value="50">50</option>
-              </select>
-            </label>
+            <details className="advanced-controls wiki-search-advanced">
+              <summary>高级筛选</summary>
+              <label>
+                <span>知识库 ID</span>
+                <input
+                  value={form.kbId}
+                  onChange={(event) => setForm({ ...form, kbId: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>数量</span>
+                <select
+                  value={form.limit}
+                  onChange={(event) => setForm({ ...form, limit: event.target.value })}
+                >
+                  <option value="5">5</option>
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+              </label>
+            </details>
           </div>
         </form>
 
@@ -1259,82 +1259,85 @@ export function WikiPage() {
           )}
         </section>
 
-        <section className="wiki-side-section" aria-label="Native Wiki workflow">
-          <div className="wiki-panel-heading">
-            <span>Native</span>
-            <div className="heading-actions">
-              <strong>{nativeStatus}</strong>
-              <button
-                className={nativeState === "loading" ? "icon-button loading" : "icon-button"}
-                type="button"
-                title="刷新 native Wiki workflow"
-                disabled={nativeState === "loading"}
-                onClick={() => loadNativeWorkflow()}
-              >
-                {nativeState === "loading" ? (
-                  <Loader2 size={16} aria-hidden="true" />
-                ) : (
-                  <RefreshCw size={16} aria-hidden="true" />
-                )}
-              </button>
-            </div>
-          </div>
-
-          <div className="wiki-native-card">
-            <div className="wiki-index-state indexed">
-              <ShieldCheck size={16} aria-hidden="true" />
-              <span>{`workflow ${nativeStatus}`}</span>
-            </div>
-            <div className="wiki-ref-list">
-              <span>{`KB：${nativeKbLabel}`}</span>
-              <span>{`pages：${nativeWorkflow.pages.length}/${nativeStatsTotal}`}</span>
-              <span>{`read：${nativeSurfaceStatus(nativeWorkflow.overview, "read")}`}</span>
-              <span>{`search：${nativeSurfaceStatus(nativeWorkflow.overview, "search")}`}</span>
-              <span>{`index：${nativeSurfaceStatus(nativeWorkflow.overview, "index")}`}</span>
-              <span>{`log：${nativeLogCount}`}</span>
-              <span>{`graph nodes：${nativeGraphNodes}`}</span>
-              <span>{`lint issues：${nativeLintIssues}`}</span>
-              <span>{`issues：${nativeIssueCount}`}</span>
-              <span>{`mutations：${nativeSurfaceStatus(nativeWorkflow.overview, "mutations")}`}</span>
-            </div>
-            {nativeWorkflow.pages.length ? (
-              <div className="wiki-native-list">
-                {nativeWorkflow.pages.slice(0, 4).map((item) => (
-                  <button
-                    type="button"
-                    key={item.slug}
-                    onClick={() => loadPage(item.slug)}
-                    title={item.slug}
-                  >
-                    <span>{item.title}</span>
-                    <small>{item.page_type ?? "wiki"}</small>
-                  </button>
-                ))}
+        <details className="advanced-controls wiki-native-details">
+          <summary>高级维护</summary>
+          <section className="wiki-side-section" aria-label="Native Wiki workflow">
+            <div className="wiki-panel-heading">
+              <span>Native</span>
+              <div className="heading-actions">
+                <strong>{nativeStatus}</strong>
+                <button
+                  className={nativeState === "loading" ? "icon-button loading" : "icon-button"}
+                  type="button"
+                  title="刷新 native Wiki workflow"
+                  disabled={nativeState === "loading"}
+                  onClick={() => loadNativeWorkflow()}
+                >
+                  {nativeState === "loading" ? (
+                    <Loader2 size={16} aria-hidden="true" />
+                  ) : (
+                    <RefreshCw size={16} aria-hidden="true" />
+                  )}
+                </button>
               </div>
-            ) : (
-              <EmptyState text="暂无 native pages" compact />
-            )}
-            {nativeNotice ? <div className="wiki-editor-notice">{nativeNotice}</div> : null}
-            <div className="wiki-native-actions">
-              <button type="button" onClick={rebuildNativeLinks} disabled={nativeState === "loading"}>
-                <Wrench size={15} aria-hidden="true" />
-                <span>rebuild</span>
-              </button>
-              <button type="button" onClick={autoFixNativeWiki} disabled={nativeState === "loading"}>
-                <Wrench size={15} aria-hidden="true" />
-                <span>auto-fix</span>
-              </button>
-              <button
-                type="button"
-                onClick={deleteNativePage}
-                disabled={!selectedSlug || nativeState === "loading"}
-              >
-                <Trash2 size={15} aria-hidden="true" />
-                <span>delete</span>
-              </button>
             </div>
-          </div>
-        </section>
+
+            <div className="wiki-native-card">
+              <div className="wiki-index-state indexed">
+                <ShieldCheck size={16} aria-hidden="true" />
+                <span>{`workflow ${nativeStatus}`}</span>
+              </div>
+              <div className="wiki-ref-list">
+                <span>{`KB：${nativeKbLabel}`}</span>
+                <span>{`pages：${nativeWorkflow.pages.length}/${nativeStatsTotal}`}</span>
+                <span>{`read：${nativeSurfaceStatus(nativeWorkflow.overview, "read")}`}</span>
+                <span>{`search：${nativeSurfaceStatus(nativeWorkflow.overview, "search")}`}</span>
+                <span>{`index：${nativeSurfaceStatus(nativeWorkflow.overview, "index")}`}</span>
+                <span>{`log：${nativeLogCount}`}</span>
+                <span>{`graph nodes：${nativeGraphNodes}`}</span>
+                <span>{`lint issues：${nativeLintIssues}`}</span>
+                <span>{`issues：${nativeIssueCount}`}</span>
+                <span>{`mutations：${nativeSurfaceStatus(nativeWorkflow.overview, "mutations")}`}</span>
+              </div>
+              {nativeWorkflow.pages.length ? (
+                <div className="wiki-native-list">
+                  {nativeWorkflow.pages.slice(0, 4).map((item) => (
+                    <button
+                      type="button"
+                      key={item.slug}
+                      onClick={() => loadPage(item.slug)}
+                      title={item.slug}
+                    >
+                      <span>{item.title}</span>
+                      <small>{item.page_type ?? "wiki"}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState text="暂无 native pages" compact />
+              )}
+              {nativeNotice ? <div className="wiki-editor-notice">{nativeNotice}</div> : null}
+              <div className="wiki-native-actions">
+                <button type="button" onClick={rebuildNativeLinks} disabled={nativeState === "loading"}>
+                  <Wrench size={15} aria-hidden="true" />
+                  <span>rebuild</span>
+                </button>
+                <button type="button" onClick={autoFixNativeWiki} disabled={nativeState === "loading"}>
+                  <Wrench size={15} aria-hidden="true" />
+                  <span>auto-fix</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteNativePage}
+                  disabled={!selectedSlug || nativeState === "loading"}
+                >
+                  <Trash2 size={15} aria-hidden="true" />
+                  <span>delete</span>
+                </button>
+              </div>
+            </div>
+          </section>
+        </details>
 
         <section className="wiki-side-section" aria-label="来源引用">
           <div className="wiki-panel-heading">

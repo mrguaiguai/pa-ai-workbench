@@ -1,18 +1,23 @@
 import {
   Database,
   Download,
+  Edit3,
   Eye,
   FileText,
   Keyboard,
   Link,
   Loader2,
   Pin,
+  Plus,
   RefreshCw,
   RotateCcw,
+  Save,
+  Search,
   ToggleLeft,
   ToggleRight,
   Trash2,
   Upload,
+  X,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -22,8 +27,11 @@ import {
   ApiError,
   Document,
   DocumentChunk,
+  DocumentChunkActionResponse,
+  DocumentChunkSimilarResult,
   DocumentSpansResponse,
   DocumentProcessingEvent,
+  NATIVE_KB_CONFIRM_PHRASE,
   NativeKnowledgeBaseItem,
   NativeKnowledgeBaseOverviewResponse,
   apiClient,
@@ -32,7 +40,6 @@ import {
   DocumentStatusBadge,
   EmptyState,
   ErrorState,
-  WeKnoraFirstStatusStrip,
 } from "../components/workbench";
 
 type LibraryForm = {
@@ -47,6 +54,7 @@ type LibraryForm = {
 type LibraryFilters = {
   status: string;
   knowledgeBackend: string;
+  knowledgeBaseId: string;
   errorOnly: boolean;
 };
 
@@ -55,6 +63,12 @@ type ChunkLoadState = "idle" | "loading" | "error";
 type EventLoadState = "idle" | "loading" | "error";
 type KnowledgeBaseLoadState = "idle" | "loading" | "error";
 type IngestionMode = "file" | "url" | "manual";
+type KnowledgeBaseFormMode = "create" | "edit";
+
+type KnowledgeBaseDraft = {
+  name: string;
+  description: string;
+};
 
 const initialForm: LibraryForm = {
   title: "",
@@ -68,7 +82,13 @@ const initialForm: LibraryForm = {
 const initialFilters: LibraryFilters = {
   status: "all",
   knowledgeBackend: "all",
+  knowledgeBaseId: "all",
   errorOnly: false,
+};
+
+const initialKnowledgeBaseDraft: KnowledgeBaseDraft = {
+  name: "",
+  description: "",
 };
 
 const runningStatuses = new Set(["uploaded", "parsing", "chunking", "embedding", "indexing", "deleting"]);
@@ -105,6 +125,13 @@ function errorMessage(error: unknown) {
     return error.message;
   }
   return "未知错误";
+}
+
+function chunkAuditMessage(response: DocumentChunkActionResponse) {
+  if (!response.audit) {
+    return null;
+  }
+  return `审计：${response.audit.status} · ${response.audit.id.slice(0, 12)}`;
 }
 
 function stageClass(state: string) {
@@ -262,11 +289,19 @@ function backendLabel(document: Document) {
   return document.knowledge_backend === "weknora_api" ? "WeKnora" : document.knowledge_backend;
 }
 
-function knowledgeBaseLabel(item: NativeKnowledgeBaseItem) {
-  const name = item.name || item.id || "未命名知识库";
-  const type = item.type ? ` · ${item.type}` : "";
-  const count = item.knowledge_count === null ? "" : ` · ${item.knowledge_count} 个资料`;
-  return `${name}${type}${count}`;
+function knowledgeBaseShortLabel(item: NativeKnowledgeBaseItem) {
+  return item.name || item.id || "未命名知识库";
+}
+
+function documentKnowledgeBaseLabel(
+  document: Document,
+  overview: NativeKnowledgeBaseOverviewResponse | null,
+) {
+  if (!document.knowledge_base_id) {
+    return "未归类";
+  }
+  const knowledgeBase = overview?.items.find((item) => item.id === document.knowledge_base_id);
+  return knowledgeBase ? knowledgeBaseShortLabel(knowledgeBase) : "未知知识库";
 }
 
 function activeKnowledgeBaseLabel(overview: NativeKnowledgeBaseOverviewResponse | null) {
@@ -277,10 +312,30 @@ function activeKnowledgeBaseLabel(overview: NativeKnowledgeBaseOverviewResponse 
   return active.name || active.kb_id || "活动知识库";
 }
 
+function mutationKnowledgeBase(
+  response: { surfaces: Record<string, Record<string, unknown>> },
+  action: string,
+) {
+  const surface = response.surfaces[action];
+  const knowledgeBase = surface?.knowledge_base;
+  return knowledgeBase && typeof knowledgeBase === "object"
+    ? (knowledgeBase as NativeKnowledgeBaseItem)
+    : null;
+}
+
+function mutationSucceeded(
+  response: { status: string; warnings: string[]; surfaces: Record<string, Record<string, unknown>> },
+  action: string,
+) {
+  const surface = response.surfaces[action];
+  return response.status === "live" && surface?.status === "live";
+}
+
 function buildDocumentFilters(filters: LibraryFilters) {
   return {
     status: filters.status,
     knowledge_backend: filters.knowledgeBackend,
+    knowledge_base_id: filters.knowledgeBaseId,
     has_error: filters.errorOnly ? true : undefined,
   };
 }
@@ -411,16 +466,27 @@ export function LibraryPage() {
   const [spans, setSpans] = useState<DocumentSpansResponse | null>(null);
   const [chunkLoadState, setChunkLoadState] = useState<ChunkLoadState>("idle");
   const [chunkError, setChunkError] = useState<string | null>(null);
+  const [chunkAuditNotice, setChunkAuditNotice] = useState<string | null>(null);
   const [events, setEvents] = useState<DocumentProcessingEvent[]>([]);
   const [eventLoadState, setEventLoadState] = useState<EventLoadState>("idle");
   const [eventError, setEventError] = useState<string | null>(null);
   const [targetChunkId, setTargetChunkId] = useState<string | null>(null);
   const [chunkActionId, setChunkActionId] = useState<string | null>(null);
+  const [editingChunkId, setEditingChunkId] = useState<string | null>(null);
+  const [chunkDraft, setChunkDraft] = useState("");
+  const [similarResults, setSimilarResults] = useState<Record<string, DocumentChunkSimilarResult[]>>({});
   const [kbOverview, setKbOverview] = useState<NativeKnowledgeBaseOverviewResponse | null>(null);
   const [kbLoadState, setKbLoadState] = useState<KnowledgeBaseLoadState>("idle");
   const [kbError, setKbError] = useState<string | null>(null);
   const [selectedKbId, setSelectedKbId] = useState("");
   const [selectingKb, setSelectingKb] = useState(false);
+  const [savingKb, setSavingKb] = useState(false);
+  const [pinningKb, setPinningKb] = useState(false);
+  const [deletingKb, setDeletingKb] = useState(false);
+  const [kbActionNotice, setKbActionNotice] = useState<string | null>(null);
+  const [kbFormMode, setKbFormMode] = useState<KnowledgeBaseFormMode>("create");
+  const [kbFormOpen, setKbFormOpen] = useState(false);
+  const [kbDraft, setKbDraft] = useState<KnowledgeBaseDraft>(initialKnowledgeBaseDraft);
 
   const indexedCount = useMemo(
     () => documents.filter((document) => document.status === "indexed").length,
@@ -443,6 +509,7 @@ export function LibraryPage() {
     () => kbOverview?.items.find((item) => item.id === selectedKbId) ?? null,
     [kbOverview, selectedKbId],
   );
+  const knowledgeBaseActionsDisabled = selectingKb || savingKb || pinningKb || deletingKb;
 
   const applyHashTarget = (nextDocuments: Document[]) => {
     const target = libraryHashTarget();
@@ -488,6 +555,7 @@ export function LibraryPage() {
         setKbOverview(response);
         setSelectedKbId(response.active_selection?.kb_id ?? response.items[0]?.id ?? "");
         setKbLoadState("idle");
+        setKbActionNotice(null);
       })
       .catch((loadError: unknown) => {
         setKbError(errorMessage(loadError));
@@ -497,7 +565,7 @@ export function LibraryPage() {
 
   useEffect(() => {
     loadDocuments();
-  }, [filters.status, filters.knowledgeBackend, filters.errorOnly]);
+  }, [filters.status, filters.knowledgeBackend, filters.knowledgeBaseId, filters.errorOnly]);
 
   useEffect(() => {
     loadKnowledgeBases();
@@ -595,13 +663,100 @@ export function LibraryPage() {
               document_type: commonPayload.document_type || "manual",
             });
     requestPromise
-      .then((response) => {
-        setDocuments((current) => [response.document, ...current]);
+      .then(() => {
         setSelectedFile(null);
         setForm(initialForm);
+        loadDocuments();
+        loadKnowledgeBases();
       })
       .catch((uploadError: unknown) => setError(errorMessage(uploadError)))
       .finally(() => setIsUploading(false));
+  };
+
+  const onStartCreateKnowledgeBase = () => {
+    setKbFormMode("create");
+    setKbDraft(initialKnowledgeBaseDraft);
+    setKbFormOpen(true);
+    setKbError(null);
+    setKbActionNotice(null);
+  };
+
+  const onStartEditKnowledgeBase = () => {
+    if (!selectedKb) {
+      setKbError("请选择知识库");
+      return;
+    }
+    setKbFormMode("edit");
+    setKbDraft({
+      name: selectedKb.name || "",
+      description: selectedKb.description || "",
+    });
+    setKbFormOpen(true);
+    setKbError(null);
+    setKbActionNotice(null);
+  };
+
+  const onCancelKnowledgeBaseForm = () => {
+    setKbFormOpen(false);
+    setKbDraft(initialKnowledgeBaseDraft);
+  };
+
+  const onSaveKnowledgeBase = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = kbDraft.name.trim();
+    const description = kbDraft.description.trim();
+    if (!name) {
+      setKbError("请输入知识库名称");
+      return;
+    }
+    if (kbFormMode === "edit" && !selectedKbId) {
+      setKbError("请选择要管理的知识库");
+      return;
+    }
+
+    setSavingKb(true);
+    setKbError(null);
+    setKbActionNotice(null);
+    const payload = {
+      name,
+      description,
+      type: selectedKb?.type || "document",
+      is_temporary: false,
+      confirm_token: NATIVE_KB_CONFIRM_PHRASE,
+    };
+    const request =
+      kbFormMode === "create"
+        ? apiClient.createNativeKnowledgeBase(payload)
+        : apiClient.updateNativeKnowledgeBase(selectedKbId, payload);
+    request
+      .then((response) => {
+        const action = kbFormMode === "create" ? "create" : "update";
+        if (!mutationSucceeded(response, action)) {
+          setKbError(response.warnings[0] ?? "知识库保存未完成，请查看设置与调试中的 Native 状态。");
+          return undefined;
+        }
+        const nextKb = mutationKnowledgeBase(response, action);
+        const nextKbId = nextKb?.id || selectedKbId;
+        const activeRequest =
+          kbFormMode === "create" && nextKbId
+            ? apiClient.selectActiveKnowledgeBase(nextKbId)
+            : Promise.resolve(null);
+        return activeRequest.then(() => {
+          if (nextKbId) {
+            setSelectedKbId(nextKbId);
+          }
+          setKbFormOpen(false);
+          setKbDraft(initialKnowledgeBaseDraft);
+          setKbActionNotice(
+            kbFormMode === "create"
+              ? `已新建知识库「${name}」`
+              : `已更新知识库「${name}」`,
+          );
+          loadKnowledgeBases();
+        });
+      })
+      .catch((saveError: unknown) => setKbError(errorMessage(saveError)))
+      .finally(() => setSavingKb(false));
   };
 
   const onSelectKnowledgeBase = () => {
@@ -610,6 +765,7 @@ export function LibraryPage() {
     }
     setSelectingKb(true);
     setKbError(null);
+    setKbActionNotice(null);
     apiClient
       .selectActiveKnowledgeBase(selectedKbId)
       .then(() => {
@@ -619,11 +775,68 @@ export function LibraryPage() {
       .finally(() => setSelectingKb(false));
   };
 
+  const onToggleKnowledgeBasePin = () => {
+    if (!selectedKbId || pinningKb) {
+      return;
+    }
+    setPinningKb(true);
+    setKbError(null);
+    setKbActionNotice(null);
+    apiClient
+      .toggleNativeKnowledgeBasePin(selectedKbId, NATIVE_KB_CONFIRM_PHRASE)
+      .then((response) => {
+        if (!mutationSucceeded(response, "pin_toggle")) {
+          setKbError(response.warnings[0] ?? "知识库置顶状态未更新，请查看设置与调试中的 Native 状态。");
+          return;
+        }
+        const pinnedKb = mutationKnowledgeBase(response, "pin_toggle");
+        setKbActionNotice(pinnedKb?.is_pinned ? "知识库已置顶" : "已取消置顶");
+        loadKnowledgeBases();
+      })
+      .catch((pinError: unknown) => setKbError(errorMessage(pinError)))
+      .finally(() => setPinningKb(false));
+  };
+
+  const onDeleteKnowledgeBase = () => {
+    if (!selectedKbId || deletingKb) {
+      return;
+    }
+    const label = selectedKb?.name || selectedKbId;
+    const activeHint = selectedKbId === activeKbId ? "当前活动知识库会被一并删除。" : "";
+    if (
+      !window.confirm(
+        `确认删除知识库「${label}」？${activeHint}该操作会删除 WeKnora 原生知识库及其资料，不能撤销。`,
+      )
+    ) {
+      return;
+    }
+    setDeletingKb(true);
+    setKbError(null);
+    setKbActionNotice(null);
+    apiClient
+      .deleteNativeKnowledgeBase(selectedKbId, NATIVE_KB_CONFIRM_PHRASE)
+      .then((response) => {
+        const deleteSurface = response.surfaces.delete;
+        if (response.status !== "live" || deleteSurface?.deleted !== true) {
+          setKbError(response.warnings[0] ?? "知识库删除未完成，请查看设置与调试中的 Native 状态。");
+          return;
+        }
+        setKbActionNotice("知识库已删除");
+        setSelectedKbId("");
+        loadKnowledgeBases();
+      })
+      .catch((deleteError: unknown) => setKbError(errorMessage(deleteError)))
+      .finally(() => setDeletingKb(false));
+  };
+
   const loadPreview = (documentId: string, chunkId: string | null = null) => {
     setPreviewDocumentId(documentId);
     setTargetChunkId(chunkId);
     setChunkLoadState("loading");
     setChunkError(null);
+    setEditingChunkId(null);
+    setChunkDraft("");
+    setSimilarResults({});
     setEventLoadState("loading");
     setEventError(null);
     apiClient
@@ -688,6 +901,7 @@ export function LibraryPage() {
   const onRefreshChunk = (documentId: string, chunkId: string) => {
     setChunkActionId(chunkId);
     setChunkError(null);
+    setChunkAuditNotice(null);
     apiClient
       .getDocumentChunk(documentId, chunkId)
       .then((chunk) => {
@@ -704,9 +918,98 @@ export function LibraryPage() {
     const nextEnabled = !chunkIsEnabled(chunk);
     setChunkActionId(chunk.id);
     setChunkError(null);
+    setChunkAuditNotice(null);
     apiClient
       .setDocumentChunkEnabled(documentId, chunk.id, nextEnabled)
       .then((response) => {
+        setChunkAuditNotice(chunkAuditMessage(response));
+        updateDocument(response.document);
+        if (response.chunk) {
+          setChunks((current) =>
+            current.map((item) => (item.id === response.chunk?.id ? response.chunk : item)),
+          );
+        }
+        loadPreview(documentId, chunk.id);
+      })
+      .catch((chunkErrorResponse: unknown) => setChunkError(errorMessage(chunkErrorResponse)))
+      .finally(() => setChunkActionId(null));
+  };
+
+  const onStartEditChunk = (chunk: DocumentChunk) => {
+    setEditingChunkId(chunk.id);
+    setChunkDraft(chunk.content);
+    setTargetChunkId(chunk.id);
+    setChunkError(null);
+  };
+
+  const onCancelEditChunk = () => {
+    setEditingChunkId(null);
+    setChunkDraft("");
+  };
+
+  const onSaveChunkContent = (documentId: string, chunk: DocumentChunk) => {
+    const nextContent = chunkDraft.trim();
+    if (!nextContent) {
+      setChunkError("分块内容不能为空。");
+      return;
+    }
+    if (nextContent === chunk.content.trim()) {
+      onCancelEditChunk();
+      return;
+    }
+    setChunkActionId(chunk.id);
+    setChunkError(null);
+    setChunkAuditNotice(null);
+    apiClient
+      .rewriteDocumentChunkContent(documentId, chunk.id, nextContent)
+      .then((response) => {
+        setChunkAuditNotice(chunkAuditMessage(response));
+        updateDocument(response.document);
+        if (response.chunk) {
+          setChunks((current) =>
+            current.map((item) => (item.id === response.chunk?.id ? response.chunk : item)),
+          );
+        }
+        setEditingChunkId(null);
+        setChunkDraft("");
+        loadPreview(documentId, chunk.id);
+      })
+      .catch((chunkErrorResponse: unknown) => setChunkError(errorMessage(chunkErrorResponse)))
+      .finally(() => setChunkActionId(null));
+  };
+
+  const onSearchSimilarChunks = (documentId: string, chunk: DocumentChunk) => {
+    setChunkActionId(chunk.id);
+    setChunkError(null);
+    apiClient
+      .searchSimilarDocumentChunks(documentId, chunk.id, 5)
+      .then((response) => {
+        setTargetChunkId(chunk.id);
+        setSimilarResults((current) => ({
+          ...current,
+          [chunk.id]: response.items,
+        }));
+        setChunkAuditNotice(`相似分块：${response.total}`);
+      })
+      .catch((chunkErrorResponse: unknown) => setChunkError(errorMessage(chunkErrorResponse)))
+      .finally(() => setChunkActionId(null));
+  };
+
+  const onDeleteGeneratedQuestion = (
+    documentId: string,
+    chunk: DocumentChunk,
+    questionId: string,
+  ) => {
+    if (!questionId || !window.confirm("确认删除这个生成问题？")) {
+      return;
+    }
+    setChunkActionId(chunk.id);
+    setChunkError(null);
+    setChunkAuditNotice(null);
+    apiClient
+      .deleteGeneratedQuestion(documentId, chunk.id, questionId)
+      .then((response) => {
+        setChunkAuditNotice(chunkAuditMessage(response));
         updateDocument(response.document);
         if (response.chunk) {
           setChunks((current) =>
@@ -725,9 +1028,11 @@ export function LibraryPage() {
     }
     setChunkActionId(chunk.id);
     setChunkError(null);
+    setChunkAuditNotice(null);
     apiClient
       .deleteDocumentChunk(documentId, chunk.id)
       .then((response) => {
+        setChunkAuditNotice(chunkAuditMessage(response));
         updateDocument(response.document);
         setChunks((current) => current.filter((item) => item.id !== chunk.id));
         loadPreview(documentId);
@@ -753,6 +1058,17 @@ export function LibraryPage() {
           : apiClient.deleteDocument(document.id);
     requestPromise
       .then((response) => {
+        if (action === "delete") {
+          setDocuments((current) => current.filter((item) => item.id !== document.id));
+          if (previewDocumentId === document.id) {
+            setPreviewDocumentId(null);
+            setChunks([]);
+            setEvents([]);
+            setSpans(null);
+          }
+          loadKnowledgeBases();
+          return;
+        }
         updateDocument(response.document);
         if (previewDocumentId === document.id) {
           loadPreview(document.id, targetChunkId);
@@ -810,59 +1126,205 @@ export function LibraryPage() {
           <span>失败</span>
           <strong>{failedCount}</strong>
         </div>
-        <div className="library-stat">
-          <span>后端</span>
-          <strong>{documents[0]?.knowledge_backend ?? "mock"}</strong>
-        </div>
       </section>
 
-      <WeKnoraFirstStatusStrip page="资料库" />
-
       <section className="library-grid">
-        <form className="upload-panel" onSubmit={onSubmit}>
-          <div className="library-panel-heading">
-            <span>上传</span>
-            <strong>上传资料</strong>
-          </div>
-
-          <section className="kb-selector" aria-label="知识库选择">
-            <div className="kb-selector-heading">
-              <Database size={16} aria-hidden="true" />
+        <div className="library-side">
+          <section className="kb-management-panel" aria-label="知识库管理">
+            <div className="library-panel-heading">
               <div>
-                <span>活动知识库</span>
-                <strong>{activeKnowledgeBaseLabel(kbOverview)}</strong>
+                <span>知识库</span>
+                <strong>知识库管理</strong>
+              </div>
+              <div className="library-heading-actions">
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={loadKnowledgeBases}
+                  title="刷新知识库"
+                >
+                  <RefreshCw size={16} aria-hidden="true" />
+                </button>
+                <button
+                  className="secondary-action compact"
+                  type="button"
+                  onClick={onStartCreateKnowledgeBase}
+                  disabled={knowledgeBaseActionsDisabled}
+                >
+                  <Plus size={16} aria-hidden="true" />
+                  <span>新建</span>
+                </button>
               </div>
             </div>
-            <label>
-              <span>上传目标</span>
+
+            <div className="kb-selector" aria-label="知识库选择">
+              <label>
+                <span>管理对象</span>
+                <select
+                  value={selectedKbId}
+                  onChange={(event) => {
+                    setSelectedKbId(event.target.value);
+                    setKbFormOpen(false);
+                  }}
+                  disabled={kbLoadState === "loading" || knowledgeBaseActionsDisabled}
+                >
+                  {kbOverview?.items.length ? (
+                    kbOverview.items.map((item) => (
+                      <option value={item.id ?? ""} key={item.id ?? item.name ?? "unknown"}>
+                        {knowledgeBaseShortLabel(item)}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">暂无知识库</option>
+                  )}
+                </select>
+              </label>
+
+              {selectedKb ? (
+                <div className="kb-selected-card">
+                  <div className="kb-selected-title">
+                    <strong>{knowledgeBaseShortLabel(selectedKb)}</strong>
+                    <span className={selectedKbId === activeKbId ? "active" : ""}>
+                      {selectedKbId === activeKbId ? "当前活动" : "未设为当前"}
+                    </span>
+                  </div>
+                  <p>{selectedKb.description || "暂无描述"}</p>
+                  <div className="kb-quick-metrics">
+                    <span>{`${selectedKb.knowledge_count ?? 0} 个资料`}</span>
+                    <span>{`${selectedKb.processing_count ?? 0} 个处理中`}</span>
+                    <span>{selectedKb.is_pinned ? "已置顶" : "未置顶"}</span>
+                  </div>
+                  <details className="kb-advanced-details">
+                    <summary>技术信息</summary>
+                    <div>
+                      <span>{`类型：${selectedKb.type || "document"}`}</span>
+                      <span>{`分块：${selectedKb.chunk_count ?? 0}`}</span>
+                      <span>{`来源：${selectedKb.source || "weknora_api"}`}</span>
+                      <span>
+                        {`向量：${String(selectedKb.vector_store?.status ?? "默认")}`}
+                      </span>
+                    </div>
+                  </details>
+                </div>
+              ) : (
+                <EmptyState text="暂无知识库" compact />
+              )}
+
+              {kbError ? <ErrorState message={kbError} /> : null}
+              {kbActionNotice ? <div className="kb-action-notice">{kbActionNotice}</div> : null}
+
+              <div className="kb-action-row">
+                <button
+                  className="secondary-action compact"
+                  type="button"
+                  onClick={onSelectKnowledgeBase}
+                  disabled={
+                    !selectedKbId ||
+                    selectedKbId === activeKbId ||
+                    knowledgeBaseActionsDisabled
+                  }
+                >
+                  {selectingKb ? <Loader2 size={16} aria-hidden="true" /> : <Database size={16} />}
+                  <span>{selectedKbId === activeKbId ? "当前活动" : "设为当前"}</span>
+                </button>
+                <button
+                  className="secondary-action compact"
+                  type="button"
+                  onClick={onStartEditKnowledgeBase}
+                  disabled={!selectedKbId || knowledgeBaseActionsDisabled}
+                >
+                  <Edit3 size={16} aria-hidden="true" />
+                  <span>命名</span>
+                </button>
+                <button
+                  className="secondary-action compact"
+                  type="button"
+                  onClick={onToggleKnowledgeBasePin}
+                  disabled={!selectedKbId || knowledgeBaseActionsDisabled}
+                >
+                  {pinningKb ? <Loader2 size={16} aria-hidden="true" /> : <Pin size={16} />}
+                  <span>{selectedKb?.is_pinned ? "取消置顶" : "置顶"}</span>
+                </button>
+                <button
+                  className="secondary-action compact danger"
+                  type="button"
+                  onClick={onDeleteKnowledgeBase}
+                  disabled={!selectedKbId || knowledgeBaseActionsDisabled}
+                >
+                  {deletingKb ? <Loader2 size={16} aria-hidden="true" /> : <Trash2 size={16} />}
+                  <span>{deletingKb ? "删除中" : "删除"}</span>
+                </button>
+              </div>
+
+              {kbFormOpen ? (
+                <form className="kb-edit-form" onSubmit={onSaveKnowledgeBase}>
+                  <label>
+                    <span>{kbFormMode === "create" ? "新知识库名称" : "知识库名称"}</span>
+                    <input
+                      value={kbDraft.name}
+                      onChange={(event) =>
+                        setKbDraft((current) => ({ ...current, name: event.target.value }))
+                      }
+                      placeholder="例如：部门制度知识库"
+                    />
+                  </label>
+                  <label>
+                    <span>描述</span>
+                    <textarea
+                      value={kbDraft.description}
+                      onChange={(event) =>
+                        setKbDraft((current) => ({
+                          ...current,
+                          description: event.target.value,
+                        }))
+                      }
+                      placeholder="可选，用来区分资料范围"
+                    />
+                  </label>
+                  <div className="kb-form-actions">
+                    <button className="secondary-action compact" type="submit" disabled={savingKb}>
+                      {savingKb ? <Loader2 size={16} aria-hidden="true" /> : <Save size={16} />}
+                      <span>{savingKb ? "保存中" : "保存"}</span>
+                    </button>
+                    <button
+                      className="secondary-action compact"
+                      type="button"
+                      onClick={onCancelKnowledgeBaseForm}
+                      disabled={savingKb}
+                    >
+                      <X size={16} aria-hidden="true" />
+                      <span>取消</span>
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+            </div>
+          </section>
+
+          <form className="upload-panel" onSubmit={onSubmit}>
+            <div className="library-panel-heading">
+              <span>上传</span>
+              <strong>上传资料</strong>
+            </div>
+
+            <label className="upload-target-select">
+              <span>目标知识库</span>
               <select
                 value={selectedKbId}
                 onChange={(event) => setSelectedKbId(event.target.value)}
-                disabled={kbLoadState === "loading" || selectingKb}
+                disabled={kbLoadState === "loading" || knowledgeBaseActionsDisabled}
               >
-                {kbOverview?.items.map((item) => (
-                  <option value={item.id ?? ""} key={item.id ?? item.name ?? "unknown"}>
-                    {knowledgeBaseLabel(item)}
-                  </option>
-                ))}
+                {kbOverview?.items.length ? (
+                  kbOverview.items.map((item) => (
+                    <option value={item.id ?? ""} key={item.id ?? item.name ?? "unknown"}>
+                      {knowledgeBaseShortLabel(item)}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">暂无知识库</option>
+                )}
               </select>
             </label>
-            <div className="kb-selector-meta">
-              <span>{kbLoadState === "loading" ? "加载中" : `${kbOverview?.total ?? 0} 个 KB`}</span>
-              <span>{selectedKb?.is_pinned ? "已置顶" : "未置顶"}</span>
-              <span>{selectedKb?.vector_store?.status ? `向量：${String(selectedKb.vector_store.status)}` : "向量：未知"}</span>
-            </div>
-            {kbError ? <ErrorState message={kbError} /> : null}
-            <button
-              className="secondary-action compact"
-              type="button"
-              onClick={onSelectKnowledgeBase}
-              disabled={!selectedKbId || selectedKbId === activeKbId || selectingKb}
-            >
-              {selectingKb ? <Loader2 size={16} aria-hidden="true" /> : <Pin size={16} />}
-              <span>{selectedKbId === activeKbId ? "当前活动" : "设为活动"}</span>
-            </button>
-          </section>
 
           <div className="ingestion-mode-tabs" aria-label="资料入口">
             <button
@@ -929,38 +1391,45 @@ export function LibraryPage() {
                 onChange={(event) => setForm({ ...form, title: event.target.value })}
               />
             </label>
-            <label>
-              <span>业务域</span>
-              <input
-                value={form.businessArea}
-                onChange={(event) =>
-                  setForm({ ...form, businessArea: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              <span>类型</span>
-              <input
-                value={form.documentType}
-                onChange={(event) =>
-                  setForm({ ...form, documentType: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              <span>来源</span>
-              <input
-                value={form.source}
-                onChange={(event) => setForm({ ...form, source: event.target.value })}
-              />
-            </label>
           </div>
+
+          <details className="advanced-controls library-upload-advanced">
+            <summary>高级信息</summary>
+            <div className="form-grid advanced-filter-grid">
+              <label>
+                <span>业务域</span>
+                <input
+                  value={form.businessArea}
+                  onChange={(event) =>
+                    setForm({ ...form, businessArea: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>类型</span>
+                <input
+                  value={form.documentType}
+                  onChange={(event) =>
+                    setForm({ ...form, documentType: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>来源</span>
+                <input
+                  value={form.source}
+                  onChange={(event) => setForm({ ...form, source: event.target.value })}
+                />
+              </label>
+            </div>
+          </details>
 
           <button className="primary-action" type="submit" disabled={isUploading}>
             {isUploading ? <Loader2 size={16} aria-hidden="true" /> : <Upload size={16} />}
             <span>{isUploading ? "提交中" : "提交"}</span>
           </button>
-        </form>
+          </form>
+        </div>
 
         <section className="documents-panel" aria-label="资料列表">
           <div className="library-panel-heading">
@@ -992,6 +1461,29 @@ export function LibraryPage() {
 
           <div className="library-filter-bar" aria-label="资料筛选">
             <label>
+              <span>知识库</span>
+              <select
+                value={filters.knowledgeBaseId}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    knowledgeBaseId: event.target.value,
+                  }))
+                }
+                disabled={kbLoadState === "loading"}
+              >
+                <option value="all">全部知识库</option>
+                {kbOverview?.items
+                  .filter((item) => item.id)
+                  .map((item) => (
+                    <option value={item.id ?? ""} key={item.id ?? item.name ?? "unknown"}>
+                      {knowledgeBaseShortLabel(item)}
+                    </option>
+                  ))}
+                <option value="__unassigned__">未归类</option>
+              </select>
+            </label>
+            <label>
               <span>状态</span>
               <select
                 value={filters.status}
@@ -1007,33 +1499,36 @@ export function LibraryPage() {
                 <option value="unavailable">不可用</option>
               </select>
             </label>
-            <label>
-              <span>后端</span>
-              <select
-                value={filters.knowledgeBackend}
-                onChange={(event) =>
-                  setFilters((current) => ({
-                    ...current,
-                    knowledgeBackend: event.target.value,
-                  }))
-                }
-              >
-                <option value="all">全部</option>
-                <option value="weknora_api">WeKnora</option>
-                <option value="mock">模拟模式</option>
-                <option value="extracted">本地抽取</option>
-              </select>
-            </label>
-            <label className="library-filter-toggle">
-              <input
-                type="checkbox"
-                checked={filters.errorOnly}
-                onChange={(event) =>
-                  setFilters((current) => ({ ...current, errorOnly: event.target.checked }))
-                }
-              />
-              <span>仅错误/不可用</span>
-            </label>
+            <details className="advanced-controls library-filter-advanced">
+              <summary>高级筛选</summary>
+              <label>
+                <span>处理来源</span>
+                <select
+                  value={filters.knowledgeBackend}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      knowledgeBackend: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="all">全部</option>
+                  <option value="weknora_api">在线知识服务</option>
+                  <option value="mock">模拟模式</option>
+                  <option value="extracted">本地抽取</option>
+                </select>
+              </label>
+              <label className="library-filter-toggle">
+                <input
+                  type="checkbox"
+                  checked={filters.errorOnly}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, errorOnly: event.target.checked }))
+                  }
+                />
+                <span>仅错误/不可用</span>
+              </label>
+            </details>
           </div>
 
           {error ? <ErrorState message={error} /> : null}
@@ -1059,25 +1554,29 @@ export function LibraryPage() {
                       <span>{document.document_type || "-"}</span>
                       <span>{formatFileSize(document.file_size)}</span>
                       <span>{formatDate(document.created_at)}</span>
+                      <span>{`知识库：${documentKnowledgeBaseLabel(document, kbOverview)}`}</span>
                       <span>{backendLabel(document)}</span>
                     </div>
-                    <div className="document-pipeline" aria-label="处理状态">
-                      <span className={stageClass(parseStatus(document))}>
-                        解析：{parseStatus(document)}
-                      </span>
-                      <span className={stageClass(chunkStatus(document))}>
-                        分块：{chunkStatus(document)}
-                      </span>
-                      <span className={stageClass(document.embedding_status || "")}>
-                        向量：{embeddingStatus(document)}
-                      </span>
-                      <span className={stageClass(indexStatus(document))}>
-                        索引：{indexStatus(document)}
-                      </span>
-                      <span className={stageClass(readinessStatus(document))}>
-                        提问：{statusHint(document)}
-                      </span>
-                    </div>
+                    <details className="document-advanced">
+                      <summary>处理详情</summary>
+                      <div className="document-pipeline" aria-label="处理状态">
+                        <span className={stageClass(parseStatus(document))}>
+                          解析：{parseStatus(document)}
+                        </span>
+                        <span className={stageClass(chunkStatus(document))}>
+                          分块：{chunkStatus(document)}
+                        </span>
+                        <span className={stageClass(document.embedding_status || "")}>
+                          向量：{embeddingStatus(document)}
+                        </span>
+                        <span className={stageClass(indexStatus(document))}>
+                          索引：{indexStatus(document)}
+                        </span>
+                        <span className={stageClass(readinessStatus(document))}>
+                          提问：{statusHint(document)}
+                        </span>
+                      </div>
+                    </details>
                     {document.status === "failed" || document.processing_timed_out ? (
                       <div className="document-error">
                         <span>{document.processing_timed_out ? "处理超时" : stepLabel(document.failed_step)}</span>
@@ -1211,6 +1710,7 @@ export function LibraryPage() {
                 <span>{`已索引：${previewDocument.indexed_chunk_count}`}</span>
                 <span>{`待处理：${previewDocument.pending_chunk_count}`}</span>
                 <span>{`失败：${previewDocument.failed_chunk_count}`}</span>
+                {chunkAuditNotice ? <span>{chunkAuditNotice}</span> : null}
               </div>
 
               {chunkLoadState === "loading" ? (
@@ -1219,7 +1719,10 @@ export function LibraryPage() {
                 <EmptyState text={chunkEmptyText(previewDocument)} compact />
               ) : (
                 <div className="chunk-preview-list">
-                  {chunks.map((chunk) => (
+                  {chunks.map((chunk) => {
+                    const isEditing = editingChunkId === chunk.id;
+                    const currentSimilarResults = similarResults[chunk.id] || [];
+                    return (
                     <article
                       className={
                         chunkMatchesTarget(chunk, targetChunkId)
@@ -1236,14 +1739,43 @@ export function LibraryPage() {
                         <span>{chunk.source}</span>
                         <span>{`生成问题：${generatedQuestions(chunk).length}`}</span>
                       </div>
-                      <p>{chunkExcerpt(chunk.content)}</p>
+                      {isEditing ? (
+                        <textarea
+                          className="chunk-edit-textarea"
+                          value={chunkDraft}
+                          onChange={(event) => setChunkDraft(event.target.value)}
+                          rows={6}
+                        />
+                      ) : (
+                        <p>{chunkExcerpt(chunk.content)}</p>
+                      )}
                       {generatedQuestions(chunk).length > 0 ? (
                         <div className="chunk-generated-questions">
                           {generatedQuestions(chunk)
                             .slice(0, 3)
                             .map((question) => (
-                              <span key={question.id || question.question}>
-                                {question.question || question.id}
+                              <span className="chunk-generated-question" key={question.id || question.question}>
+                                <span>{question.question || question.id}</span>
+                                {question.id ? (
+                                  <button
+                                    className="inline-icon-button"
+                                    type="button"
+                                    onClick={() =>
+                                      onDeleteGeneratedQuestion(
+                                        previewDocument.id,
+                                        chunk,
+                                        question.id || "",
+                                      )
+                                    }
+                                    disabled={
+                                      chunkActionId === chunk.id ||
+                                      previewDocument.knowledge_backend !== "weknora_api"
+                                    }
+                                    title="删除生成问题"
+                                  >
+                                    <X size={12} aria-hidden="true" />
+                                  </button>
+                                ) : null}
                               </span>
                             ))}
                         </div>
@@ -1269,6 +1801,56 @@ export function LibraryPage() {
                           title="读取分块详情"
                         >
                           <RefreshCw size={15} aria-hidden="true" />
+                        </button>
+                        {isEditing ? (
+                          <>
+                            <button
+                              className="icon-button"
+                              type="button"
+                              onClick={() => onSaveChunkContent(previewDocument.id, chunk)}
+                              disabled={
+                                chunkActionId === chunk.id ||
+                                previewDocument.knowledge_backend !== "weknora_api"
+                              }
+                              title="保存分块内容"
+                            >
+                              <Save size={15} aria-hidden="true" />
+                            </button>
+                            <button
+                              className="icon-button"
+                              type="button"
+                              onClick={onCancelEditChunk}
+                              disabled={chunkActionId === chunk.id}
+                              title="取消编辑"
+                            >
+                              <X size={15} aria-hidden="true" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            className="icon-button"
+                            type="button"
+                            onClick={() => onStartEditChunk(chunk)}
+                            disabled={
+                              chunkActionId === chunk.id ||
+                              previewDocument.knowledge_backend !== "weknora_api"
+                            }
+                            title="编辑分块内容"
+                          >
+                            <Edit3 size={15} aria-hidden="true" />
+                          </button>
+                        )}
+                        <button
+                          className="icon-button"
+                          type="button"
+                          onClick={() => onSearchSimilarChunks(previewDocument.id, chunk)}
+                          disabled={
+                            chunkActionId === chunk.id ||
+                            previewDocument.knowledge_backend !== "weknora_api"
+                          }
+                          title="搜索相似分块"
+                        >
+                          <Search size={15} aria-hidden="true" />
                         </button>
                         <button
                           className="icon-button"
@@ -1299,8 +1881,19 @@ export function LibraryPage() {
                           <Trash2 size={15} aria-hidden="true" />
                         </button>
                       </div>
+                      {currentSimilarResults.length > 0 ? (
+                        <div className="chunk-similar-results">
+                          {currentSimilarResults.slice(0, 3).map((result) => (
+                            <div className="chunk-similar-result" key={`${chunk.id}-${result.id}`}>
+                              <span>{`#${result.chunk_index} · ${result.score.toFixed(3)}`}</span>
+                              <p>{chunkExcerpt(result.content, 180)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 

@@ -2,6 +2,12 @@ const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || DEFAULT_API_BASE_URL;
+const NATIVE_CHUNK_CONFIRM_PHRASE = "CONFIRM_NATIVE_CHUNK_MUTATION";
+export const NATIVE_KB_CONFIRM_PHRASE = "CONFIRM_NATIVE_KB_MUTATION";
+const NATIVE_DATA_SOURCE_SYNC_PHRASE = "SYNC_NATIVE_DATA_SOURCE";
+const NATIVE_DATA_SOURCE_PAUSE_PHRASE = "PAUSE_NATIVE_DATA_SOURCE";
+const NATIVE_DATA_SOURCE_RESUME_PHRASE = "RESUME_NATIVE_DATA_SOURCE";
+const NATIVE_DATA_SOURCE_DELETE_PHRASE = "DELETE_NATIVE_DATA_SOURCE";
 
 type CapabilityStatus = "supported" | "partial" | "unsupported" | "dev-only" | string;
 
@@ -283,6 +289,15 @@ export type NativeDataSourceOverviewResponse = {
   >;
 };
 
+export type NativeDataSourceActionResponse = NativeDataSourceOverviewResponse & {
+  audit?: NativeMutationAudit;
+  confirmation?: {
+    required: boolean;
+    method?: string | null;
+    token_id?: string | null;
+  };
+};
+
 export type NativeOrganizationOverviewResponse = {
   schema_version: string;
   status: "live" | "partial" | "blocked" | "backlog" | string;
@@ -388,6 +403,26 @@ export type ActiveKnowledgeBaseSelectionResponse = {
   active_selection: NativeKnowledgeBaseSelection;
   tags: Array<Record<string, unknown>>;
   mutation_backlog: string[];
+  mutation_status?: Record<string, unknown>;
+};
+
+export type NativeKnowledgeBaseMutationResponse = {
+  schema_version: string;
+  source: string;
+  status: NativeStatusValue;
+  masked: boolean;
+  surfaces: Record<string, Record<string, unknown>>;
+  warnings: string[];
+  audit?: Record<string, unknown>;
+  confirmation?: Record<string, unknown>;
+};
+
+export type NativeKnowledgeBaseMutationPayload = {
+  name?: string;
+  description?: string;
+  type?: string;
+  is_temporary?: boolean;
+  confirm_token?: string;
 };
 
 export type ModelProviderStatus = {
@@ -423,6 +458,7 @@ export type Document = {
   file_size: number | null;
   mime_type: string | null;
   knowledge_backend: string;
+  knowledge_base_id: string | null;
   external_doc_id: string | null;
   summary: string | null;
   status: string;
@@ -495,6 +531,7 @@ export type DocumentListFilters = {
   processing_state?: string;
   has_error?: boolean;
   knowledge_backend?: string;
+  knowledge_base_id?: string;
   refresh_status?: boolean;
 };
 
@@ -571,6 +608,56 @@ export type DocumentChunkListResponse = {
   total: number;
 };
 
+export type DocumentChunkSimilarResult = {
+  id: string;
+  external_doc_id: string | null;
+  knowledge_base_id: string | null;
+  chunk_index: number;
+  content: string;
+  score: number;
+  match_type: number | string | null;
+  retriever_type: string | null;
+  retriever_engine: string | null;
+  matched_content: string | null;
+  source_id: string | null;
+};
+
+export type DocumentChunkSimilarResponse = {
+  items: DocumentChunkSimilarResult[];
+  total: number;
+  evidence_type: string;
+  source: string;
+};
+
+export type NativeConfirmation = {
+  required: boolean;
+  method: string | null;
+  token_id: string | null;
+};
+
+export type NativeMutationAudit = {
+  id: string;
+  capability: string;
+  operation: string;
+  target_type: string;
+  target_id: string | null;
+  source: string;
+  status: string;
+  confirmation_required: boolean;
+  confirmation_method: string | null;
+  confirm_token_id: string | null;
+  reason: string | null;
+  request_summary_json: string | null;
+  response_summary_json: string | null;
+  error_message: string | null;
+  created_at: string;
+};
+
+export type NativeMutationAuditListResponse = {
+  items: NativeMutationAudit[];
+  total: number;
+};
+
 export type DocumentChunkActionResponse = {
   document: Document;
   chunk: DocumentChunk | null;
@@ -579,6 +666,8 @@ export type DocumentChunkActionResponse = {
   evidence_type: string;
   source: string;
   audit_step: string;
+  audit: NativeMutationAudit | null;
+  confirmation: NativeConfirmation | null;
 };
 
 export type DocumentProcessingEvent = {
@@ -877,6 +966,29 @@ export type NativeAgentQaRequest = {
   web_search_enabled?: boolean;
 };
 
+export type NativeAgentMutationRequest = {
+  name?: string | null;
+  description?: string | null;
+  avatar?: string | null;
+  config?: Record<string, unknown>;
+  confirm_token?: string | null;
+};
+
+export type NativeAgentMutationResponse = {
+  schema_version: string;
+  source: string;
+  status: string;
+  masked: boolean;
+  surfaces: Record<string, unknown>;
+  warnings: string[];
+  audit?: NativeMutationAudit;
+  confirmation?: {
+    required: boolean;
+    method?: string | null;
+    token_id?: string | null;
+  };
+};
+
 export type NativeAgentQaRuntime = {
   native_session_id: string | null;
   agent_id: string | null;
@@ -1045,6 +1157,9 @@ function documentFilterParams(filters: DocumentListFilters) {
   }
   if (filters.knowledge_backend && filters.knowledge_backend !== "all") {
     params.set("knowledge_backend", filters.knowledge_backend);
+  }
+  if (filters.knowledge_base_id && filters.knowledge_base_id !== "all") {
+    params.set("knowledge_base_id", filters.knowledge_base_id);
   }
   if (filters.refresh_status !== undefined) {
     params.set("refresh_status", String(filters.refresh_status));
@@ -1263,6 +1378,42 @@ export const apiClient = {
       `/api/data-sources/native/overview${suffix}`,
     );
   },
+  getNativeDataSourceDetail: (dataSourceIndex: number) =>
+    request<NativeDataSourceOverviewResponse>(
+      `/api/data-sources/native/sources/by-index/${encodeURIComponent(String(dataSourceIndex))}`,
+    ),
+  syncNativeDataSource: (dataSourceIndex: number) =>
+    request<NativeDataSourceActionResponse>(
+      `/api/data-sources/native/sources/by-index/${encodeURIComponent(String(dataSourceIndex))}/sync`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirm_token: NATIVE_DATA_SOURCE_SYNC_PHRASE }),
+      },
+    ),
+  pauseNativeDataSource: (dataSourceIndex: number) =>
+    request<NativeDataSourceActionResponse>(
+      `/api/data-sources/native/sources/by-index/${encodeURIComponent(String(dataSourceIndex))}/pause`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirm_token: NATIVE_DATA_SOURCE_PAUSE_PHRASE }),
+      },
+    ),
+  resumeNativeDataSource: (dataSourceIndex: number) =>
+    request<NativeDataSourceActionResponse>(
+      `/api/data-sources/native/sources/by-index/${encodeURIComponent(String(dataSourceIndex))}/resume`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirm_token: NATIVE_DATA_SOURCE_RESUME_PHRASE }),
+      },
+    ),
+  deleteNativeDataSource: (dataSourceIndex: number) =>
+    request<NativeDataSourceActionResponse>(
+      `/api/data-sources/native/sources/by-index/${encodeURIComponent(String(dataSourceIndex))}`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ confirm_token: NATIVE_DATA_SOURCE_DELETE_PHRASE }),
+      },
+    ),
   getNativeOrganizationOverview: (params: NativeOrganizationOverviewParams = {}) => {
     const searchParams = nativeOrganizationOverviewParams(params);
     const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
@@ -1286,6 +1437,48 @@ export const apiClient = {
       method: "POST",
       body: JSON.stringify({ kb_id: kbId }),
     }),
+  createNativeKnowledgeBase: (payload: NativeKnowledgeBaseMutationPayload) =>
+    request<NativeKnowledgeBaseMutationResponse>("/api/knowledge-bases/native", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateNativeKnowledgeBase: (kbId: string, payload: NativeKnowledgeBaseMutationPayload) =>
+    request<NativeKnowledgeBaseMutationResponse>(`/api/knowledge-bases/native/${encodeURIComponent(kbId)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteNativeKnowledgeBase: async (kbId: string, confirmToken: string) => {
+    const encodedKbId = encodeURIComponent(kbId);
+    const payload = { confirm_token: confirmToken };
+    try {
+      return await request<NativeKnowledgeBaseMutationResponse>(
+        `/api/knowledge-bases/native/${encodedKbId}`,
+        {
+          method: "DELETE",
+          body: JSON.stringify(payload),
+        },
+      );
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 404 || error.status === 405)) {
+        return request<NativeKnowledgeBaseMutationResponse>(
+          `/api/knowledge-bases/native/${encodedKbId}/delete`,
+          {
+            method: "POST",
+            body: JSON.stringify(payload),
+          },
+        );
+      }
+      throw error;
+    }
+  },
+  toggleNativeKnowledgeBasePin: (kbId: string, confirmToken: string) =>
+    request<NativeKnowledgeBaseMutationResponse>(
+      `/api/knowledge-bases/native/${encodeURIComponent(kbId)}/pin-toggle`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirm_token: confirmToken }),
+      },
+    ),
   listDocuments: (filters: DocumentListFilters = {}) => {
     const params = documentFilterParams(filters);
     const suffix = params.toString() ? `?${params.toString()}` : "";
@@ -1378,11 +1571,38 @@ export const apiClient = {
       {
         method: "PATCH",
         body: JSON.stringify({
-          confirm: true,
+          confirm_token: NATIVE_CHUNK_CONFIRM_PHRASE,
           is_enabled: isEnabled,
           reason: "library_chunk_control",
         }),
       },
+    ),
+  rewriteDocumentChunkContent: (documentId: string, chunkId: string, content: string) =>
+    request<DocumentChunkActionResponse>(
+      `/api/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}/content`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          confirm_token: NATIVE_CHUNK_CONFIRM_PHRASE,
+          content,
+          reason: "library_chunk_control",
+        }),
+      },
+    ),
+  deleteGeneratedQuestion: (documentId: string, chunkId: string, questionId: string) =>
+    request<DocumentChunkActionResponse>(
+      `/api/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}/questions/${encodeURIComponent(questionId)}`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({
+          confirm_token: NATIVE_CHUNK_CONFIRM_PHRASE,
+          reason: "library_chunk_control",
+        }),
+      },
+    ),
+  searchSimilarDocumentChunks: (documentId: string, chunkId: string, topK = 5) =>
+    request<DocumentChunkSimilarResponse>(
+      `/api/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}/similar?top_k=${encodeURIComponent(String(topK))}`,
     ),
   deleteDocumentChunk: (documentId: string, chunkId: string) =>
     request<DocumentChunkActionResponse>(
@@ -1390,11 +1610,28 @@ export const apiClient = {
       {
         method: "DELETE",
         body: JSON.stringify({
-          confirm: true,
+          confirm_token: NATIVE_CHUNK_CONFIRM_PHRASE,
           reason: "library_chunk_control",
         }),
       },
     ),
+  listNativeAuditEvents: (params: {
+    limit?: number;
+    capability?: string;
+    operation?: string;
+    target_type?: string;
+    target_id?: string;
+    status?: string;
+  } = {}) => {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        searchParams.set(key, String(value));
+      }
+    });
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return request<NativeMutationAuditListResponse>(`/api/native-audit/events${suffix}`);
+  },
   listDocumentEvents: (documentId: string) =>
     request<ListResponse<DocumentProcessingEvent>>(`/api/documents/${documentId}/events`),
   listConversations: () => request<ListResponse<Conversation>>("/api/conversations"),
@@ -1406,6 +1643,26 @@ export const apiClient = {
       body: JSON.stringify(payload),
     }),
   listNativeAgents: () => request<NativeAgentCatalogResponse>("/api/analysis/native-agents"),
+  createNativeAgent: (payload: NativeAgentMutationRequest) =>
+    request<NativeAgentMutationResponse>("/api/analysis/native-agents", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateNativeAgent: (agentId: string, payload: NativeAgentMutationRequest) =>
+    request<NativeAgentMutationResponse>(`/api/analysis/native-agents/${encodeURIComponent(agentId)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  copyNativeAgent: (agentId: string, payload: { confirm_token?: string | null }) =>
+    request<NativeAgentMutationResponse>(`/api/analysis/native-agents/${encodeURIComponent(agentId)}/copy`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteNativeAgent: (agentId: string, payload: { confirm_token?: string | null }) =>
+    request<NativeAgentMutationResponse>(`/api/analysis/native-agents/${encodeURIComponent(agentId)}`, {
+      method: "DELETE",
+      body: JSON.stringify(payload),
+    }),
   runNativeAgentQa: (payload: NativeAgentQaRequest) =>
     request<NativeAgentQaResponse>("/api/analysis/native-agentqa", {
       method: "POST",

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -836,4 +837,20 @@ func (r *wikiPageRepository) UpdateIssueStatus(ctx context.Context, issueID stri
 	return r.db.WithContext(ctx).Model(&types.WikiPageIssue{}).
 		Where("id = ?", issueID).
 		Update("status", status).Error
+}
+
+func (r *wikiPageRepository) UpdateIssueStatusForKB(ctx context.Context, kbID string, issueID string, status string) error {
+	result := r.db.WithContext(ctx).Model(&types.WikiPageIssue{}).
+		Where("knowledge_base_id = ? AND id = ?", kbID, issueID).
+		Updates(map[string]interface{}{
+			"status":     status,
+			"updated_at": time.Now(),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrWikiPageNotFound
+	}
+	return nil
 }

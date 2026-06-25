@@ -3,8 +3,15 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from sqlmodel import Session
+
 from app.config import Settings
 from app.config import get_settings
+from app.models import NativeMutationAudit
+from app.services.native_audit_service import NativeConfirmationError
+from app.services.native_audit_service import record_native_mutation_audit
+from app.services.native_audit_service import require_native_confirmation
+from app.services.native_audit_service import update_native_mutation_audit
 from knowledge_engine.backends.weknora_api_backend import WeKnoraApiBackend
 from knowledge_engine.errors import KnowledgeBackendUnavailableError
 from knowledge_engine.errors import WeKnoraUnavailableError
@@ -13,6 +20,14 @@ from knowledge_engine.errors import WeKnoraUnavailableError
 CONFIRM_DATA_SOURCE_SYNC_TOKEN = "SYNC_NATIVE_DATA_SOURCE"
 CONFIRM_DATA_SOURCE_PAUSE_TOKEN = "PAUSE_NATIVE_DATA_SOURCE"
 CONFIRM_DATA_SOURCE_RESUME_TOKEN = "RESUME_NATIVE_DATA_SOURCE"
+CONFIRM_DATA_SOURCE_DELETE_TOKEN = "DELETE_NATIVE_DATA_SOURCE"
+
+DATA_SOURCE_CONFIRM_TOKEN_IDS = {
+    "sync": "native_data_source_sync",
+    "pause": "native_data_source_pause",
+    "resume": "native_data_source_resume",
+    "delete": "native_data_source_delete",
+}
 
 
 def native_data_source_overview(limit: int = 5) -> dict[str, Any]:
@@ -62,7 +77,8 @@ def native_data_source_overview(limit: int = 5) -> dict[str, Any]:
         reason="validating connector credentials calls external systems and needs operator confirmation plus secret handling",
     )
     overview["surfaces"]["sync_control"] = _sync_control_surface(data_sources)
-    overview["surfaces"]["mutations"] = _data_source_mutation_backlog()
+    overview["surfaces"]["delete_control"] = _delete_control_surface(data_sources)
+    overview["surfaces"]["mutations"] = _data_source_mutation_surface(data_sources)
     overview["status"] = "partial" if data_sources else "live"
     if not data_sources:
         overview["warnings"].append("read-only: no native data sources are configured for the active KB")
@@ -106,16 +122,19 @@ def native_data_source_detail_by_index(data_source_index: int) -> dict[str, Any]
     response["surfaces"]["resources"] = resources_surface
     response["surfaces"]["validation"] = validation_surface
     response["surfaces"]["sync_control"] = _sync_control_blocked_surface()
-    response["surfaces"]["mutations"] = _data_source_mutation_backlog()
+    response["surfaces"]["delete_control"] = _delete_control_blocked_surface()
+    response["surfaces"]["mutations"] = _data_source_mutation_surface([data_source])
     return response
 
 
 def trigger_native_data_source_sync_by_index(
+    session: Session,
     data_source_index: int,
     *,
     confirm_token: str | None,
 ) -> dict[str, Any]:
     return _confirmed_data_source_action(
+        session=session,
         data_source_index=data_source_index,
         confirm_token=confirm_token,
         expected_token=CONFIRM_DATA_SOURCE_SYNC_TOKEN,
@@ -124,11 +143,13 @@ def trigger_native_data_source_sync_by_index(
 
 
 def pause_native_data_source_by_index(
+    session: Session,
     data_source_index: int,
     *,
     confirm_token: str | None,
 ) -> dict[str, Any]:
     return _confirmed_data_source_action(
+        session=session,
         data_source_index=data_source_index,
         confirm_token=confirm_token,
         expected_token=CONFIRM_DATA_SOURCE_PAUSE_TOKEN,
@@ -137,11 +158,13 @@ def pause_native_data_source_by_index(
 
 
 def resume_native_data_source_by_index(
+    session: Session,
     data_source_index: int,
     *,
     confirm_token: str | None,
 ) -> dict[str, Any]:
     return _confirmed_data_source_action(
+        session=session,
         data_source_index=data_source_index,
         confirm_token=confirm_token,
         expected_token=CONFIRM_DATA_SOURCE_RESUME_TOKEN,
@@ -149,47 +172,63 @@ def resume_native_data_source_by_index(
     )
 
 
+def delete_native_data_source_by_index(
+    session: Session,
+    data_source_index: int,
+    *,
+    confirm_token: str | None,
+) -> dict[str, Any]:
+    return _confirmed_data_source_action(
+        session=session,
+        data_source_index=data_source_index,
+        confirm_token=confirm_token,
+        expected_token=CONFIRM_DATA_SOURCE_DELETE_TOKEN,
+        action="delete",
+    )
+
+
 def _confirmed_data_source_action(
     *,
+    session: Session,
     data_source_index: int,
     confirm_token: str | None,
     expected_token: str,
     action: str,
 ) -> dict[str, Any]:
     settings = get_settings()
-    response = _base_response(settings, f"wnx-p2-05-{action}")
+    response = _base_response(settings, f"wnfc-p1-02-{action}")
     response["management_mode"] = "safe_read_confirmed_sync"
-    response["surfaces"]["mutations"] = _data_source_mutation_backlog()
+    surface_name = "delete_control" if action == "delete" else "sync_control"
+    blocked_surface = _delete_control_blocked_surface if action == "delete" else _sync_control_blocked_surface
+    response["surfaces"]["mutations"] = _data_source_mutation_surface([{}])
     if settings.knowledge_backend != "weknora_api":
         response["status"] = "backlog"
-        response["surfaces"]["sync_control"] = {
+        response["surfaces"][surface_name] = {
             "status": "backlog",
-            "reason": "weknora_api backend is required for native data source sync control",
+            "reason": "weknora_api backend is required for native data source mutation control",
         }
         return response
-    if confirm_token != expected_token:
-        response["surfaces"]["sync_control"] = _sync_control_blocked_surface()
-        response["warnings"].append("blocked: data source sync control requires explicit confirmation")
+
+    try:
+        confirmation = require_native_confirmation(
+            confirm=False,
+            confirm_token=confirm_token,
+            expected_token=expected_token,
+            token_id=DATA_SOURCE_CONFIRM_TOKEN_IDS[action],
+            action=f"weknora_data_source_{action}",
+        )
+    except NativeConfirmationError:
+        response["surfaces"][surface_name] = blocked_surface()
+        response["warnings"].append(f"blocked: data source {action} requires explicit confirmation")
         return response
 
     backend = _weknora_backend(settings)
     try:
         data_source_ref = _data_source_ref_by_index(backend, data_source_index)
-        if action == "sync":
-            result = backend.manual_sync_data_source(data_source_ref)
-        elif action == "pause":
-            result = backend.pause_data_source(data_source_ref)
-        elif action == "resume":
-            result = backend.resume_data_source(data_source_ref)
-        else:
-            raise WeKnoraUnavailableError(
-                "unsupported data source action",
-                error_code="data_source_action_unsupported",
-                operation="data_source_action",
-            )
+        data_source = backend.get_data_source(data_source_ref)
     except KnowledgeBackendUnavailableError as exc:
         response["status"] = "partial"
-        response["surfaces"]["sync_control"] = {
+        response["surfaces"][surface_name] = {
             "status": "partial",
             "action": action,
             "success": False,
@@ -198,13 +237,76 @@ def _confirmed_data_source_action(
         response["warnings"].append(f"partial: native_{action}: {_error_code(exc)}")
         return response
 
+    audit = record_native_mutation_audit(
+        session=session,
+        capability="data_source",
+        operation=f"weknora_data_source_{action}",
+        target_type="data_source",
+        target_id=_safe_data_source_target_id(data_source_index),
+        status="started",
+        confirmation=confirmation,
+        request_summary={
+            "safe_index": data_source_index,
+            "action": action,
+            "data_source": _public_data_source_item(data_source),
+        },
+    )
+    session.commit()
+    try:
+        if action == "sync":
+            result = backend.manual_sync_data_source(data_source_ref)
+        elif action == "pause":
+            result = backend.pause_data_source(data_source_ref)
+        elif action == "resume":
+            result = backend.resume_data_source(data_source_ref)
+        elif action == "delete":
+            result = backend.delete_data_source(data_source_ref)
+        else:
+            raise WeKnoraUnavailableError(
+                "unsupported data source action",
+                error_code="data_source_action_unsupported",
+                operation="data_source_action",
+            )
+    except KnowledgeBackendUnavailableError as exc:
+        update_native_mutation_audit(
+            audit=audit,
+            status="failed",
+            response_summary={"action": action, "success": False},
+            error_message=str(exc),
+        )
+        session.commit()
+        response["status"] = "partial"
+        response["surfaces"][surface_name] = {
+            "status": "partial",
+            "action": action,
+            "success": False,
+            "reason": f"native_{action}: {_error_code(exc)}",
+        }
+        response["audit"] = _audit_surface(audit)
+        response["confirmation"] = _confirmation_read(confirmation)
+        response["warnings"].append(f"partial: native_{action}: {_error_code(exc)}")
+        return response
+
+    update_native_mutation_audit(
+        audit=audit,
+        status="succeeded",
+        response_summary={
+            "action": action,
+            "success": True,
+            "data_source": _public_data_source_item(data_source),
+            "outcome": _data_source_action_outcome(result),
+        },
+    )
+    session.commit()
     response["status"] = "partial"
-    response["surfaces"]["sync_control"] = {
+    response["surfaces"][surface_name] = {
         "status": "live",
         "action": action,
         "success": True,
-        "result": result,
+        "outcome": _data_source_action_outcome(result),
     }
+    response["audit"] = _audit_surface(audit)
+    response["confirmation"] = _confirmation_read(confirmation)
     return response
 
 
@@ -374,20 +476,46 @@ def _sync_control_blocked_surface() -> dict[str, Any]:
     }
 
 
-def _data_source_mutation_backlog() -> dict[str, Any]:
+def _delete_control_surface(data_sources: list[dict]) -> dict[str, Any]:
+    if not data_sources:
+        return {
+            "status": "backlog",
+            "reason": "no native data sources are configured for delete control",
+            "count": 0,
+        }
+    return _delete_control_blocked_surface()
+
+
+def _delete_control_blocked_surface() -> dict[str, Any]:
     return {
-        "status": "backlog",
+        "status": "blocked",
+        "reason": "explicit confirmation is required before native data source deletion",
+        "delete_confirm_phrase": CONFIRM_DATA_SOURCE_DELETE_TOKEN,
+        "delete_endpoint": "/api/data-sources/native/sources/by-index/{data_source_index}",
+    }
+
+
+def _data_source_mutation_surface(data_sources: list[dict]) -> dict[str, Any]:
+    if not data_sources:
+        return {
+            "status": "backlog",
+            "items": [
+                "sync/pause/resume/delete controls need at least one native data source",
+                "connector create/update and credential forms remain blocked by credential setup",
+            ],
+            "reason": "no native data sources are configured for mutation controls",
+        }
+    return {
+        "status": "partial",
         "items": [
-            "connector create/update/delete",
-            "credential forms",
-            "raw credential validation",
-            "external resource listing",
-            "raw sync-log details",
-            "destructive deletion-sync controls",
+            "sync/pause/resume are live with explicit confirmation and NativeMutationAudit",
+            "delete is live with explicit confirmation and NativeMutationAudit",
+            "connector create/update and credential forms remain blocked by missing third-party credential setup",
+            "raw credential material and raw resource names are intentionally not exposed",
         ],
         "reason": (
-            "WNX-P2-05 exposes safe connector visibility and confirmation-gated "
-            "sync controls while keeping credential-heavy setup and raw logs out of PA."
+            "WNFC-P1-02 exposes confirmation-gated native data source operations while "
+            "keeping credential-heavy setup and raw connector payloads out of PA responses."
         ),
     }
 
@@ -434,6 +562,59 @@ def _public_data_source_item(data_source: dict) -> dict[str, Any]:
         "settings_count": data_source.get("settings_count"),
         "last_sync_at_configured": bool(data_source.get("last_sync_at_configured")),
         "total_items_synced": data_source.get("total_items_synced"),
+    }
+
+
+def _safe_data_source_target_id(data_source_index: int) -> str:
+    return f"data_source_index:{max(int(data_source_index), 0)}"
+
+
+def _data_source_action_outcome(result: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {"source": "weknora_api"}
+    safe: dict[str, Any] = {
+        "source": result.get("source") or "weknora_api",
+        "status": result.get("status"),
+    }
+    for key in (
+        "deleted",
+        "started_at_configured",
+        "finished_at_configured",
+        "items_total",
+        "items_created",
+        "items_updated",
+        "items_deleted",
+        "items_skipped",
+        "items_failed",
+        "has_error",
+        "result_configured",
+    ):
+        if key in result:
+            safe[key] = result.get(key)
+    return safe
+
+
+def _audit_surface(audit: NativeMutationAudit) -> dict[str, Any]:
+    return {
+        "id": audit.id,
+        "capability": audit.capability,
+        "operation": audit.operation,
+        "target_type": audit.target_type,
+        "target_id": audit.target_id,
+        "source": audit.source,
+        "status": audit.status,
+        "confirmation_required": audit.confirmation_required,
+        "confirmation_method": audit.confirmation_method,
+        "confirm_token_id": audit.confirm_token_id,
+        "created_at": audit.created_at.isoformat(),
+    }
+
+
+def _confirmation_read(confirmation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "required": bool(confirmation.get("required", True)),
+        "method": confirmation.get("method"),
+        "token_id": confirmation.get("token_id"),
     }
 
 

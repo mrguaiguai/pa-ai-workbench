@@ -60,6 +60,9 @@ def ensure_sqlite_schema(db_engine) -> None:
     if "failed_step" not in document_columns:
         with db_engine.begin() as connection:
             connection.execute(text("ALTER TABLE documents ADD COLUMN failed_step VARCHAR"))
+    if "knowledge_base_id" not in document_columns:
+        with db_engine.begin() as connection:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN knowledge_base_id VARCHAR"))
 
 
 def get_session() -> Generator[Session, None, None]:

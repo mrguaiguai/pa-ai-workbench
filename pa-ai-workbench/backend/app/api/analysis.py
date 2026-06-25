@@ -3,6 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from pydantic import BaseModel
+from pydantic import Field
 from sqlmodel import Session
 
 from app.database import get_session
@@ -23,11 +25,27 @@ from app.services.analysis_service import run_analysis
 from app.services.generation_service import get_output
 from app.services.generation_service import get_task
 from app.services.generation_service import list_output_citations
+from app.services.native_agent_service import copy_native_agent
+from app.services.native_agent_service import create_native_agent
+from app.services.native_agent_service import delete_native_agent
 from app.services.native_agent_service import NativeAgentError
 from app.services.native_agent_service import native_agent_catalog
 from app.services.native_agent_service import run_native_agent_qa
+from app.services.native_agent_service import update_native_agent
 
 router = APIRouter(prefix="/api", tags=["analysis"])
+
+
+class NativeAgentMutationRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
+    description: str | None = Field(default=None, max_length=1000)
+    avatar: str | None = Field(default=None, max_length=64)
+    config: dict = Field(default_factory=dict)
+    confirm_token: str | None = Field(default=None, max_length=120)
+
+
+class NativeAgentConfirmRequest(BaseModel):
+    confirm_token: str | None = Field(default=None, max_length=120)
 
 
 @router.get("/analysis/native-agents", response_model=NativeAgentCatalogResponse)
@@ -38,6 +56,64 @@ def list_native_agents(
         return NativeAgentCatalogResponse.model_validate(native_agent_catalog(session))
     except NativeAgentError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/analysis/native-agents")
+def create_native_agent_api(
+    payload: NativeAgentMutationRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    try:
+        return create_native_agent(
+            session=session,
+            payload=payload.model_dump(exclude={"confirm_token"}),
+            confirm_token=payload.confirm_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/analysis/native-agents/{agent_id}")
+def update_native_agent_api(
+    agent_id: str,
+    payload: NativeAgentMutationRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    try:
+        return update_native_agent(
+            session=session,
+            agent_id=agent_id,
+            payload=payload.model_dump(exclude={"confirm_token"}),
+            confirm_token=payload.confirm_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/analysis/native-agents/{agent_id}/copy")
+def copy_native_agent_api(
+    agent_id: str,
+    payload: NativeAgentConfirmRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    return copy_native_agent(
+        session=session,
+        agent_id=agent_id,
+        confirm_token=payload.confirm_token,
+    )
+
+
+@router.delete("/analysis/native-agents/{agent_id}")
+def delete_native_agent_api(
+    agent_id: str,
+    payload: NativeAgentConfirmRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    return delete_native_agent(
+        session=session,
+        agent_id=agent_id,
+        confirm_token=payload.confirm_token,
+    )
 
 
 @router.post("/analysis/native-agentqa", response_model=NativeAgentQaResponse)
