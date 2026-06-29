@@ -163,6 +163,11 @@ def _validate_citation_trace(
         if not wiki_page_id:
             raise ValueError("Wiki citation must include wiki_page_id.")
         return
+    if source_type == "web_search":
+        locator = binding.get("locator") or metadata.get("url") or metadata.get("weknora_url")
+        if not locator:
+            raise ValueError("Web Search citation must include a URL locator.")
+        return
     raise ValueError("Real citation must include a known source type.")
 
 

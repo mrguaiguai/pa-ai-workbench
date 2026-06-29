@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from pydantic import BaseModel
 from pydantic import Field
 from sqlmodel import Session
@@ -15,6 +16,8 @@ from app.schemas import ConversationMessageRead
 from app.schemas import ConversationRead
 from app.schemas import GeneratedOutputRead
 from app.schemas import NativeAgentCatalogResponse
+from app.schemas import NativeAgentSuggestedQuestionsResponse
+from app.schemas import NativeAgentStrategyUpdateRequest
 from app.schemas import NativeAgentQaRequest
 from app.schemas import NativeAgentQaResponse
 from app.schemas import NativeAgentQaRuntime
@@ -30,8 +33,10 @@ from app.services.native_agent_service import create_native_agent
 from app.services.native_agent_service import delete_native_agent
 from app.services.native_agent_service import NativeAgentError
 from app.services.native_agent_service import native_agent_catalog
+from app.services.native_agent_service import native_agent_suggested_questions
 from app.services.native_agent_service import run_native_agent_qa
 from app.services.native_agent_service import update_native_agent
+from app.services.native_agent_service import update_native_agent_strategy
 
 router = APIRouter(prefix="/api", tags=["analysis"])
 
@@ -54,6 +59,31 @@ def list_native_agents(
 ) -> NativeAgentCatalogResponse:
     try:
         return NativeAgentCatalogResponse.model_validate(native_agent_catalog(session))
+    except NativeAgentError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get(
+    "/analysis/native-agents/{agent_id}/suggested-questions",
+    response_model=NativeAgentSuggestedQuestionsResponse,
+)
+def list_native_agent_suggested_questions_api(
+    agent_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    knowledge_base_ids: str | None = Query(default=None),
+    knowledge_ids: str | None = Query(default=None),
+    limit: int = Query(default=6, ge=1, le=20),
+) -> NativeAgentSuggestedQuestionsResponse:
+    try:
+        return NativeAgentSuggestedQuestionsResponse.model_validate(
+            native_agent_suggested_questions(
+                session=session,
+                agent_id=agent_id,
+                knowledge_base_ids=_csv_query_values(knowledge_base_ids),
+                knowledge_ids=_csv_query_values(knowledge_ids),
+                limit=limit,
+            )
+        )
     except NativeAgentError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -84,6 +114,23 @@ def update_native_agent_api(
             session=session,
             agent_id=agent_id,
             payload=payload.model_dump(exclude={"confirm_token"}),
+            confirm_token=payload.confirm_token,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/analysis/native-agents/{agent_id}/strategy")
+def update_native_agent_strategy_api(
+    agent_id: str,
+    payload: NativeAgentStrategyUpdateRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict:
+    try:
+        return update_native_agent_strategy(
+            session=session,
+            agent_id=agent_id,
+            payload=payload.model_dump(exclude={"confirm_token"}, exclude_none=True),
             confirm_token=payload.confirm_token,
         )
     except ValueError as exc:
@@ -131,6 +178,8 @@ def run_native_agentqa_task(
             knowledge_base_ids=payload.knowledge_base_ids,
             knowledge_ids=payload.knowledge_ids,
             web_search_enabled=payload.web_search_enabled,
+            answer_mode=payload.answer_mode,
+            confirm_token=payload.confirm_token,
         )
     except NativeAgentError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -204,3 +253,9 @@ def read_output(
         output=GeneratedOutputRead.model_validate(output),
         citations=[CitationRead.model_validate(citation) for citation in citations],
     )
+
+
+def _csv_query_values(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]

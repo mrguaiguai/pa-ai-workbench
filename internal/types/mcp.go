@@ -109,12 +109,73 @@ type MCPResource struct {
 	MimeType    string `json:"mimeType,omitempty"`
 }
 
+// MCPPrompt represents a prompt exposed by an MCP service.
+type MCPPrompt struct {
+	Name        string              `json:"name"`
+	Description string              `json:"description,omitempty"`
+	Arguments   []MCPPromptArgument `json:"arguments,omitempty"`
+}
+
+// MCPPromptArgument represents an argument accepted by an MCP prompt template.
+type MCPPromptArgument struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+}
+
+// MCPPromptReadRequest is the safe read contract for one MCP prompt.
+type MCPPromptReadRequest struct {
+	Arguments json.RawMessage `json:"arguments,omitempty"`
+}
+
+// MCPPromptReadResult is the sanitized prompt read result returned by native API.
+type MCPPromptReadResult struct {
+	Name         string             `json:"name"`
+	Description  string             `json:"description,omitempty"`
+	Messages     []MCPPromptMessage `json:"messages,omitempty"`
+	MessageCount int                `json:"message_count"`
+}
+
+// MCPPromptMessage is a sanitized prompt message. Binary/resource payloads are
+// summarized by content_type and mime_type; raw binary/resource bodies are not returned.
+type MCPPromptMessage struct {
+	Role        string `json:"role"`
+	ContentType string `json:"content_type"`
+	Text        string `json:"text,omitempty"`
+	TextChars   int    `json:"text_chars,omitempty"`
+	MimeType    string `json:"mime_type,omitempty"`
+}
+
 // MCPTestResult represents the result of testing an MCP service connection
 type MCPTestResult struct {
 	Success   bool           `json:"success"`
 	Message   string         `json:"message,omitempty"`
 	Tools     []*MCPTool     `json:"tools,omitempty"`
 	Resources []*MCPResource `json:"resources,omitempty"`
+	Prompts   []*MCPPrompt   `json:"prompts,omitempty"`
+}
+
+// MCPToolExecutionRequest is the safe direct execution contract for one MCP tool.
+type MCPToolExecutionRequest struct {
+	Arguments        json.RawMessage `json:"arguments,omitempty"`
+	ApprovalDecision string          `json:"approval_decision,omitempty"` // approve | reject
+}
+
+// MCPToolExecutionResult is the sanitized execution result returned by the native API.
+type MCPToolExecutionResult struct {
+	Success          bool   `json:"success"`
+	ServiceID        string `json:"service_id"`
+	ServiceName      string `json:"service_name"`
+	ToolName         string `json:"tool_name"`
+	ApprovalRequired bool   `json:"approval_required"`
+	ApprovalDecision string `json:"approval_decision,omitempty"`
+	Executed         bool   `json:"executed"`
+	Rejected         bool   `json:"rejected"`
+	Message          string `json:"message,omitempty"`
+	Output           string `json:"output,omitempty"`
+	OutputChars      int    `json:"output_chars"`
+	ContentItemCount int    `json:"content_item_count"`
+	Error            string `json:"error,omitempty"`
 }
 
 // BeforeCreate is a GORM hook that runs before creating a new MCP service
@@ -282,4 +343,3 @@ func GetDefaultAdvancedConfig() *MCPAdvancedConfig {
 // compile-time invariant of the DTO instead of a runtime call that handlers
 // must remember to make. Builtin-service field stripping is also implemented
 // there.
-

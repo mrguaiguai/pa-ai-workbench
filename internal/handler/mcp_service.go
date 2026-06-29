@@ -68,9 +68,9 @@ func (h *MCPServiceHandler) CreateMCPService(c *gin.Context) {
 
 	// SSRF validation for MCP service URL
 	if service.URL != nil && *service.URL != "" {
-		if err := secutils.ValidateURLForSSRF(*service.URL); err != nil {
+		if err := validateMCPServiceURLForSSRF(*service.URL); err != nil {
 			logger.Warnf(ctx, "SSRF validation failed for MCP service URL: %v", err)
-			c.Error(errors.NewBadRequestError(secutils.FormatSSRFError("MCP service URL", *service.URL, err)))
+			c.Error(errors.NewBadRequestError(formatMCPServiceSSRFError(*service.URL, err)))
 			return
 		}
 	}
@@ -231,9 +231,9 @@ func (h *MCPServiceHandler) UpdateMCPService(c *gin.Context) {
 
 	// SSRF validation for updated MCP service URL
 	if service.URL != nil && *service.URL != "" {
-		if err := secutils.ValidateURLForSSRF(*service.URL); err != nil {
+		if err := validateMCPServiceURLForSSRF(*service.URL); err != nil {
 			logger.Warnf(ctx, "SSRF validation failed for MCP service URL: %v", err)
-			c.Error(errors.NewBadRequestError(secutils.FormatSSRFError("MCP service URL", *service.URL, err)))
+			c.Error(errors.NewBadRequestError(formatMCPServiceSSRFError(*service.URL, err)))
 			return
 		}
 	}
@@ -483,6 +483,102 @@ func (h *MCPServiceHandler) GetMCPServiceResources(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    resources,
+	})
+}
+
+// GetMCPServicePrompts lists prompts exposed by an MCP service.
+func (h *MCPServiceHandler) GetMCPServicePrompts(c *gin.Context) {
+	ctx := c.Request.Context()
+	serviceID := secutils.SanitizeForLog(c.Param("id"))
+
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	if tenantID == 0 {
+		logger.Error(ctx, "Tenant ID is empty")
+		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
+		return
+	}
+
+	prompts, err := h.mcpServiceService.GetMCPServicePrompts(ctx, tenantID, serviceID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": secutils.SanitizeForLog(serviceID)})
+		c.Error(errors.NewInternalServerError("Failed to get MCP service prompts: " + err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    prompts,
+	})
+}
+
+// GetMCPServicePrompt reads one prompt from an MCP service.
+func (h *MCPServiceHandler) GetMCPServicePrompt(c *gin.Context) {
+	ctx := c.Request.Context()
+	serviceID := secutils.SanitizeForLog(c.Param("id"))
+	promptName := c.Param("prompt_name")
+
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	if tenantID == 0 {
+		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
+		return
+	}
+
+	var body types.MCPPromptReadRequest
+	if c.Request.Body != nil {
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.Error(errors.NewBadRequestError(err.Error()))
+			return
+		}
+	}
+
+	result, err := h.mcpServiceService.GetMCPServicePrompt(ctx, tenantID, serviceID, promptName, body.Arguments)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": serviceID, "prompt_name": secutils.SanitizeForLog(promptName)})
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result,
+	})
+}
+
+// ExecuteMCPServiceTool executes a single MCP tool after native approval-policy checks.
+func (h *MCPServiceHandler) ExecuteMCPServiceTool(c *gin.Context) {
+	ctx := c.Request.Context()
+	serviceID := secutils.SanitizeForLog(c.Param("id"))
+	toolName := c.Param("tool_name")
+
+	tenantID := c.GetUint64(types.TenantIDContextKey.String())
+	if tenantID == 0 {
+		c.Error(errors.NewBadRequestError("Tenant ID cannot be empty"))
+		return
+	}
+
+	var body types.MCPToolExecutionRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
+	result, err := h.mcpServiceService.ExecuteMCPServiceTool(
+		ctx,
+		tenantID,
+		serviceID,
+		toolName,
+		body.Arguments,
+		body.ApprovalDecision,
+	)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"service_id": serviceID, "tool_name": secutils.SanitizeForLog(toolName)})
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    result,
 	})
 }
 

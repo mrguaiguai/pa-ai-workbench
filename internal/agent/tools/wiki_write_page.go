@@ -101,6 +101,7 @@ func (t *wikiWritePageTool) Execute(ctx context.Context, args json.RawMessage) (
 	resolvedRefs := resolveSourceRefs(ctx, t.knowledgeService, params.SourceRefs)
 
 	var action string
+	var savedPage *types.WikiPage
 	if existingPage != nil {
 		// Update
 		existingPage.Title = params.Title
@@ -113,7 +114,7 @@ func (t *wikiWritePageTool) Execute(ctx context.Context, args json.RawMessage) (
 			existingPage.SourceRefs = resolvedRefs
 		}
 
-		_, err = t.wikiPageService.UpdatePage(ctx, existingPage)
+		savedPage, err = t.wikiPageService.UpdatePage(ctx, existingPage)
 		if err != nil {
 			return &types.ToolResult{Success: false, Error: "Failed to update page: " + err.Error()}, nil
 		}
@@ -130,7 +131,7 @@ func (t *wikiWritePageTool) Execute(ctx context.Context, args json.RawMessage) (
 			Aliases:         params.Aliases,
 			SourceRefs:      resolvedRefs,
 		}
-		_, err = t.wikiPageService.CreatePage(ctx, newPage)
+		savedPage, err = t.wikiPageService.CreatePage(ctx, newPage)
 		if err != nil {
 			return &types.ToolResult{Success: false, Error: "Failed to create page: " + err.Error()}, nil
 		}
@@ -150,17 +151,25 @@ func (t *wikiWritePageTool) Execute(ctx context.Context, args json.RawMessage) (
 	if len(resolvedRefs) > 0 {
 		output += fmt.Sprintf("\n- Source refs: %d document(s)", len(resolvedRefs))
 	}
+	wikiPageID := ""
+	if savedPage != nil {
+		wikiPageID = savedPage.ID
+	}
 
 	return &types.ToolResult{
 		Success: true,
 		Output:  output,
 		Data: map[string]interface{}{
-			"display_type": "wiki_write_page",
-			"action":       action,
-			"slug":         params.Slug,
-			"title":        params.Title,
-			"page_type":    params.PageType,
-			"summary":      params.Summary,
+			"display_type":      "wiki_write_page",
+			"source_type":       "wiki_page",
+			"action":            action,
+			"knowledge_base_id": kbID,
+			"wiki_page_id":      wikiPageID,
+			"wiki_page_slug":    params.Slug,
+			"slug":              params.Slug,
+			"title":             params.Title,
+			"page_type":         params.PageType,
+			"summary":           params.Summary,
 		},
 	}, nil
 }

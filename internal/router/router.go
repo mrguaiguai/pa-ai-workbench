@@ -830,6 +830,12 @@ func RegisterMCPServiceRoutes(
 		mcpServices.GET("/:id/tools", g.Viewer(), handler.GetMCPServiceTools)
 		// Get MCP service resources — Viewer+
 		mcpServices.GET("/:id/resources", g.Viewer(), handler.GetMCPServiceResources)
+		// Get MCP service prompts — Viewer+
+		mcpServices.GET("/:id/prompts", g.Viewer(), handler.GetMCPServicePrompts)
+		// Read one MCP service prompt — Viewer+ (safe prompt read, no tool execution)
+		mcpServices.POST("/:id/prompts/:prompt_name/read", g.Viewer(), handler.GetMCPServicePrompt)
+		// Execute one MCP tool — Admin+ (external tool execution with approval policy)
+		mcpServices.POST("/:id/tools/:tool_name/execute", g.Admin(), handler.ExecuteMCPServiceTool)
 		// Per-field credential subresource: secrets never travel via the main
 		// PUT body. See internal/handler/mcp_credentials.go for the contract. — Admin+
 		mcpServices.PUT("/:id/credentials", g.Admin(), credHandler.Put)

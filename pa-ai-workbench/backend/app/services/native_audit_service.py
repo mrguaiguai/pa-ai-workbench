@@ -146,6 +146,7 @@ def list_native_mutation_audits(
     target_type: str | None = None,
     target_id: str | None = None,
     status: str | None = None,
+    wnid_capability: str | None = None,
 ) -> list[NativeMutationAudit]:
     statement = select(NativeMutationAudit)
     if capability:
@@ -161,13 +162,54 @@ def list_native_mutation_audits(
     statement = statement.order_by(NativeMutationAudit.created_at.desc()).limit(
         max(min(limit, 100), 1)
     )
-    return list(session.exec(statement).all())
+    audits = list(session.exec(statement).all())
+    if wnid_capability and wnid_capability != "all":
+        audits = [
+            audit
+            for audit in audits
+            if native_audit_wnid_summary(audit)["wnid_capability"] == wnid_capability
+        ]
+    return audits
+
+
+def native_audit_wnid_summary(audit: NativeMutationAudit) -> dict[str, str | None]:
+    wnid_capability = _audit_wnid_capability(audit)
+    if audit.status == "succeeded":
+        evidence_state = "audit_succeeded"
+    elif audit.status == "failed":
+        evidence_state = "audit_failed"
+    elif audit.status == "blocked":
+        evidence_state = "audit_blocked"
+    else:
+        evidence_state = "audit_pending"
+    return {
+        "wnid_capability": wnid_capability,
+        "wnid_evidence_state": evidence_state,
+    }
 
 
 def _safe_json(value: dict[str, Any] | None) -> str | None:
     if not value:
         return None
     return json.dumps(_safe_summary(value), ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _audit_wnid_capability(audit: NativeMutationAudit) -> str | None:
+    operation = str(audit.operation or "")
+    capability = str(audit.capability or "")
+    if operation == "weknora_agent_strategy_update":
+        return "strategy_mutation"
+    if operation == "weknora_agentqa_wiki_mode_run":
+        return "wiki_mode"
+    if capability == "mcp":
+        return "mcp_tools"
+    if capability == "web_search":
+        return "web_search"
+    if capability == "custom_agent":
+        return "react_agentqa"
+    if capability == "wiki":
+        return "wiki_mode"
+    return None
 
 
 def _safe_summary(value: Any) -> Any:

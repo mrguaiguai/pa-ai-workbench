@@ -12,8 +12,11 @@ from app.database import get_session
 from app.services.mcp_service import clear_native_mcp_credential
 from app.services.mcp_service import create_native_mcp_service
 from app.services.mcp_service import delete_native_mcp_service
+from app.services.mcp_service import execute_native_mcp_tool
 from app.services.mcp_service import native_mcp_overview
 from app.services.mcp_service import native_mcp_service_detail
+from app.services.mcp_service import read_native_mcp_prompt
+from app.services.mcp_service import set_native_mcp_tool_approval
 from app.services.mcp_service import test_native_mcp_service
 from app.services.mcp_service import update_native_mcp_credentials
 from app.services.mcp_service import update_native_mcp_service
@@ -50,6 +53,23 @@ class NativeMCPCredentialsRequest(BaseModel):
 
 
 class NativeMCPCredentialClearRequest(BaseModel):
+    confirm_token: str | None = Field(default=None, max_length=120)
+
+
+class NativeMCPToolApprovalRequest(BaseModel):
+    require_approval: bool = True
+    confirm_token: str | None = Field(default=None, max_length=120)
+
+
+class NativeMCPToolExecutionRequest(BaseModel):
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    approval_decision: str | None = Field(default=None, max_length=16)
+    conversation_id: str | None = Field(default=None, max_length=80)
+    confirm_token: str | None = Field(default=None, max_length=120)
+
+
+class NativeMCPPromptReadRequest(BaseModel):
+    arguments: dict[str, Any] = Field(default_factory=dict)
     confirm_token: str | None = Field(default=None, max_length=120)
 
 
@@ -149,5 +169,53 @@ def test_native_mcp_service_api(
 ) -> dict[str, Any]:
     return test_native_mcp_service(
         service_id=service_id,
+        confirm_token=request.confirm_token,
+    )
+
+
+@router.post("/native/services/{service_id}/prompts/{prompt_name}/read")
+def read_native_mcp_prompt_api(
+    service_id: str,
+    prompt_name: str,
+    request: NativeMCPPromptReadRequest,
+) -> dict[str, Any]:
+    return read_native_mcp_prompt(
+        service_id=service_id,
+        prompt_name=prompt_name,
+        arguments=request.arguments,
+        confirm_token=request.confirm_token,
+    )
+
+
+@router.put("/native/services/{service_id}/tool-approvals/{tool_name}")
+def set_native_mcp_tool_approval_api(
+    service_id: str,
+    tool_name: str,
+    request: NativeMCPToolApprovalRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict[str, Any]:
+    return set_native_mcp_tool_approval(
+        session=session,
+        service_id=service_id,
+        tool_name=tool_name,
+        require_approval=request.require_approval,
+        confirm_token=request.confirm_token,
+    )
+
+
+@router.post("/native/services/{service_id}/tools/{tool_name}/execute")
+def execute_native_mcp_tool_api(
+    service_id: str,
+    tool_name: str,
+    request: NativeMCPToolExecutionRequest,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict[str, Any]:
+    return execute_native_mcp_tool(
+        session=session,
+        service_id=service_id,
+        tool_name=tool_name,
+        arguments=request.arguments,
+        approval_decision=request.approval_decision,
+        conversation_id=request.conversation_id,
         confirm_token=request.confirm_token,
     )

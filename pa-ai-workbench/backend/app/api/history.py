@@ -28,6 +28,8 @@ def list_generated_history(
     citation_source: Annotated[str | None, Query()] = None,
     source_type: Annotated[str | None, Query()] = None,
     evidence_state: Annotated[str | None, Query()] = None,
+    wnid_capability: Annotated[str | None, Query()] = None,
+    wnid_evidence_state: Annotated[str | None, Query()] = None,
     has_warnings: Annotated[bool | None, Query()] = None,
 ) -> HistoryListResponse:
     outputs = list_history(
@@ -38,6 +40,8 @@ def list_generated_history(
         citation_source=citation_source,
         source_type=source_type,
         evidence_state=evidence_state,
+        wnid_capability=wnid_capability,
+        wnid_evidence_state=wnid_evidence_state,
         has_warnings=has_warnings,
     )
     return HistoryListResponse(

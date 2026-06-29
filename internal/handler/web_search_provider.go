@@ -44,10 +44,10 @@ type CreateProviderRequest struct {
 
 // UpdateProviderRequest defines the request body for updating a provider
 type UpdateProviderRequest struct {
-	Name        string                            `json:"name"`
-	Description string                            `json:"description"`
-	Parameters  types.WebSearchProviderParameters `json:"parameters"`
-	IsDefault   bool                              `json:"is_default"`
+	Name        string                             `json:"name"`
+	Description string                             `json:"description"`
+	Parameters  *types.WebSearchProviderParameters `json:"parameters"`
+	IsDefault   *bool                              `json:"is_default"`
 }
 
 // --- helpers ---
@@ -217,12 +217,15 @@ func (h *WebSearchProviderHandler) UpdateProvider(c *gin.Context) {
 	// behind the /credentials subresource. Force-preserve the stored key
 	// regardless of what the body says; log a warning if a stale caller
 	// passes one so we can spot them.
-	if req.Parameters.APIKey != "" && req.Parameters.APIKey != existing.Parameters.APIKey {
+	if req.Parameters != nil && req.Parameters.APIKey != "" && req.Parameters.APIKey != existing.Parameters.APIKey {
 		logger.Warnf(ctx,
 			"deprecated: api_key in PUT /web-search-providers/%s body is ignored; use PUT /credentials instead",
 			secutils.SanitizeForLog(id))
 	}
-	mergedParams := req.Parameters
+	mergedParams := existing.Parameters
+	if req.Parameters != nil {
+		mergedParams = *req.Parameters
+	}
 	mergedParams.APIKey = existing.Parameters.APIKey
 	// Preserve ExtraConfig when the request omits it (nil); otherwise a
 	// partial PUT would silently drop tenant-configured extras.
@@ -251,7 +254,10 @@ func (h *WebSearchProviderHandler) UpdateProvider(c *gin.Context) {
 		Provider:    existing.Provider, // Provider type is immutable after creation
 		Description: secutils.SanitizeForLog(mergedDescription),
 		Parameters:  mergedParams,
-		IsDefault:   req.IsDefault,
+		IsDefault:   existing.IsDefault,
+	}
+	if req.IsDefault != nil {
+		provider.IsDefault = *req.IsDefault
 	}
 
 	if err := h.service.UpdateProvider(ctx, provider); err != nil {

@@ -113,6 +113,8 @@ class NativeMutationAuditRead(BaseModel):
     request_summary_json: str | None = None
     response_summary_json: str | None = None
     error_message: str | None = None
+    wnid_capability: str | None = None
+    wnid_evidence_state: str = "unknown"
     created_at: datetime
 
 
@@ -326,9 +328,14 @@ class GeneratedOutputRead(BaseModel):
     mock_citation_count: int = 0
     document_citation_count: int = 0
     wiki_citation_count: int = 0
+    web_search_citation_count: int = 0
     traceable_citation_count: int = 0
     warning_count: int = 0
     evidence_state: str = "unknown"
+    wnid_capability: str | None = None
+    wnid_capabilities: list[str] = Field(default_factory=list)
+    wnid_evidence_state: str = "unknown"
+    evidence_source_types: list[str] = Field(default_factory=list)
     citation_blocked: bool = False
     citation_blocker: str | None = None
     created_at: datetime
@@ -497,9 +504,9 @@ class AnalysisRunRequest(BaseModel):
         normalized: list[str] = []
         for value in values:
             source_type = _normalize_source_type(value)
-            if source_type not in {"document_chunk", "wiki_page"}:
+            if source_type not in {"document_chunk", "wiki_page", "web_search"}:
                 raise ValueError(
-                    "expected_source_types must contain document_chunk or wiki_page"
+                    "expected_source_types must contain document_chunk, wiki_page, or web_search"
                 )
             if source_type not in normalized:
                 normalized.append(source_type)
@@ -540,6 +547,7 @@ class NativeAgentItem(BaseModel):
     rerank_configured: bool = False
     web_search_enabled: bool = False
     suggested_prompt_count: int = 0
+    strategy: dict = Field(default_factory=dict)
 
 
 class NativeAgentPreset(BaseModel):
@@ -569,6 +577,40 @@ class NativeAgentCatalogResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class NativeAgentSuggestedQuestionsResponse(BaseModel):
+    schema_version: str
+    source: str = "weknora_api"
+    status: str
+    agent_id: str | None = None
+    knowledge_base_ids: list[str] = Field(default_factory=list)
+    knowledge_ids: list[str] = Field(default_factory=list)
+    questions: list[NativeAgentSuggestedQuestion] = Field(default_factory=list)
+    source_counts: dict[str, int] = Field(default_factory=dict)
+    surfaces: dict[str, str] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class NativeAgentStrategyUpdateRequest(BaseModel):
+    confirm_token: str | None = Field(default=None, max_length=120)
+    system_prompt: str | None = Field(default=None, max_length=20000)
+    context_template: str | None = Field(default=None, max_length=20000)
+    allowed_tools: list[str] | None = None
+    mcp_selection_mode: str | None = Field(default=None, max_length=40)
+    mcp_services: list[str] | None = None
+    web_search_enabled: bool | None = None
+    web_search_provider_id: str | None = Field(default=None, max_length=120)
+    web_fetch_enabled: bool | None = None
+    web_fetch_top_n: int | None = Field(default=None, ge=0, le=20)
+    multi_turn_enabled: bool | None = None
+    history_turns: int | None = Field(default=None, ge=0, le=50)
+    embedding_top_k: int | None = Field(default=None, ge=0, le=200)
+    keyword_threshold: float | None = Field(default=None, ge=0, le=1)
+    vector_threshold: float | None = Field(default=None, ge=0, le=1)
+    rerank_top_k: int | None = Field(default=None, ge=0, le=200)
+    rerank_threshold: float | None = Field(default=None, ge=-10, le=10)
+    suggested_prompts: list[str] | None = None
+
+
 class NativeAgentQaRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     agent_id: str | None = Field(default=None, max_length=120)
@@ -577,15 +619,31 @@ class NativeAgentQaRequest(BaseModel):
     knowledge_base_ids: list[str] = Field(default_factory=list)
     knowledge_ids: list[str] = Field(default_factory=list)
     web_search_enabled: bool = False
+    answer_mode: str = Field(default="qa", max_length=40)
+    confirm_token: str | None = Field(default=None, max_length=120)
 
 
 class NativeAgentQaRuntime(BaseModel):
     native_session_id: str | None = None
+    answer_mode: str = "qa"
+    native_session_reused: bool = False
+    native_session_source: str = "created"
     agent_id: str | None = None
     agent_name: str | None = None
     event_counts: dict = Field(default_factory=dict)
+    event_sequence: list[str] = Field(default_factory=list)
+    run_contract: dict = Field(default_factory=dict)
+    selected_agent: dict = Field(default_factory=dict)
+    conversation_continuity: dict = Field(default_factory=dict)
     tool_names: list[str] = Field(default_factory=list)
     reference_count: int = 0
+    reference_event_source: str = "references"
+    web_reference_count: int = 0
+    web_providers: list[str] = Field(default_factory=list)
+    wiki_reference_count: int = 0
+    wiki_slugs: list[str] = Field(default_factory=list)
+    wiki_mode_mutation_required: bool = False
+    wiki_mode_audit: dict | None = None
     saved_citation_count: int = 0
     citation_blocked: bool = False
     warnings: list[str] = Field(default_factory=list)
@@ -824,13 +882,16 @@ class NativeKnowledgeChatRequest(BaseModel):
     knowledge_base_ids: list[str] = Field(default_factory=list)
     knowledge_ids: list[str] = Field(default_factory=list)
     web_search_enabled: bool = False
+    answer_mode: str = Field(default="qa", max_length=40)
     current_run: dict = Field(default_factory=dict)
 
 
 class NativeKnowledgeChatRuntime(BaseModel):
     native_session_id: str | None = None
+    answer_mode: str = "qa"
     event_counts: dict = Field(default_factory=dict)
     reference_count: int = 0
+    reference_event_source: str = "references"
     saved_citation_count: int = 0
     warnings: list[str] = Field(default_factory=list)
     assistant_message_id: str | None = None

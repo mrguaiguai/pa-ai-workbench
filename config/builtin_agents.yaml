@@ -69,6 +69,7 @@ builtin_agents:
       agent_mode: "smart-reasoning"
       agent_type: "rag-qa"
       system_prompt: ""
+      rerank_model_id: "builtin-rerank-default"
       temperature: 0.7
       max_completion_tokens: 2048
       max_iterations: 50
@@ -232,4 +233,3 @@ builtin_agents:
       vector_threshold: 0.5
       rerank_top_k: 10
       rerank_threshold: 0.3
-

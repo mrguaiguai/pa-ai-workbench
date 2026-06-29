@@ -31,6 +31,7 @@
 
 # 构建和依赖文件
 node_modules/
+.pnpm-store/
 /dist/
 /build/
 *.log

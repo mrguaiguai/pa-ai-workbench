@@ -4,10 +4,11 @@ import {
   Database,
   FileClock,
   Gauge,
+  MessagesSquare,
   MessageSquareText,
 } from "lucide-react";
 
-type HomeRoute = "/library" | "/analysis" | "/wiki" | "/history" | "/capabilities";
+type HomeRoute = "/library" | "/dialogue" | "/analysis" | "/wiki" | "/history" | "/capabilities";
 
 type HomePageProps = {
   navigateTo: (route: HomeRoute) => void;
@@ -34,13 +35,22 @@ const homeEntries: HomeEntry[] = [
     tone: "blue",
   },
   {
+    label: "智能对话",
+    title: "运行 AgentQA",
+    description: "选择原生 Agent，查看策略、工具、引用和历史。",
+    action: "开始对话",
+    route: "/dialogue",
+    icon: MessagesSquare,
+    tone: "green",
+  },
+  {
     label: "智能分析",
     title: "发起分析",
     description: "围绕问题、政策或案例生成分析结果。",
     action: "开始分析",
     route: "/analysis",
     icon: MessageSquareText,
-    tone: "green",
+    tone: "blue",
   },
   {
     label: "Wiki",

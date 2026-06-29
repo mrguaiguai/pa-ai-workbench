@@ -1,11 +1,11 @@
 import {
-  BarChart3,
   BookOpenText,
   Database,
   FileClock,
   Gauge,
   Home,
   Library,
+  MessagesSquare,
   MessageSquareText,
   PanelLeft,
   Search,
@@ -13,9 +13,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { HomePage } from "./pages/HomePage";
-import { AnalysisPage } from "./pages/AnalysisPage";
 import { CapabilityCenterPage } from "./pages/CapabilityCenterPage";
+import { DialoguePage } from "./pages/DialoguePage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { RagDebugPage } from "./pages/RagDebugPage";
@@ -24,6 +23,7 @@ import { WikiPage } from "./pages/WikiPage";
 type RouteId =
   | "/"
   | "/library"
+  | "/dialogue"
   | "/analysis"
   | "/wiki"
   | "/history"
@@ -37,18 +37,18 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { id: "/", label: "首页", icon: Home },
+  { id: "/", label: "智能对话", icon: MessagesSquare },
   { id: "/library", label: "资料库", icon: Library },
-  { id: "/analysis", label: "智能分析", icon: MessageSquareText },
   { id: "/wiki", label: "Wiki", icon: BookOpenText },
   { id: "/history", label: "历史", icon: FileClock },
   { id: "/capabilities", label: "设置", icon: Gauge },
 ];
 
 const pageMeta: Record<RouteId, { title: string; eyebrow: string; icon: typeof Home }> = {
-  "/": { title: "工作台首页", eyebrow: "总览", icon: BarChart3 },
+  "/": { title: "智能对话", eyebrow: "Dialogue", icon: MessagesSquare },
   "/library": { title: "资料库", eyebrow: "资料管理", icon: Database },
-  "/analysis": { title: "智能分析台", eyebrow: "分析", icon: MessageSquareText },
+  "/dialogue": { title: "智能对话", eyebrow: "Dialogue", icon: MessagesSquare },
+  "/analysis": { title: "智能分析已冻结", eyebrow: "冻结", icon: MessageSquareText },
   "/rag-debug": { title: "RAG 检索调试", eyebrow: "检索调试", icon: Search },
   "/wiki": { title: "Wiki 知识库", eyebrow: "Wiki", icon: Search },
   "/history": { title: "生成历史", eyebrow: "历史", icon: FileClock },
@@ -59,6 +59,7 @@ function getHashRoute(): RouteId {
   const hash = window.location.hash.replace(/^#/, "").split("?")[0];
   if (
     hash === "/library" ||
+    hash === "/dialogue" ||
     hash === "/analysis" ||
     hash === "/rag-debug" ||
     hash === "/wiki" ||
@@ -81,6 +82,7 @@ export function App() {
 
   const currentPage = useMemo(() => pageMeta[route], [route]);
   const PageIcon = currentPage.icon;
+  const isDialogueRoute = route === "/" || route === "/dialogue";
   const navigateTo = (nextRoute: RouteId) => {
     window.location.hash = nextRoute;
   };
@@ -100,7 +102,7 @@ export function App() {
         <nav className="nav-list">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = item.id === route;
+            const isActive = item.id === route || (item.id === "/" && route === "/dialogue");
             return (
               <a
                 className={isActive ? "nav-link active" : "nav-link"}
@@ -117,42 +119,50 @@ export function App() {
         </nav>
       </aside>
 
-      <main className="main-panel">
-        <header className="topbar">
-          <button className="icon-button" type="button" aria-label="导航">
-            <PanelLeft size={18} aria-hidden="true" />
-          </button>
-          <div className="topbar-title">
-            <span>{currentPage.eyebrow}</span>
-            <strong>{currentPage.title}</strong>
-          </div>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label="设置"
-            onClick={() => navigateTo("/capabilities")}
-          >
-            <Settings size={18} aria-hidden="true" />
-          </button>
-        </header>
-
-        <section className="page-surface" aria-labelledby="page-title">
-          <div className="page-heading">
-            <div className="page-icon" aria-hidden="true">
-              <PageIcon size={22} />
+      <main className={isDialogueRoute ? "main-panel dialogue-main-panel" : "main-panel"}>
+        {!isDialogueRoute ? (
+          <header className="topbar">
+            <button className="icon-button" type="button" aria-label="导航">
+              <PanelLeft size={18} aria-hidden="true" />
+            </button>
+            <div className="topbar-title">
+              <span>{currentPage.eyebrow}</span>
+              <strong>{currentPage.title}</strong>
             </div>
-            <div>
-              <p>{currentPage.eyebrow}</p>
-              <h1 id="page-title">{currentPage.title}</h1>
-            </div>
-          </div>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="设置"
+              onClick={() => navigateTo("/capabilities")}
+            >
+              <Settings size={18} aria-hidden="true" />
+            </button>
+          </header>
+        ) : null}
 
-          {route === "/" ? (
-            <HomePage navigateTo={navigateTo} />
+        <section
+          className={isDialogueRoute ? "page-surface dialogue-route-surface" : "page-surface"}
+          aria-label={isDialogueRoute ? currentPage.title : undefined}
+          aria-labelledby={isDialogueRoute ? undefined : "page-title"}
+        >
+          {!isDialogueRoute ? (
+            <div className="page-heading">
+              <div className="page-icon" aria-hidden="true">
+                <PageIcon size={22} />
+              </div>
+              <div>
+                <p>{currentPage.eyebrow}</p>
+                <h1 id="page-title">{currentPage.title}</h1>
+              </div>
+            </div>
+          ) : null}
+
+          {route === "/" || route === "/dialogue" ? (
+            <DialoguePage />
           ) : route === "/library" ? (
             <LibraryPage />
           ) : route === "/analysis" ? (
-            <AnalysisPage />
+            <FrozenAnalysisPage navigateTo={navigateTo} />
           ) : route === "/rag-debug" ? (
             <RagDebugPage />
           ) : route === "/wiki" ? (
@@ -190,6 +200,24 @@ export function App() {
           )}
         </section>
       </main>
+    </div>
+  );
+}
+
+function FrozenAnalysisPage({ navigateTo }: { navigateTo: (route: RouteId) => void }) {
+  return (
+    <div className="frozen-analysis-page" aria-label="智能分析冻结说明">
+      <div className="frozen-analysis-panel">
+        <MessageSquareText size={24} aria-hidden="true" />
+        <div>
+          <span>功能已并入智能对话</span>
+          <h2>智能分析暂时冻结</h2>
+          <p>政策分析和案例复盘已作为回答类型进入智能对话，旧分析表单本阶段不再作为独立入口展示。</p>
+        </div>
+        <button className="primary-action compact" type="button" onClick={() => navigateTo("/")}>
+          进入智能对话
+        </button>
+      </div>
     </div>
   );
 }

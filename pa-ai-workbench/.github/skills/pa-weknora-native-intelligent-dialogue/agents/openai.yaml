@@ -1,0 +1,4 @@
+interface:
+  display_name: "PA WeKnora Native Intelligent Dialogue"
+  short_description: "Drive PA intelligent dialogue native completion"
+  default_prompt: "Use $pa-weknora-native-intelligent-dialogue to execute the next WNID task with live evidence and no mock pass."

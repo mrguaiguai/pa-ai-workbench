@@ -33,11 +33,17 @@ type MCPClient interface {
 	// ListResources retrieves the list of available resources from the MCP service
 	ListResources(ctx context.Context) ([]*types.MCPResource, error)
 
+	// ListPrompts retrieves the list of available prompts from the MCP service
+	ListPrompts(ctx context.Context) ([]*types.MCPPrompt, error)
+
 	// CallTool calls a tool on the MCP service
 	CallTool(ctx context.Context, name string, args map[string]interface{}) (*CallToolResult, error)
 
 	// ReadResource reads a resource from the MCP service
 	ReadResource(ctx context.Context, uri string) (*ReadResourceResult, error)
+
+	// GetPrompt reads one prompt from the MCP service
+	GetPrompt(ctx context.Context, name string, args map[string]string) (*types.MCPPromptReadResult, error)
 
 	// IsConnected returns true if the client is connected
 	IsConnected() bool
@@ -284,6 +290,39 @@ func (c *mcpGoClient) ListResources(ctx context.Context) ([]*types.MCPResource, 
 	return resources, nil
 }
 
+// ListPrompts retrieves the list of available prompts
+func (c *mcpGoClient) ListPrompts(ctx context.Context) ([]*types.MCPPrompt, error) {
+	if !c.initialized {
+		return nil, ErrNotConnected
+	}
+
+	req := mcp.ListPromptsRequest{}
+	result, err := c.client.ListPrompts(ctx, req)
+	if err != nil {
+		c.checkErrorAndDisconnectIfNeeded(err)
+		return nil, fmt.Errorf("failed to list prompts: %w", err)
+	}
+
+	prompts := make([]*types.MCPPrompt, len(result.Prompts))
+	for i, prompt := range result.Prompts {
+		args := make([]types.MCPPromptArgument, 0, len(prompt.Arguments))
+		for _, arg := range prompt.Arguments {
+			args = append(args, types.MCPPromptArgument{
+				Name:        arg.Name,
+				Description: arg.Description,
+				Required:    arg.Required,
+			})
+		}
+		prompts[i] = &types.MCPPrompt{
+			Name:        prompt.Name,
+			Description: prompt.Description,
+			Arguments:   args,
+		}
+	}
+
+	return prompts, nil
+}
+
 // CallTool calls a tool on the MCP service
 func (c *mcpGoClient) CallTool(ctx context.Context, name string, args map[string]interface{}) (*CallToolResult, error) {
 	if !c.initialized {
@@ -365,6 +404,77 @@ func (c *mcpGoClient) ReadResource(ctx context.Context, uri string) (*ReadResour
 	return &ReadResourceResult{
 		Contents: contents,
 	}, nil
+}
+
+// GetPrompt reads one prompt from the MCP service
+func (c *mcpGoClient) GetPrompt(ctx context.Context, name string, args map[string]string) (*types.MCPPromptReadResult, error) {
+	if !c.initialized {
+		return nil, ErrNotConnected
+	}
+
+	req := mcp.GetPromptRequest{
+		Params: mcp.GetPromptParams{
+			Name:      name,
+			Arguments: args,
+		},
+	}
+
+	result, err := c.client.GetPrompt(ctx, req)
+	if err != nil {
+		c.checkErrorAndDisconnectIfNeeded(err)
+		return nil, fmt.Errorf("failed to get prompt: %w", err)
+	}
+
+	messages := make([]types.MCPPromptMessage, 0, len(result.Messages))
+	for _, message := range result.Messages {
+		messages = append(messages, safeMCPPromptMessage(message))
+	}
+
+	return &types.MCPPromptReadResult{
+		Name:         name,
+		Description:  result.Description,
+		Messages:     messages,
+		MessageCount: len(messages),
+	}, nil
+}
+
+func safeMCPPromptMessage(message mcp.PromptMessage) types.MCPPromptMessage {
+	out := types.MCPPromptMessage{
+		Role: string(message.Role),
+	}
+	if textContent, ok := mcp.AsTextContent(message.Content); ok {
+		out.ContentType = "text"
+		out.Text = truncateMCPPromptText(textContent.Text, 1000)
+		out.TextChars = len([]rune(textContent.Text))
+		return out
+	}
+	if imageContent, ok := mcp.AsImageContent(message.Content); ok {
+		out.ContentType = "image"
+		out.MimeType = imageContent.MIMEType
+		return out
+	}
+	if audioContent, ok := mcp.AsAudioContent(message.Content); ok {
+		out.ContentType = "audio"
+		out.MimeType = audioContent.MIMEType
+		return out
+	}
+	if _, ok := mcp.AsEmbeddedResource(message.Content); ok {
+		out.ContentType = "resource"
+		return out
+	}
+	out.ContentType = "unknown"
+	return out
+}
+
+func truncateMCPPromptText(text string, maxRunes int) string {
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	if maxRunes <= 3 {
+		return string(runes[:maxRunes])
+	}
+	return string(runes[:maxRunes-3]) + "..."
 }
 
 // IsConnected returns true if the client is connected

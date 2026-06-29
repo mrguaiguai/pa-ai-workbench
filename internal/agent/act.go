@@ -516,8 +516,12 @@ func extractKnowledgeReferencesFromToolResult(toolName string, result *types.Too
 	switch toolName {
 	case agenttools.ToolKnowledgeSearch:
 		return searchReferencesFromData(result.Data)
+	case agenttools.ToolWebSearch:
+		return webSearchReferencesFromData(result.Data)
 	case agenttools.ToolWikiSearch, agenttools.ToolWikiReadPage:
 		return wikiReferencesFromData(result.Data)
+	case agenttools.ToolWikiWritePage:
+		return wikiMutationReferencesFromData(result.Data)
 	default:
 		return nil
 	}
@@ -533,6 +537,16 @@ func searchReferencesFromData(data map[string]interface{}) []*types.SearchResult
 	return refs
 }
 
+func webSearchReferencesFromData(data map[string]interface{}) []*types.SearchResult {
+	var refs []*types.SearchResult
+	for _, item := range mapItems(data["results"]) {
+		if ref := webSearchReferenceFromMap(item); ref != nil {
+			refs = append(refs, ref)
+		}
+	}
+	return refs
+}
+
 func wikiReferencesFromData(data map[string]interface{}) []*types.SearchResult {
 	var refs []*types.SearchResult
 	for _, item := range mapItems(data["wiki_pages"]) {
@@ -541,6 +555,13 @@ func wikiReferencesFromData(data map[string]interface{}) []*types.SearchResult {
 		}
 	}
 	return refs
+}
+
+func wikiMutationReferencesFromData(data map[string]interface{}) []*types.SearchResult {
+	if ref := wikiPageReferenceFromMap(data); ref != nil {
+		return []*types.SearchResult{ref}
+	}
+	return nil
 }
 
 func appendUniqueKnowledgeReferences(state *types.AgentState, refs []*types.SearchResult) []*types.SearchResult {
@@ -589,6 +610,46 @@ func searchResultFromMap(item map[string]interface{}) *types.SearchResult {
 		Score:             floatFromMap(item, "score"),
 		KnowledgeFilename: stringFromMap(item, "knowledge_filename"),
 		KnowledgeSource:   stringFromMap(item, "knowledge_source"),
+	}
+}
+
+func webSearchReferenceFromMap(item map[string]interface{}) *types.SearchResult {
+	url := stringFromMap(item, "url")
+	title := stringFromMap(item, "title")
+	snippet := stringFromMap(item, "snippet")
+	source := stringFromMap(item, "source")
+	if url == "" || title == "" {
+		return nil
+	}
+	content := title
+	if snippet != "" {
+		content += "\n\n" + snippet
+	}
+	metadata := map[string]string{
+		"url":     url,
+		"title":   title,
+		"snippet": snippet,
+		"source":  source,
+	}
+	if publishedAt := stringFromMap(item, "published_at"); publishedAt != "" {
+		metadata["published_at"] = publishedAt
+	}
+	rank := intFromMap(item, "result_index")
+	if rank <= 0 {
+		rank = 1
+	}
+	return &types.SearchResult{
+		ID:              url,
+		Content:         content,
+		KnowledgeID:     url,
+		KnowledgeTitle:  title,
+		ChunkIndex:      rank,
+		Seq:             rank,
+		Score:           0.6,
+		KnowledgeSource: "web_search",
+		SourceType:      "web_search",
+		ChunkType:       string(types.ChunkTypeWebSearch),
+		Metadata:        metadata,
 	}
 }
 

@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from sqlmodel import Session
 
 from app.config import Settings
 from app.config import get_settings
+from app.models import GeneratedOutput
+from app.models import GenerationTask
 from app.models import NativeMutationAudit
+from app.services.conversation_service import add_message
+from app.services.conversation_service import create_conversation
+from app.services.conversation_service import get_conversation
 from app.services.native_audit_service import NativeConfirmationError
 from app.services.native_audit_service import confirmation_surface
 from app.services.native_audit_service import record_native_mutation_audit
@@ -19,6 +25,8 @@ from knowledge_engine.errors import KnowledgeBackendUnavailableError
 MCP_TEST_CONFIRM_TOKEN = "TEST_NATIVE_MCP_SERVICE"
 MCP_MUTATION_CONFIRM_TOKEN = "CONFIRM_NATIVE_MCP_MUTATION"
 MCP_MUTATION_CONFIRM_TOKEN_ID = "native_mcp_mutation"
+MCP_EXECUTION_CONFIRM_TOKEN = "EXECUTE_NATIVE_MCP_TOOL"
+MCP_EXECUTION_CONFIRM_TOKEN_ID = "native_mcp_tool_execution"
 MCP_MUTATION_ACTIONS = {
     "create": "weknora_mcp_service_create",
     "update": "weknora_mcp_service_update",
@@ -73,7 +81,7 @@ def native_mcp_overview(limit: int = 5) -> dict[str, Any]:
         name="resources",
         native_endpoint="/api/v1/mcp-services/{id}/resources",
     )
-    overview["surfaces"]["prompts"] = _mcp_prompts_blocker_surface()
+    overview["surfaces"]["prompts"] = _mcp_prompts_probe_surface(safe_services)
     overview["surfaces"]["approval"] = _approval_overview_surface(
         backend,
         enabled_services[:service_limit],
@@ -132,7 +140,7 @@ def native_mcp_service_detail(service_id: str) -> dict[str, Any]:
         name="resources",
         native_endpoint="/api/v1/mcp-services/{id}/resources",
     )
-    response["surfaces"]["prompts"] = _mcp_prompts_blocker_surface()
+    response["surfaces"]["prompts"] = _mcp_prompts_probe_surface([service])
     response["surfaces"]["approval"] = _approval_detail_surface(backend, service_id)
     response["surfaces"]["safe_test"] = {
         "status": "blocked",
@@ -185,7 +193,8 @@ def test_native_mcp_service(service_id: str, confirm_token: str | None) -> dict[
             "reason": f"native_test: {_error_code(exc)}",
             "success": False,
             "tool_count": 0,
-            "resource_count": 0,
+                "resource_count": 0,
+                "prompt_count": 0,
         }
         response["warnings"].append(f"partial: native_test: {_error_code(exc)}")
         return response
@@ -198,10 +207,16 @@ def test_native_mcp_service(service_id: str, confirm_token: str | None) -> dict[
         "reason": result.get("reason") if not success else None,
         "tool_count": int(result.get("tool_count") or 0),
         "resource_count": int(result.get("resource_count") or 0),
+        "prompt_count": int(result.get("prompt_count") or 0),
         "sample_tools": result.get("sample_tools") if isinstance(result.get("sample_tools"), list) else [],
         "sample_resources": (
             result.get("sample_resources")
             if isinstance(result.get("sample_resources"), list)
+            else []
+        ),
+        "sample_prompts": (
+            result.get("sample_prompts")
+            if isinstance(result.get("sample_prompts"), list)
             else []
         ),
     }
@@ -213,12 +228,313 @@ def test_native_mcp_service(service_id: str, confirm_token: str | None) -> dict[
         "status": "live" if success else "partial",
         "count": int(result.get("resource_count") or 0),
     }
-    response["surfaces"]["prompts"] = _mcp_prompts_blocker_surface()
+    response["surfaces"]["prompts"] = {
+        "status": "live" if success else "partial",
+        "count": int(result.get("prompt_count") or 0),
+        "sample_prompts": result.get("sample_prompts") if isinstance(result.get("sample_prompts"), list) else [],
+        "read_endpoint": "/api/mcp/native/services/{service_id}/prompts/{prompt_name}/read",
+    }
     response["surfaces"]["tool_execution"] = _mcp_tool_execution_blocker_surface(
         reason="no_live_mcp_tool_available"
         if int(result.get("tool_count") or 0) <= 0
         else "pa_confirmed_mcp_tool_execution_workflow_missing",
     )
+    return response
+
+
+def read_native_mcp_prompt(
+    *,
+    service_id: str,
+    prompt_name: str,
+    arguments: dict[str, Any] | None = None,
+    confirm_token: str | None = None,
+) -> dict[str, Any]:
+    settings = get_settings()
+    response = _base_response(settings)
+    response["schema_version"] = "wnid-p3-03-mcp-prompt-read"
+    response["management_mode"] = "confirmed_mcp_prompt_read"
+    if settings.knowledge_backend != "weknora_api":
+        response["status"] = "backlog"
+        response["surfaces"]["prompt_read"] = {
+            "status": "backlog",
+            "reason": "weknora_api backend is required for native MCP prompt read",
+        }
+        return response
+
+    service_id = str(service_id or "").strip()
+    prompt_name = str(prompt_name or "").strip()
+    if not service_id or not prompt_name:
+        response["surfaces"]["prompt_read"] = {
+            "status": "blocked",
+            "reason": "service_id and prompt_name are required",
+        }
+        return response
+
+    if confirm_token != MCP_TEST_CONFIRM_TOKEN:
+        response["surfaces"]["prompt_read"] = {
+            "status": "blocked",
+            "reason": "confirmation_required_before_external_mcp_prompt_read",
+            "confirm_token": MCP_TEST_CONFIRM_TOKEN,
+            "confirm_token_id": "native_mcp_prompt_read",
+        }
+        return response
+
+    backend = _weknora_backend(settings)
+    safe_arguments = arguments if isinstance(arguments, dict) else {}
+    try:
+        prompts = backend.get_mcp_service_prompts(service_id)
+        prompt = backend.read_mcp_prompt(
+            service_id,
+            prompt_name,
+            arguments={str(key): str(value) for key, value in safe_arguments.items()},
+        )
+    except KnowledgeBackendUnavailableError as exc:
+        response["status"] = "partial"
+        response["surfaces"]["prompt_read"] = {
+            "status": "partial",
+            "success": False,
+            "reason": f"native_mcp_prompt_read: {_error_code(exc)}",
+        }
+        response["warnings"].append(f"partial: native_mcp_prompt_read: {_error_code(exc)}")
+        return response
+
+    response["status"] = "live"
+    response["surfaces"]["prompts"] = {
+        "status": "live",
+        "count": len(prompts),
+        "sample_prompts": prompts[:5],
+    }
+    response["surfaces"]["prompt_read"] = {
+        "status": "live",
+        "success": True,
+        "prompt": prompt,
+        "message_count": int(prompt.get("message_count") or 0),
+    }
+    return response
+
+
+def set_native_mcp_tool_approval(
+    *,
+    session: Session,
+    service_id: str,
+    tool_name: str,
+    require_approval: bool,
+    confirm_token: str | None = None,
+) -> dict[str, Any]:
+    settings = get_settings()
+    response = _base_response(settings)
+    response["schema_version"] = "wnid-p3-02-mcp-tool-approval"
+    response["management_mode"] = "confirmed_mcp_tool_execution"
+    if settings.knowledge_backend != "weknora_api":
+        response["status"] = "backlog"
+        response["surfaces"]["approval_policy"] = {
+            "status": "backlog",
+            "reason": "weknora_api backend is required for native MCP tool approval",
+        }
+        return response
+
+    service_id = str(service_id or "").strip()
+    tool_name = str(tool_name or "").strip()
+    if not service_id or not tool_name:
+        response["surfaces"]["approval_policy"] = {
+            "status": "blocked",
+            "reason": "service_id and tool_name are required",
+        }
+        return response
+
+    try:
+        confirmation = require_native_confirmation(
+            confirm=False,
+            confirm_token=confirm_token,
+            expected_token=MCP_EXECUTION_CONFIRM_TOKEN,
+            token_id=MCP_EXECUTION_CONFIRM_TOKEN_ID,
+            action="weknora_mcp_tool_approval_set",
+        )
+    except NativeConfirmationError:
+        response["surfaces"]["approval_policy"] = _mcp_execution_blocked_surface(
+            "approval_policy",
+            "confirmation_required_before_native_mcp_tool_execution",
+        )
+        return response
+
+    audit = record_native_mutation_audit(
+        session=session,
+        capability="mcp",
+        operation="weknora_mcp_tool_approval_set",
+        target_type="mcp_tool",
+        target_id=f"{service_id}:{tool_name}",
+        status="started",
+        confirmation=confirmation,
+        request_summary={
+            "service_id": service_id,
+            "tool_name": tool_name,
+            "require_approval": bool(require_approval),
+        },
+    )
+    session.commit()
+
+    backend = _weknora_backend(settings)
+    try:
+        result = backend.set_mcp_tool_approval(service_id, tool_name, require_approval)
+    except KnowledgeBackendUnavailableError as exc:
+        update_native_mutation_audit(
+            audit=audit,
+            status="failed",
+            response_summary={"success": False, "tool_name": tool_name},
+            error_message=str(exc),
+        )
+        session.commit()
+        response["status"] = "partial"
+        response["surfaces"]["approval_policy"] = {
+            "status": "partial",
+            "success": False,
+            "reason": f"native_mcp_tool_approval: {_error_code(exc)}",
+        }
+        response["audit"] = _audit_surface(audit)
+        response["confirmation"] = _confirmation_read(confirmation)
+        return response
+
+    update_native_mutation_audit(
+        audit=audit,
+        status="succeeded",
+        response_summary={
+            "success": True,
+            "tool_name": tool_name,
+            "require_approval": bool(require_approval),
+        },
+    )
+    session.commit()
+    response["status"] = "live"
+    response["surfaces"]["approval_policy"] = {
+        "status": "live",
+        "success": True,
+        "result": result,
+    }
+    response["audit"] = _audit_surface(audit)
+    response["confirmation"] = _confirmation_read(confirmation)
+    return response
+
+
+def execute_native_mcp_tool(
+    *,
+    session: Session,
+    service_id: str,
+    tool_name: str,
+    arguments: dict[str, Any] | None = None,
+    approval_decision: str | None = None,
+    conversation_id: str | None = None,
+    confirm_token: str | None = None,
+) -> dict[str, Any]:
+    settings = get_settings()
+    response = _base_response(settings)
+    response["schema_version"] = "wnid-p3-02-mcp-tool-execution"
+    response["management_mode"] = "confirmed_mcp_tool_execution"
+    if settings.knowledge_backend != "weknora_api":
+        response["status"] = "backlog"
+        response["surfaces"]["tool_execution"] = {
+            "status": "backlog",
+            "reason": "weknora_api backend is required for native MCP tool execution",
+        }
+        return response
+
+    service_id = str(service_id or "").strip()
+    tool_name = str(tool_name or "").strip()
+    approval_decision = str(approval_decision or "").strip().lower() or None
+    if not service_id or not tool_name:
+        response["surfaces"]["tool_execution"] = {
+            "status": "blocked",
+            "reason": "service_id and tool_name are required",
+        }
+        return response
+
+    try:
+        confirmation = require_native_confirmation(
+            confirm=False,
+            confirm_token=confirm_token,
+            expected_token=MCP_EXECUTION_CONFIRM_TOKEN,
+            token_id=MCP_EXECUTION_CONFIRM_TOKEN_ID,
+            action="weknora_mcp_tool_execute",
+        )
+    except NativeConfirmationError:
+        response["surfaces"]["tool_execution"] = _mcp_execution_blocked_surface(
+            "tool_execution",
+            "confirmation_required_before_native_mcp_tool_execution",
+        )
+        return response
+
+    safe_arguments = arguments if isinstance(arguments, dict) else {}
+    audit = record_native_mutation_audit(
+        session=session,
+        capability="mcp",
+        operation="weknora_mcp_tool_execute",
+        target_type="mcp_tool",
+        target_id=f"{service_id}:{tool_name}",
+        status="started",
+        confirmation=confirmation,
+        request_summary={
+            "service_id": service_id,
+            "tool_name": tool_name,
+            "argument_keys": sorted(str(key) for key in safe_arguments.keys()),
+            "approval_decision": approval_decision,
+        },
+    )
+    session.commit()
+
+    backend = _weknora_backend(settings)
+    try:
+        result = backend.execute_mcp_tool(
+            service_id,
+            tool_name,
+            arguments=safe_arguments,
+            approval_decision=approval_decision,
+        )
+    except KnowledgeBackendUnavailableError as exc:
+        update_native_mutation_audit(
+            audit=audit,
+            status="failed",
+            response_summary={"success": False, "tool_name": tool_name},
+            error_message=str(exc),
+        )
+        session.commit()
+        response["status"] = "partial"
+        response["surfaces"]["tool_execution"] = {
+            "status": "partial",
+            "success": False,
+            "reason": f"native_mcp_tool_execute: {_error_code(exc)}",
+        }
+        response["audit"] = _audit_surface(audit)
+        response["confirmation"] = _confirmation_read(confirmation)
+        return response
+
+    conversation, output = _record_mcp_execution_history(
+        session=session,
+        conversation_id=conversation_id,
+        service_id=service_id,
+        tool_name=tool_name,
+        approval_decision=approval_decision,
+        result=result,
+        audit=audit,
+    )
+    update_native_mutation_audit(
+        audit=audit,
+        status="succeeded" if result.get("success") else "failed",
+        response_summary=_mcp_execution_response_summary(result, output.id),
+        error_message=str(result.get("error") or "") or None,
+    )
+    session.commit()
+    response["status"] = "live" if result.get("success") else "partial"
+    response["surfaces"]["tool_execution"] = {
+        "status": "live" if result.get("success") else "partial",
+        "success": bool(result.get("success")),
+        "result": _public_mcp_execution_result(result),
+        "history": {
+            "conversation_id": conversation.id,
+            "output_id": output.id,
+            "task_type": output.task_type,
+        },
+    }
+    response["audit"] = _audit_surface(audit)
+    response["confirmation"] = _confirmation_read(confirmation)
     return response
 
 
@@ -488,6 +804,163 @@ def _perform_mcp_mutation(
     raise ValueError(f"unsupported MCP mutation action: {action}")
 
 
+def _mcp_execution_blocked_surface(surface: str, reason: str) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "surface": surface,
+        "success": False,
+        "reason": reason,
+        "confirm_token": MCP_EXECUTION_CONFIRM_TOKEN,
+        "confirm_token_id": MCP_EXECUTION_CONFIRM_TOKEN_ID,
+    }
+
+
+def _record_mcp_execution_history(
+    *,
+    session: Session,
+    conversation_id: str | None,
+    service_id: str,
+    tool_name: str,
+    approval_decision: str | None,
+    result: dict[str, Any],
+    audit: NativeMutationAudit,
+) -> tuple[Any, GeneratedOutput]:
+    conversation = get_conversation(session, conversation_id) if conversation_id else None
+    if conversation is None:
+        conversation, _ = create_conversation(
+            session=session,
+            title=f"MCP tool: {tool_name}",
+            summary="Native MCP tool execution evidence",
+            default_task_type="native_mcp_tool_execution",
+        )
+
+    add_message(
+        session=session,
+        conversation=conversation,
+        role="user",
+        content=(
+            f"MCP tool execution request: service={service_id}, tool={tool_name}, "
+            f"approval_decision={approval_decision or 'none'}"
+        ),
+        metadata_json=json.dumps(
+            {
+                "source": "pa_mcp_execution",
+                "service_id": service_id,
+                "tool_name": tool_name,
+                "approval_decision": approval_decision,
+                "audit_id": audit.id,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+    )
+    summary = _mcp_execution_markdown(result)
+    add_message(
+        session=session,
+        conversation=conversation,
+        role="assistant",
+        content=summary,
+        metadata_json=json.dumps(
+            {
+                "source": "weknora_native_mcp_tool_execution",
+                "service_id": service_id,
+                "tool_name": tool_name,
+                "success": bool(result.get("success")),
+                "executed": bool(result.get("executed")),
+                "rejected": bool(result.get("rejected")),
+                "audit_id": audit.id,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+    )
+
+    task = GenerationTask(
+        conversation_id=conversation.id,
+        task_type="native_mcp_tool_execution",
+        title=f"MCP {tool_name}",
+        input_json=json.dumps(
+            {
+                "service_id": service_id,
+                "tool_name": tool_name,
+                "approval_decision": approval_decision,
+                "audit_id": audit.id,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+        status="completed" if result.get("success") else "failed",
+        current_step="completed",
+        progress=100,
+        error_message=str(result.get("error") or "") or None,
+    )
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+
+    output = GeneratedOutput(
+        task_id=task.id,
+        conversation_id=conversation.id,
+        task_type="native_mcp_tool_execution",
+        title=f"MCP tool execution: {tool_name}",
+        content_markdown=summary,
+        content_json=json.dumps(_public_mcp_execution_result(result), ensure_ascii=False, sort_keys=True),
+        warnings_json=json.dumps([], ensure_ascii=False),
+        status="completed" if result.get("success") else "failed",
+    )
+    session.add(output)
+    session.commit()
+    session.refresh(output)
+    return conversation, output
+
+
+def _mcp_execution_markdown(result: dict[str, Any]) -> str:
+    status = "rejected" if result.get("rejected") else "executed" if result.get("executed") else "blocked"
+    output = str(result.get("output") or result.get("message") or result.get("error") or "")
+    lines = [
+        f"status: {status}",
+        f"service: {result.get('service_name') or result.get('service_id') or 'unknown'}",
+        f"tool: {result.get('tool_name') or 'unknown'}",
+        f"approval_required: {str(bool(result.get('approval_required'))).lower()}",
+        f"approval_decision: {result.get('approval_decision') or 'none'}",
+    ]
+    if output:
+        lines.append(f"summary: {_shorten(output, 300)}")
+    return "\n".join(lines)
+
+
+def _mcp_execution_response_summary(result: dict[str, Any], output_id: str) -> dict[str, Any]:
+    return {
+        "success": bool(result.get("success")),
+        "service_id": result.get("service_id"),
+        "tool_name": result.get("tool_name"),
+        "approval_required": bool(result.get("approval_required")),
+        "approval_decision": result.get("approval_decision"),
+        "executed": bool(result.get("executed")),
+        "rejected": bool(result.get("rejected")),
+        "output_id": output_id,
+    }
+
+
+def _public_mcp_execution_result(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "success": bool(result.get("success")),
+        "service_id": result.get("service_id"),
+        "service_name": result.get("service_name"),
+        "tool_name": result.get("tool_name"),
+        "approval_required": bool(result.get("approval_required")),
+        "approval_decision": result.get("approval_decision"),
+        "executed": bool(result.get("executed")),
+        "rejected": bool(result.get("rejected")),
+        "message": _shorten(str(result.get("message") or ""), 240),
+        "output": _shorten(str(result.get("output") or ""), 500),
+        "output_chars": int(result.get("output_chars") or 0),
+        "content_item_count": int(result.get("content_item_count") or 0),
+        "error": _shorten(str(result.get("error") or ""), 240),
+        "source": result.get("source") or "weknora_api",
+    }
+
+
 def _service_read_surface(services: list[dict[str, Any]]) -> dict[str, Any]:
     if not services:
         return {
@@ -524,21 +997,27 @@ def _external_probe_surface(
     }
 
 
-def _mcp_prompts_blocker_surface() -> dict[str, Any]:
+def _mcp_prompts_probe_surface(services: list[dict[str, Any]]) -> dict[str, Any]:
+    if not services:
+        return {
+            "status": "backlog",
+            "reason": "no native MCP services are configured",
+            "count": 0,
+        }
     return {
         "status": "blocked",
-        "reason": "native_mcp_prompt_api_missing",
+        "reason": "confirmation_required_before_external_mcp_prompt_read",
         "count": 0,
-        "native_endpoint": None,
-        "required_native_surface": (
-            "MCP prompts list/read route or native client support is required "
-            "before PA can expose prompts truthfully."
-        ),
+        "native_endpoint": "/api/v1/mcp-services/{id}/prompts",
+        "native_read_endpoint": "/api/v1/mcp-services/{id}/prompts/{prompt_name}/read",
+        "safe_test_endpoint": "/api/mcp/native/services/{service_id}/test",
+        "read_endpoint": "/api/mcp/native/services/{service_id}/prompts/{prompt_name}/read",
+        "confirm_token": MCP_TEST_CONFIRM_TOKEN,
     }
 
 
 def _mcp_tool_execution_blocker_surface(
-    *, reason: str = "requires_live_mcp_tool_and_confirmed_execution_path",
+    *, reason: str = "confirmation_required_before_native_mcp_tool_execution",
 ) -> dict[str, Any]:
     return {
         "status": "blocked",
@@ -547,6 +1026,9 @@ def _mcp_tool_execution_blocker_surface(
         "confirmation_required": True,
         "audit_required": True,
         "history_required": True,
+        "confirm_token": MCP_EXECUTION_CONFIRM_TOKEN,
+        "confirm_token_id": MCP_EXECUTION_CONFIRM_TOKEN_ID,
+        "endpoint": "/api/mcp/native/services/{service_id}/tools/{tool_name}/execute",
         "required_evidence": (
             "A real initialized MCP service must expose at least one low-risk "
             "tool, and PA must prove confirmation-gated execution with timeout, "
@@ -751,6 +1233,13 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _shorten(value: str, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(limit - 3, 0)] + "..."
 
 
 def _error_code(exc: Exception) -> str:

@@ -241,6 +241,28 @@ export type NativeMcpOverviewResponse = {
   >;
 };
 
+export type NativeMcpExecutionResponse = {
+  schema_version: string;
+  status: "live" | "partial" | "blocked" | "backlog" | string;
+  source: string;
+  warnings: string[];
+  surfaces: Record<string, Record<string, unknown>>;
+  audit?: NativeMutationAudit;
+  confirmation?: {
+    required: boolean;
+    method?: string | null;
+    token_id?: string | null;
+  };
+};
+
+export type NativeMcpPromptReadResponse = {
+  schema_version: string;
+  status: "live" | "partial" | "blocked" | "backlog" | string;
+  source: string;
+  warnings: string[];
+  surfaces: Record<string, Record<string, unknown>>;
+};
+
 export type NativeWebSearchOverviewResponse = {
   schema_version: string;
   status: "live" | "partial" | "blocked" | "backlog" | string;
@@ -255,6 +277,38 @@ export type NativeWebSearchOverviewResponse = {
       [key: string]: unknown;
     }
   >;
+};
+
+export type NativeWebSearchProviderMutationResponse = NativeWebSearchOverviewResponse & {
+  audit?: NativeMutationAudit;
+  confirmation?: {
+    required: boolean;
+    method?: string | null;
+    token_id?: string | null;
+  };
+};
+
+export type NativeWebSearchProviderCreatePayload = {
+  name: string;
+  provider: string;
+  description?: string | null;
+  parameters?: Record<string, unknown>;
+  is_default?: boolean;
+  confirm_token: string;
+};
+
+export type NativeWebSearchProviderUpdatePayload = {
+  name?: string | null;
+  description?: string | null;
+  parameters?: Record<string, unknown>;
+  is_default?: boolean | null;
+  confirm_token: string;
+};
+
+export type NativeWebSearchRawTestPayload = {
+  provider: string;
+  parameters?: Record<string, unknown>;
+  confirm_token: string;
 };
 
 export type NativeVectorStoreOverviewResponse = {
@@ -568,6 +622,8 @@ export type HistoryListFilters = {
   citation_source?: string;
   source_type?: string;
   evidence_state?: string;
+  wnid_capability?: string;
+  wnid_evidence_state?: string;
   has_warnings?: boolean;
 };
 
@@ -650,6 +706,8 @@ export type NativeMutationAudit = {
   request_summary_json: string | null;
   response_summary_json: string | null;
   error_message: string | null;
+  wnid_capability: string | null;
+  wnid_evidence_state: string;
   created_at: string;
 };
 
@@ -700,6 +758,7 @@ export type DocumentIndexResponse = {
 
 export type AnalysisTaskType = "knowledge_qa" | "policy_analysis" | "case_review";
 export type RetrievalScope = "all" | "document" | "wiki";
+export type NativeAnswerMode = "qa" | "policy_analysis" | "case_review";
 
 export type Conversation = {
   id: string;
@@ -827,13 +886,16 @@ export type NativeKnowledgeChatRequest = {
   knowledge_base_ids?: string[];
   knowledge_ids?: string[];
   web_search_enabled?: boolean;
+  answer_mode?: NativeAnswerMode;
   current_run?: Record<string, unknown>;
 };
 
 export type NativeKnowledgeChatRuntime = {
   native_session_id: string | null;
+  answer_mode: NativeAnswerMode;
   event_counts: Record<string, unknown>;
   reference_count: number;
+  reference_event_source: string;
   saved_citation_count: number;
   warnings: string[];
   assistant_message_id: string | null;
@@ -881,9 +943,14 @@ export type GeneratedOutput = {
   mock_citation_count: number;
   document_citation_count: number;
   wiki_citation_count: number;
+  web_search_citation_count: number;
   traceable_citation_count: number;
   warning_count: number;
   evidence_state: string;
+  wnid_capability: string | null;
+  wnid_capabilities: string[];
+  wnid_evidence_state: string;
+  evidence_source_types: string[];
   citation_blocked: boolean;
   citation_blocker: string | null;
   created_at: string;
@@ -931,6 +998,27 @@ export type NativeAgentItem = {
   rerank_configured: boolean;
   web_search_enabled: boolean;
   suggested_prompt_count: number;
+  strategy: NativeAgentStrategy;
+};
+
+export type NativeAgentStrategy = {
+  system_prompt: string;
+  context_template: string;
+  allowed_tools: string[];
+  mcp_selection_mode: string;
+  mcp_services: string[];
+  web_search_enabled: boolean;
+  web_search_provider_id: string;
+  web_fetch_enabled: boolean;
+  web_fetch_top_n: number;
+  multi_turn_enabled: boolean;
+  history_turns: number;
+  embedding_top_k: number;
+  keyword_threshold: number;
+  vector_threshold: number;
+  rerank_top_k: number;
+  rerank_threshold: number;
+  suggested_prompts: string[];
 };
 
 export type NativeAgentCatalogResponse = {
@@ -956,6 +1044,25 @@ export type NativeAgentCatalogResponse = {
   warnings: string[];
 };
 
+export type NativeAgentSuggestedQuestion = {
+  question: string | null;
+  source: string | null;
+  knowledge_base_id: string | null;
+};
+
+export type NativeAgentSuggestedQuestionsResponse = {
+  schema_version: string;
+  source: string;
+  status: string;
+  agent_id: string | null;
+  knowledge_base_ids: string[];
+  knowledge_ids: string[];
+  questions: NativeAgentSuggestedQuestion[];
+  source_counts: Record<string, number>;
+  surfaces: Record<string, string>;
+  warnings: string[];
+};
+
 export type NativeAgentQaRequest = {
   query: string;
   agent_id?: string | null;
@@ -964,6 +1071,8 @@ export type NativeAgentQaRequest = {
   knowledge_base_ids?: string[];
   knowledge_ids?: string[];
   web_search_enabled?: boolean;
+  answer_mode?: NativeAnswerMode;
+  confirm_token?: string | null;
 };
 
 export type NativeAgentMutationRequest = {
@@ -971,6 +1080,10 @@ export type NativeAgentMutationRequest = {
   description?: string | null;
   avatar?: string | null;
   config?: Record<string, unknown>;
+  confirm_token?: string | null;
+};
+
+export type NativeAgentStrategyUpdateRequest = Partial<NativeAgentStrategy> & {
   confirm_token?: string | null;
 };
 
@@ -991,11 +1104,25 @@ export type NativeAgentMutationResponse = {
 
 export type NativeAgentQaRuntime = {
   native_session_id: string | null;
+  answer_mode: NativeAnswerMode;
+  native_session_reused: boolean;
+  native_session_source: string;
   agent_id: string | null;
   agent_name: string | null;
   event_counts: Record<string, unknown>;
+  event_sequence: string[];
+  run_contract: Record<string, unknown>;
+  selected_agent: Record<string, unknown>;
+  conversation_continuity: Record<string, unknown>;
   tool_names: string[];
   reference_count: number;
+  reference_event_source: string;
+  web_reference_count: number;
+  web_providers: string[];
+  wiki_reference_count: number;
+  wiki_slugs: string[];
+  wiki_mode_mutation_required: boolean;
+  wiki_mode_audit?: Record<string, unknown> | null;
   saved_citation_count: number;
   citation_blocked: boolean;
   warnings: string[];
@@ -1187,6 +1314,12 @@ function historyFilterParams(filters: HistoryListFilters) {
   if (filters.evidence_state && filters.evidence_state !== "all") {
     params.set("evidence_state", filters.evidence_state);
   }
+  if (filters.wnid_capability && filters.wnid_capability !== "all") {
+    params.set("wnid_capability", filters.wnid_capability);
+  }
+  if (filters.wnid_evidence_state && filters.wnid_evidence_state !== "all") {
+    params.set("wnid_evidence_state", filters.wnid_evidence_state);
+  }
   if (filters.has_warnings !== undefined) {
     params.set("has_warnings", String(filters.has_warnings));
   }
@@ -1357,6 +1490,54 @@ export const apiClient = {
     const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
     return request<NativeMcpOverviewResponse>(`/api/mcp/native/overview${suffix}`);
   },
+  setNativeMcpToolApproval: (
+    serviceId: string,
+    toolName: string,
+    requireApproval: boolean,
+    confirmToken: string,
+  ) =>
+    request<NativeMcpExecutionResponse>(
+      `/api/mcp/native/services/${encodeURIComponent(serviceId)}/tool-approvals/${encodeURIComponent(toolName)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          require_approval: requireApproval,
+          confirm_token: confirmToken,
+        }),
+      },
+    ),
+  executeNativeMcpTool: (
+    serviceId: string,
+    toolName: string,
+    payload: {
+      arguments?: Record<string, unknown>;
+      approval_decision?: "approve" | "reject" | string;
+      conversation_id?: string | null;
+      confirm_token: string;
+    },
+  ) =>
+    request<NativeMcpExecutionResponse>(
+      `/api/mcp/native/services/${encodeURIComponent(serviceId)}/tools/${encodeURIComponent(toolName)}/execute`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    ),
+  readNativeMcpPrompt: (
+    serviceId: string,
+    promptName: string,
+    payload: {
+      arguments?: Record<string, unknown>;
+      confirm_token: string;
+    },
+  ) =>
+    request<NativeMcpPromptReadResponse>(
+      `/api/mcp/native/services/${encodeURIComponent(serviceId)}/prompts/${encodeURIComponent(promptName)}/read`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    ),
   getNativeWebSearchOverview: (params: NativeWebSearchOverviewParams = {}) => {
     const searchParams = nativeWebSearchOverviewParams(params);
     const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
@@ -1364,6 +1545,43 @@ export const apiClient = {
       `/api/web-search/native/overview${suffix}`,
     );
   },
+  createNativeWebSearchProvider: (payload: NativeWebSearchProviderCreatePayload) =>
+    request<NativeWebSearchProviderMutationResponse>("/api/web-search/native/providers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateNativeWebSearchProvider: (
+    providerId: string,
+    payload: NativeWebSearchProviderUpdatePayload,
+  ) =>
+    request<NativeWebSearchProviderMutationResponse>(
+      `/api/web-search/native/providers/${encodeURIComponent(providerId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      },
+    ),
+  deleteNativeWebSearchProvider: (providerId: string, confirmToken: string) =>
+    request<NativeWebSearchProviderMutationResponse>(
+      `/api/web-search/native/providers/${encodeURIComponent(providerId)}`,
+      {
+        method: "DELETE",
+        body: JSON.stringify({ confirm_token: confirmToken }),
+      },
+    ),
+  testNativeWebSearchProvider: (providerId: string, confirmToken: string) =>
+    request<NativeWebSearchProviderMutationResponse>(
+      `/api/web-search/native/providers/${encodeURIComponent(providerId)}/test`,
+      {
+        method: "POST",
+        body: JSON.stringify({ confirm_token: confirmToken }),
+      },
+    ),
+  testNativeWebSearchProviderRaw: (payload: NativeWebSearchRawTestPayload) =>
+    request<NativeWebSearchProviderMutationResponse>("/api/web-search/native/providers/test", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   getNativeVectorStoreOverview: (params: NativeVectorStoreOverviewParams = {}) => {
     const searchParams = nativeVectorStoreOverviewParams(params);
     const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
@@ -1622,6 +1840,7 @@ export const apiClient = {
     target_type?: string;
     target_id?: string;
     status?: string;
+    wnid_capability?: string;
   } = {}) => {
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -1643,6 +1862,25 @@ export const apiClient = {
       body: JSON.stringify(payload),
     }),
   listNativeAgents: () => request<NativeAgentCatalogResponse>("/api/analysis/native-agents"),
+  listNativeAgentSuggestedQuestions: (
+    agentId: string,
+    params: { knowledge_base_ids?: string[]; knowledge_ids?: string[]; limit?: number } = {},
+  ) => {
+    const searchParams = new URLSearchParams();
+    if (params.knowledge_base_ids?.length) {
+      searchParams.set("knowledge_base_ids", params.knowledge_base_ids.join(","));
+    }
+    if (params.knowledge_ids?.length) {
+      searchParams.set("knowledge_ids", params.knowledge_ids.join(","));
+    }
+    if (params.limit) {
+      searchParams.set("limit", String(params.limit));
+    }
+    const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return request<NativeAgentSuggestedQuestionsResponse>(
+      `/api/analysis/native-agents/${encodeURIComponent(agentId)}/suggested-questions${suffix}`,
+    );
+  },
   createNativeAgent: (payload: NativeAgentMutationRequest) =>
     request<NativeAgentMutationResponse>("/api/analysis/native-agents", {
       method: "POST",
@@ -1650,6 +1888,11 @@ export const apiClient = {
     }),
   updateNativeAgent: (agentId: string, payload: NativeAgentMutationRequest) =>
     request<NativeAgentMutationResponse>(`/api/analysis/native-agents/${encodeURIComponent(agentId)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  updateNativeAgentStrategy: (agentId: string, payload: NativeAgentStrategyUpdateRequest) =>
+    request<NativeAgentMutationResponse>(`/api/analysis/native-agents/${encodeURIComponent(agentId)}/strategy`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),

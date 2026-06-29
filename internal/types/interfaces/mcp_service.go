@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -58,6 +59,30 @@ type MCPServiceService interface {
 
 	// GetMCPServiceResources retrieves the list of resources from an MCP service
 	GetMCPServiceResources(ctx context.Context, tenantID uint64, id string) ([]*types.MCPResource, error)
+
+	// GetMCPServicePrompts retrieves the list of prompts from an MCP service
+	GetMCPServicePrompts(ctx context.Context, tenantID uint64, id string) ([]*types.MCPPrompt, error)
+
+	// GetMCPServicePrompt reads one prompt from an MCP service.
+	GetMCPServicePrompt(
+		ctx context.Context,
+		tenantID uint64,
+		id string,
+		promptName string,
+		args json.RawMessage,
+	) (*types.MCPPromptReadResult, error)
+
+	// ExecuteMCPServiceTool executes one tool from an MCP service after checking
+	// the native per-tool approval policy. If approval is required, callers must
+	// provide approvalDecision="approve" or "reject".
+	ExecuteMCPServiceTool(
+		ctx context.Context,
+		tenantID uint64,
+		id string,
+		toolName string,
+		args json.RawMessage,
+		approvalDecision string,
+	) (*types.MCPToolExecutionResult, error)
 
 	// UpdateMCPCredentials writes one or more credential fields on the auth
 	// config. Nil pointer means "do not touch this field". Returns the updated

@@ -239,6 +239,7 @@ class WeKnoraNativeClient:
                 request_id=request_id,
                 operation=operation,
                 status="error",
+                status_code=None,
                 duration_ms=_elapsed_ms(started),
                 retry_count=0,
                 error_code=error.error_code,
@@ -264,6 +265,7 @@ class WeKnoraNativeClient:
                 request_id=request_id,
                 operation=operation,
                 status="error",
+                status_code=None,
                 duration_ms=_elapsed_ms(started),
                 retry_count=0,
                 error_code=error.error_code,
@@ -1788,6 +1790,23 @@ class WeKnoraApiBackend(KnowledgeEngine):
         result = self._unwrap_data(data)
         return result if isinstance(result, dict) else {}
 
+    def update_agent_strategy(self, agent_id: str, payload: dict) -> dict:
+        self._require_configured()
+        normalized_agent_id = str(agent_id or "").strip()
+        if not normalized_agent_id:
+            raise KnowledgeBackendUnavailableError(
+                "agent id is required",
+                error_code="agent_id_required",
+                operation="update_agent_strategy",
+            )
+        data = self._request_json(
+            "PUT",
+            f"/api/v1/agents/{quote(normalized_agent_id, safe='')}",
+            _agent_strategy_payload(payload),
+        )
+        result = self._unwrap_data(data)
+        return result if isinstance(result, dict) else {}
+
     def copy_agent(self, agent_id: str) -> dict:
         self._require_configured()
         normalized_agent_id = str(agent_id or "").strip()
@@ -1990,13 +2009,16 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return {"success": False, "tool_count": 0, "resource_count": 0}
         tools = payload.get("tools")
         resources = payload.get("resources")
+        prompts = payload.get("prompts")
         tool_items = tools if isinstance(tools, list) else []
         resource_items = resources if isinstance(resources, list) else []
+        prompt_items = prompts if isinstance(prompts, list) else []
         return {
             "success": bool(payload.get("success")),
             "reason": _shorten(_redact_sensitive_text(str(payload.get("message") or "")), 240),
             "tool_count": len([item for item in tool_items if isinstance(item, dict)]),
             "resource_count": len([item for item in resource_items if isinstance(item, dict)]),
+            "prompt_count": len([item for item in prompt_items if isinstance(item, dict)]),
             "sample_tools": [
                 {
                     "name": _optional_str(item.get("name")),
@@ -2011,6 +2033,11 @@ class WeKnoraApiBackend(KnowledgeEngine):
                     "mime_type": _optional_str(item.get("mimeType") or item.get("mime_type")),
                 }
                 for item in resource_items[:5]
+                if isinstance(item, dict)
+            ],
+            "sample_prompts": [
+                self._mcp_prompt_safe_dict(item)
+                for item in prompt_items[:5]
                 if isinstance(item, dict)
             ],
             "source": "weknora_api",
@@ -2044,6 +2071,38 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if isinstance(item, dict)
         ]
 
+    def get_mcp_service_prompts(self, service_id: str) -> list[dict]:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        data = self._request_json("GET", f"/api/v1/mcp-services/{encoded_id}/prompts")
+        items = self._unwrap_items(data)
+        return [
+            self._mcp_prompt_safe_dict(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+
+    def read_mcp_prompt(
+        self,
+        service_id: str,
+        prompt_name: str,
+        *,
+        arguments: dict | None = None,
+    ) -> dict:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        encoded_prompt = quote(prompt_name, safe="")
+        payload: dict[str, object] = {
+            "arguments": arguments if isinstance(arguments, dict) else {},
+        }
+        data = self._request_json(
+            "POST",
+            f"/api/v1/mcp-services/{encoded_id}/prompts/{encoded_prompt}/read",
+            payload,
+        )
+        item = self._unwrap_data(data)
+        return self._mcp_prompt_read_safe_dict(item if isinstance(item, dict) else {})
+
     def list_mcp_tool_approvals(self, service_id: str) -> list[dict]:
         self._require_configured()
         encoded_id = quote(service_id, safe="")
@@ -2060,6 +2119,46 @@ class WeKnoraApiBackend(KnowledgeEngine):
             for item in items
             if isinstance(item, dict)
         ]
+
+    def set_mcp_tool_approval(self, service_id: str, tool_name: str, require_approval: bool) -> dict:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        encoded_tool = quote(tool_name, safe="")
+        self._request_json(
+            "PUT",
+            f"/api/v1/mcp-services/{encoded_id}/tool-approvals/{encoded_tool}",
+            {"require_approval": bool(require_approval)},
+        )
+        return {
+            "service_id": service_id,
+            "tool_name": tool_name,
+            "require_approval": bool(require_approval),
+            "source": "weknora_api",
+        }
+
+    def execute_mcp_tool(
+        self,
+        service_id: str,
+        tool_name: str,
+        *,
+        arguments: dict | None = None,
+        approval_decision: str | None = None,
+    ) -> dict:
+        self._require_configured()
+        encoded_id = quote(service_id, safe="")
+        encoded_tool = quote(tool_name, safe="")
+        payload: dict[str, object] = {
+            "arguments": arguments if isinstance(arguments, dict) else {},
+        }
+        if approval_decision:
+            payload["approval_decision"] = approval_decision
+        data = self._request_json(
+            "POST",
+            f"/api/v1/mcp-services/{encoded_id}/tools/{encoded_tool}/execute",
+            payload,
+        )
+        item = self._unwrap_data(data)
+        return self._mcp_tool_execution_safe_dict(item if isinstance(item, dict) else {})
 
     def list_web_search_provider_types(self) -> list[dict]:
         self._require_configured()
@@ -2089,6 +2188,117 @@ class WeKnoraApiBackend(KnowledgeEngine):
         if not isinstance(payload, dict):
             return {}
         return self._web_search_provider_safe_dict(payload)
+
+    def create_web_search_provider(
+        self,
+        *,
+        name: str,
+        provider: str,
+        description: str = "",
+        parameters: dict | None = None,
+        is_default: bool = False,
+    ) -> dict:
+        self._require_configured()
+        data = self._request_json(
+            "POST",
+            "/api/v1/web-search-providers",
+            {
+                "name": name,
+                "provider": provider,
+                "description": description,
+                "parameters": parameters or {},
+                "is_default": bool(is_default),
+            },
+        )
+        payload = self._unwrap_data(data)
+        if not isinstance(payload, dict):
+            return {}
+        return self._web_search_provider_safe_dict(payload)
+
+    def update_web_search_provider(
+        self,
+        provider_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        parameters: dict | None = None,
+        is_default: bool | None = None,
+    ) -> dict:
+        self._require_configured()
+        encoded_id = quote(provider_id, safe="")
+        existing = self.get_web_search_provider(provider_id)
+        payload: dict[str, object] = {
+            "name": name if name is not None else existing.get("name", ""),
+            "description": description if description is not None else existing.get("description", ""),
+            "is_default": bool(is_default) if is_default is not None else bool(existing.get("is_default")),
+        }
+        if parameters is not None:
+            payload["parameters"] = parameters if isinstance(parameters, dict) else {}
+        data = self._request_json("PUT", f"/api/v1/web-search-providers/{encoded_id}", payload)
+        item = self._unwrap_data(data)
+        if not isinstance(item, dict):
+            return {}
+        return self._web_search_provider_safe_dict(item)
+
+    def delete_web_search_provider(self, provider_id: str) -> dict:
+        self._require_configured()
+        encoded_id = quote(provider_id, safe="")
+        self._request_json("DELETE", f"/api/v1/web-search-providers/{encoded_id}")
+        return {
+            "id": provider_id,
+            "status": "deleted",
+            "source": "weknora_api",
+        }
+
+    def update_web_search_provider_credentials(self, provider_id: str, *, api_key: str | None = None) -> dict:
+        self._require_configured()
+        encoded_id = quote(provider_id, safe="")
+        payload: dict[str, str] = {}
+        if api_key:
+            payload["api_key"] = api_key
+        data = self._request_json(
+            "PUT",
+            f"/api/v1/web-search-providers/{encoded_id}/credentials",
+            payload,
+        )
+        item = self._unwrap_data(data)
+        fields = item.get("fields") if isinstance(item, dict) else {}
+        return self._web_search_credentials_safe_dict(fields if isinstance(fields, dict) else {})
+
+    def clear_web_search_provider_credential(self, provider_id: str, field: str) -> dict:
+        self._require_configured()
+        normalized_field = str(field or "").strip()
+        encoded_id = quote(provider_id, safe="")
+        encoded_field = quote(normalized_field, safe="")
+        self._request_json(
+            "DELETE",
+            f"/api/v1/web-search-providers/{encoded_id}/credentials/{encoded_field}",
+        )
+        return {
+            "masked": True,
+            "field": normalized_field,
+            "cleared": True,
+            "field_count": 1,
+            "configured_field_count": 0,
+            "credentials_configured": False,
+            "source": "weknora_api",
+        }
+
+    def test_web_search_provider_raw(self, *, provider: str, parameters: dict | None = None) -> dict:
+        self._require_configured()
+        data = self._request_json(
+            "POST",
+            "/api/v1/web-search-providers/test",
+            {
+                "provider": provider,
+                "parameters": parameters or {},
+            },
+        )
+        payload = data if isinstance(data, dict) else {}
+        return {
+            "success": bool(payload.get("success")),
+            "source": "weknora_api",
+        }
 
     def test_web_search_provider(self, provider_id: str) -> dict:
         self._require_configured()
@@ -2771,53 +2981,83 @@ class WeKnoraApiBackend(KnowledgeEngine):
         )
         answer_parts: list[str] = []
         reference_items: list[dict] = []
+        tool_reference_items: list[dict] = []
         event_counts: dict[str, int] = {}
+        event_sequence: list[str] = []
         errors: list[str] = []
         tool_names: list[str] = []
+        complete_metadata: dict[str, int] = {}
         for event_item in events:
             response_type = str(event_item.get("response_type") or "unknown")
             event_counts[response_type] = event_counts.get(response_type, 0) + 1
+            event_sequence.append(response_type)
             if response_type == "answer":
                 answer_parts.append(str(event_item.get("content") or ""))
             elif response_type == "references":
-                references = event_item.get("knowledge_references")
-                if isinstance(references, list):
-                    reference_items.extend(
-                        item for item in references if isinstance(item, dict)
-                    )
+                reference_items.extend(self._references_from_sse_event(event_item))
             elif response_type == "tool_call":
                 data = event_item.get("data")
                 if isinstance(data, dict):
                     tool_name = _optional_str(data.get("tool_name"))
                     if tool_name and tool_name not in tool_names:
                         tool_names.append(tool_name)
+            elif response_type == "tool_result":
+                data = event_item.get("data")
+                if isinstance(data, dict):
+                    tool_name = _optional_str(data.get("tool_name"))
+                    if tool_name and tool_name not in tool_names:
+                        tool_names.append(tool_name)
+                    tool_reference_items.extend(
+                        self._references_from_agent_tool_result(data)
+                    )
+            elif response_type == "complete":
+                data = event_item.get("data")
+                if isinstance(data, dict):
+                    total_steps = _optional_int(data.get("total_steps"))
+                    total_duration_ms = _optional_int(data.get("total_duration_ms"))
+                    if total_steps is not None:
+                        complete_metadata["total_steps"] = total_steps
+                    if total_duration_ms is not None:
+                        complete_metadata["total_duration_ms"] = total_duration_ms
             elif response_type == "error":
                 error_text = _optional_str(event_item.get("content"))
                 if error_text:
                     errors.append(_shorten(_redact_sensitive_text(error_text), 240))
 
-        evidence_items = [
+        reference_event_source = "references"
+        if not reference_items and tool_reference_items:
+            reference_items = tool_reference_items
+            reference_event_source = "tool_result_fallback"
+
+        evidence_items = _dedupe_evidence_items([
             self._to_evidence(
                 item,
                 {
                     "weknora_agentqa_native": True,
                     "weknora_agentqa_agent_id": agent_id,
                     "weknora_agentqa_session_id": session_id,
-                    "weknora_agentqa_event_source": "references",
+                    "weknora_agentqa_event_source": reference_event_source,
                 },
                 native_rank=native_rank,
             )
             for native_rank, item in enumerate(reference_items, start=1)
-        ]
+        ])
         return {
             "session_id": session_id,
             "agent_id": agent_id,
             "answer": "".join(answer_parts),
             "evidence_items": evidence_items,
             "event_counts": event_counts,
+            "event_sequence": event_sequence[:80],
+            "event_contract": _agentqa_event_contract(
+                event_counts=event_counts,
+                event_sequence=event_sequence,
+                complete_metadata=complete_metadata,
+            ),
             "errors": errors,
             "tool_names": tool_names,
-            "reference_count": len(reference_items),
+            "reference_count": len(evidence_items),
+            "reference_event_source": reference_event_source,
         }
 
     def run_knowledge_chat(
@@ -2853,17 +3093,13 @@ class WeKnoraApiBackend(KnowledgeEngine):
             if response_type == "answer":
                 answer_parts.append(str(event_item.get("content") or ""))
             elif response_type == "references":
-                references = event_item.get("knowledge_references")
-                if isinstance(references, list):
-                    reference_items.extend(
-                        item for item in references if isinstance(item, dict)
-                    )
+                reference_items.extend(self._references_from_sse_event(event_item))
             elif response_type == "error":
                 error_text = _optional_str(event_item.get("content"))
                 if error_text:
                     errors.append(_shorten(_redact_sensitive_text(error_text), 240))
 
-        evidence_items = [
+        evidence_items = _dedupe_evidence_items([
             self._to_evidence(
                 item,
                 {
@@ -2874,15 +3110,89 @@ class WeKnoraApiBackend(KnowledgeEngine):
                 native_rank=native_rank,
             )
             for native_rank, item in enumerate(reference_items, start=1)
-        ]
+        ])
         return {
             "session_id": session_id,
             "answer": "".join(answer_parts),
             "evidence_items": evidence_items,
             "event_counts": event_counts,
             "errors": errors,
-            "reference_count": len(reference_items),
+            "reference_count": len(evidence_items),
+            "reference_event_source": "references",
         }
+
+    @staticmethod
+    def _references_from_sse_event(event_item: dict) -> list[dict]:
+        references = event_item.get("knowledge_references")
+        if not isinstance(references, list):
+            references = event_item.get("references")
+        if not isinstance(references, list):
+            data = event_item.get("data")
+            if isinstance(data, dict):
+                references = data.get("knowledge_references")
+                if not isinstance(references, list):
+                    references = data.get("references")
+        return [item for item in references if isinstance(item, dict)] if isinstance(references, list) else []
+
+    @staticmethod
+    def _references_from_agent_tool_result(data: dict) -> list[dict]:
+        tool_name = _optional_str(data.get("tool_name"))
+        nested_data = data.get("data")
+        tool_data = nested_data if isinstance(nested_data, dict) else data
+        if not tool_name:
+            return []
+
+        if tool_name == "knowledge_search":
+            return WeKnoraApiBackend._tool_reference_items(
+                tool_data.get("results"),
+                tool_name=tool_name,
+            )
+        if tool_name == "list_knowledge_chunks":
+            return WeKnoraApiBackend._list_chunks_reference_items(tool_data, tool_name=tool_name)
+        if tool_name == "grep_chunks":
+            return []
+        return []
+
+    @staticmethod
+    def _tool_reference_items(items: object, *, tool_name: str) -> list[dict]:
+        references: list[dict] = []
+        if not isinstance(items, list):
+            return references
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            reference = dict(item)
+            reference.setdefault("source_type", "document_chunk")
+            reference.setdefault("metadata", {})
+            if isinstance(reference["metadata"], dict):
+                reference["metadata"] = dict(reference["metadata"])
+                reference["metadata"].setdefault("weknora_agentqa_event_source", "tool_result_fallback")
+                reference["metadata"].setdefault("weknora_agentqa_tool_name", tool_name)
+            references.append(reference)
+        return references
+
+    @staticmethod
+    def _list_chunks_reference_items(tool_data: dict, *, tool_name: str) -> list[dict]:
+        chunks = tool_data.get("chunks")
+        if not isinstance(chunks, list):
+            return []
+        knowledge_id = _optional_str(tool_data.get("knowledge_id"))
+        knowledge_title = _optional_str(tool_data.get("knowledge_title"))
+        references: list[dict] = []
+        for chunk in chunks:
+            if not isinstance(chunk, dict):
+                continue
+            reference = dict(chunk)
+            reference["id"] = reference.get("chunk_id") or reference.get("id")
+            reference.setdefault("knowledge_id", knowledge_id)
+            reference.setdefault("knowledge_title", knowledge_title)
+            reference.setdefault("source_type", "document_chunk")
+            reference["metadata"] = {
+                "weknora_agentqa_event_source": "tool_result_fallback",
+                "weknora_agentqa_tool_name": tool_name,
+            }
+            references.append(reference)
+        return references
 
     def _request_json(self, method: str, path: str, payload: dict | None = None) -> dict | list:
         return self.client.request_json(method, path, payload)
@@ -3119,6 +3429,77 @@ class WeKnoraApiBackend(KnowledgeEngine):
         }
 
     @staticmethod
+    def _mcp_tool_execution_safe_dict(item: dict) -> dict:
+        return {
+            "success": bool(item.get("success")),
+            "service_id": _optional_str(item.get("service_id")),
+            "service_name": _optional_str(item.get("service_name")),
+            "tool_name": _optional_str(item.get("tool_name")),
+            "approval_required": bool(item.get("approval_required")),
+            "approval_decision": _optional_str(item.get("approval_decision")),
+            "executed": bool(item.get("executed")),
+            "rejected": bool(item.get("rejected")),
+            "message": _shorten(_redact_sensitive_text(str(item.get("message") or "")), 240),
+            "output": _shorten(_redact_sensitive_text(str(item.get("output") or "")), 500),
+            "output_chars": _optional_int(item.get("output_chars")) or 0,
+            "content_item_count": _optional_int(item.get("content_item_count")) or 0,
+            "error": _shorten(_redact_sensitive_text(str(item.get("error") or "")), 240),
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _mcp_prompt_safe_dict(item: dict) -> dict:
+        arguments = item.get("arguments") if isinstance(item.get("arguments"), list) else []
+        safe_arguments: list[dict] = []
+        for argument in arguments[:20]:
+            if not isinstance(argument, dict):
+                continue
+            safe_arguments.append(
+                {
+                    "name": _optional_str(argument.get("name")),
+                    "description": _shorten(
+                        _redact_sensitive_text(str(argument.get("description") or "")),
+                        180,
+                    ),
+                    "required": bool(argument.get("required")),
+                }
+            )
+        return {
+            "name": _optional_str(item.get("name")),
+            "description": _shorten(_redact_sensitive_text(str(item.get("description") or "")), 240),
+            "argument_count": len([arg for arg in arguments if isinstance(arg, dict)]),
+            "arguments": safe_arguments,
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _mcp_prompt_read_safe_dict(item: dict) -> dict:
+        messages = item.get("messages") if isinstance(item.get("messages"), list) else []
+        safe_messages: list[dict] = []
+        for message in messages[:10]:
+            if not isinstance(message, dict):
+                continue
+            safe_messages.append(
+                {
+                    "role": _optional_str(message.get("role")),
+                    "content_type": _optional_str(message.get("content_type")),
+                    "text": _shorten(
+                        _redact_sensitive_text(str(message.get("text") or "")),
+                        500,
+                    ),
+                    "text_chars": _optional_int(message.get("text_chars")) or 0,
+                    "mime_type": _optional_str(message.get("mime_type")),
+                }
+            )
+        return {
+            "name": _optional_str(item.get("name")),
+            "description": _shorten(_redact_sensitive_text(str(item.get("description") or "")), 240),
+            "message_count": _optional_int(item.get("message_count")) or len(safe_messages),
+            "messages": safe_messages,
+            "source": "weknora_api",
+        }
+
+    @staticmethod
     def _web_search_provider_type_safe_dict(item: dict) -> dict:
         return {
             "id": _optional_str(item.get("id")),
@@ -3143,11 +3524,31 @@ class WeKnoraApiBackend(KnowledgeEngine):
                         configured_credential_field_count += 1
         return {
             "id": _optional_str(item.get("id")),
+            "name": _shorten(_redact_sensitive_text(str(item.get("name") or "")), 120),
+            "description": _shorten(_redact_sensitive_text(str(item.get("description") or "")), 240),
             "provider": _optional_str(item.get("provider")),
             "is_default": bool(item.get("is_default")),
             "credential_field_count": credential_field_count,
             "configured_credential_field_count": configured_credential_field_count,
             "credentials_configured": configured_credential_field_count > 0,
+            "parameter_status": _web_search_parameter_status(item.get("parameters")),
+            "source": "weknora_api",
+        }
+
+    @staticmethod
+    def _web_search_credentials_safe_dict(fields: dict) -> dict:
+        field_count = 0
+        configured_field_count = 0
+        for field in fields.values():
+            if isinstance(field, dict):
+                field_count += 1
+                if field.get("configured"):
+                    configured_field_count += 1
+        return {
+            "masked": True,
+            "field_count": field_count,
+            "configured_field_count": configured_field_count,
+            "credentials_configured": configured_field_count > 0,
             "source": "weknora_api",
         }
 
@@ -3629,7 +4030,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
         if native_rank is not None:
             metadata["weknora_native_rank"] = native_rank
         source_type = WeKnoraApiBackend._source_type(item, metadata)
-        chunk_id = None if source_type == "wiki_page" else item.get("chunk_id") or item.get("id")
+        chunk_id = None if source_type in {"wiki_page", "web_search"} else item.get("chunk_id") or item.get("id")
         wiki_page_id = (
             item.get("wiki_page_id")
             or item.get("wiki_id")
@@ -3641,7 +4042,12 @@ class WeKnoraApiBackend(KnowledgeEngine):
         evidence_id = (
             item.get("evidence_id")
             or metadata.get("evidence_id")
-            or WeKnoraApiBackend._evidence_id(source_type, chunk_id, wiki_page_id)
+            or WeKnoraApiBackend._evidence_id(
+                source_type,
+                chunk_id,
+                wiki_page_id,
+                metadata.get("url") or item.get("url") or item.get("id"),
+            )
         )
         metadata.setdefault("evidence_id", evidence_id)
         metadata.setdefault("citation_source_type", source_type)
@@ -3650,7 +4056,7 @@ class WeKnoraApiBackend(KnowledgeEngine):
             external_doc_id=(
                 item.get("external_doc_id")
                 or item.get("doc_id")
-                or item.get("knowledge_id")
+                or (None if source_type == "web_search" else item.get("knowledge_id"))
             ),
             chunk_id=chunk_id,
             title=(
@@ -3678,6 +4084,14 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return "document_chunk"
         if normalized in {"wiki", "wiki_page", "wiki-page"}:
             return "wiki_page"
+        if normalized in {"web", "web_search", "web-search"}:
+            return "web_search"
+        knowledge_source = str(item.get("knowledge_source") or metadata.get("knowledge_source") or "").strip().lower()
+        if knowledge_source in {"web_search", "web"}:
+            return "web_search"
+        chunk_type = str(item.get("chunk_type") or metadata.get("chunk_type") or "").strip().lower()
+        if chunk_type == "web_search":
+            return "web_search"
         match_type = str(item.get("match_type") or metadata.get("match_type") or "").strip().lower()
         if match_type in {"wiki", "wiki_page", "4"}:
             return "wiki_page"
@@ -3692,6 +4106,8 @@ class WeKnoraApiBackend(KnowledgeEngine):
             return "document_chunk"
         if normalized in {"wiki", "wiki_page", "wiki-page"}:
             return "wiki_page"
+        if normalized in {"web", "web_search", "web-search"}:
+            return "web_search"
         return None
 
     @staticmethod
@@ -3725,6 +4141,11 @@ class WeKnoraApiBackend(KnowledgeEngine):
             "slug",
             "wiki_title",
             "page_title",
+            "source_type",
+            "url",
+            "title",
+            "snippet",
+            "source",
         ):
             if key in item and item.get(key) not in (None, ""):
                 metadata[f"weknora_{key}"] = item.get(key)
@@ -3899,11 +4320,16 @@ class WeKnoraApiBackend(KnowledgeEngine):
         source_type: str,
         chunk_id: str | None,
         wiki_page_id: str | None,
+        web_url: object | None = None,
     ) -> str | None:
         if source_type == "document_chunk" and chunk_id:
             return f"document_chunk:{chunk_id}"
         if source_type == "wiki_page" and wiki_page_id:
             return f"wiki_page:{wiki_page_id}"
+        if source_type == "web_search":
+            url = _optional_str(web_url)
+            if url:
+                return f"web_search:{_content_hash(url)[:16]}"
         return None
 
 
@@ -4155,6 +4581,23 @@ def _agent_mutation_payload(payload: dict, *, require_name: bool) -> dict:
     }
 
 
+def _agent_strategy_payload(payload: dict) -> dict:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise KnowledgeBackendUnavailableError(
+            "agent name is required",
+            error_code="agent_name_required",
+            operation="agent_strategy_update",
+        )
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    return {
+        "name": name[:255],
+        "description": str(payload.get("description") or "").strip()[:1000],
+        "avatar": str(payload.get("avatar") or "").strip()[:64],
+        "config": dict(config),
+    }
+
+
 def _optional_str(value: object) -> str | None:
     if value is None:
         return None
@@ -4352,6 +4795,61 @@ def _redact_sensitive_text(value: str) -> str:
 
 def _content_hash(value: str) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
+
+
+def _agentqa_event_contract(
+    *,
+    event_counts: dict[str, int],
+    event_sequence: list[str],
+    complete_metadata: dict[str, int],
+) -> dict[str, object]:
+    thinking_count = int(event_counts.get("thinking") or 0)
+    tool_call_count = int(event_counts.get("tool_call") or 0)
+    tool_result_count = int(event_counts.get("tool_result") or 0)
+    reflection_count = int(event_counts.get("reflection") or 0)
+    references_count = int(event_counts.get("references") or 0)
+    answer_count = int(event_counts.get("answer") or 0)
+    complete_count = int(event_counts.get("complete") or 0)
+    error_count = int(event_counts.get("error") or 0)
+    approval_required_count = int(event_counts.get("tool_approval_required") or 0)
+    approval_resolved_count = int(event_counts.get("tool_approval_resolved") or 0)
+    return {
+        "schema_version": "wnid-p2-02-react-run-contract",
+        "source": "weknora_agent_stream",
+        "event_counts": dict(event_counts),
+        "event_sequence": event_sequence[:80],
+        "first_event": event_sequence[0] if event_sequence else None,
+        "last_event": event_sequence[-1] if event_sequence else None,
+        "thinking_count": thinking_count,
+        "tool_call_count": tool_call_count,
+        "tool_result_count": tool_result_count,
+        "reflection_count": reflection_count,
+        "references_count": references_count,
+        "answer_count": answer_count,
+        "complete_count": complete_count,
+        "error_count": error_count,
+        "tool_approval_required_count": approval_required_count,
+        "tool_approval_resolved_count": approval_resolved_count,
+        "answer_seen": answer_count > 0,
+        "complete_seen": complete_count > 0,
+        "react_trace_seen": any(
+            count > 0 for count in (thinking_count, tool_call_count, tool_result_count, reflection_count)
+        ),
+        "tool_call_result_balanced": tool_call_count == 0 or tool_result_count >= tool_call_count,
+        "completion": dict(complete_metadata),
+    }
+
+
+def _web_search_parameter_status(parameters: object) -> dict[str, object]:
+    params = parameters if isinstance(parameters, dict) else {}
+    extra = params.get("extra_config")
+    return {
+        "engine_id_configured": bool(params.get("engine_id")),
+        "base_url_configured": bool(params.get("base_url")),
+        "proxy_url_configured": bool(params.get("proxy_url")),
+        "extra_config_key_count": len(extra) if isinstance(extra, dict) else 0,
+        "masked": True,
+    }
 
 
 def _optional_int(value: object) -> int | None:

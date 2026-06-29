@@ -217,6 +217,7 @@ def run_knowledge_chat(
             knowledge_base_ids=request.knowledge_base_ids,
             knowledge_ids=request.knowledge_ids,
             web_search_enabled=request.web_search_enabled,
+            answer_mode=request.answer_mode,
             current_run=request.current_run,
         )
     except NativeKnowledgeChatError as exc:

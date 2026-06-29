@@ -13,6 +13,7 @@ import {
   Citation,
   GeneratedOutput,
   HistoryListFilters,
+  NativeMutationAudit,
   WikiPage,
   apiClient,
 } from "../api/client";
@@ -36,6 +37,8 @@ type HistoryFilters = {
   citationSource: string;
   sourceType: string;
   evidenceState: string;
+  wnidCapability: string;
+  wnidEvidenceState: string;
   warningFilter: string;
 };
 
@@ -46,6 +49,8 @@ const initialFilters: HistoryFilters = {
   citationSource: "all",
   sourceType: "all",
   evidenceState: "all",
+  wnidCapability: "all",
+  wnidEvidenceState: "all",
   warningFilter: "all",
 };
 
@@ -62,10 +67,38 @@ const evidenceStateLabels: Record<string, string> = {
   unknown: "未知",
 };
 
+const wnidCapabilityLabels: Record<string, string> = {
+  quick_qa: "Quick Q&A",
+  react_agentqa: "ReACT AgentQA",
+  wiki_mode: "Wiki Mode",
+  mcp_tools: "MCP Tools",
+  web_search: "Web Search",
+  strategy_mutation: "策略变更",
+};
+
+const wnidEvidenceStateLabels: Record<string, string> = {
+  audit_blocked: "审计阻断",
+  audit_failed: "审计失败",
+  audit_pending: "审计等待",
+  audit_succeeded: "审计成功",
+  citation_blocked: "引用阻断",
+  document_traceable: "文档可追踪",
+  mcp_audited: "MCP 已审计",
+  mcp_blocked: "MCP 阻断",
+  no_evidence: "无证据",
+  traceable: "可追踪",
+  web_search_blocked: "Web 阻断",
+  web_search_traceable: "Web 可追踪",
+  wiki_blocked: "Wiki 阻断",
+  wiki_traceable: "Wiki 可追踪",
+  unknown: "未知",
+};
+
 const taskTypeLabels: Record<string, string> = {
   knowledge_qa: "知识问答",
   native_agentqa: "Native AgentQA",
   native_knowledge_chat: "Native 知识对话",
+  native_mcp_tool_execution: "Native MCP 执行",
   policy_analysis: "政策分析",
   case_review: "案例复盘",
   wiki_draft: "Wiki 草稿",
@@ -141,6 +174,8 @@ function historyListFilters(filters: HistoryFilters): HistoryListFilters {
     citation_source: filters.citationSource,
     source_type: filters.sourceType,
     evidence_state: filters.evidenceState,
+    wnid_capability: filters.wnidCapability,
+    wnid_evidence_state: filters.wnidEvidenceState,
     has_warnings:
       filters.warningFilter === "with_warnings"
         ? true
@@ -152,6 +187,18 @@ function historyListFilters(filters: HistoryFilters): HistoryListFilters {
 
 function evidenceStateLabel(output: GeneratedOutput) {
   return evidenceStateLabels[output.evidence_state || "unknown"] ?? output.evidence_state;
+}
+
+function wnidCapabilityLabel(value?: string | null) {
+  if (!value) {
+    return "非 WNID";
+  }
+  return wnidCapabilityLabels[value] ?? value;
+}
+
+function wnidEvidenceStateLabel(value?: string | null) {
+  const normalized = value || "unknown";
+  return wnidEvidenceStateLabels[normalized] ?? normalized;
 }
 
 function compactCountLabel(label: string, count: number | undefined) {
@@ -173,6 +220,8 @@ export function HistoryPage() {
   const [selectedOutput, setSelectedOutput] = useState<GeneratedOutput | null>(null);
   const [citations, setCitations] = useState<Citation[]>([]);
   const [historyState, setHistoryState] = useState<LoadState>("idle");
+  const [auditEvents, setAuditEvents] = useState<NativeMutationAudit[]>([]);
+  const [auditState, setAuditState] = useState<LoadState>("idle");
   const [detailState, setDetailState] = useState<LoadState>("idle");
   const [draftState, setDraftState] = useState<LoadState>("idle");
   const [draftError, setDraftError] = useState<string | null>(null);
@@ -259,9 +308,32 @@ export function HistoryPage() {
       });
   };
 
+  const loadAudits = () => {
+    setAuditState("loading");
+    apiClient
+      .listNativeAuditEvents({
+        limit: 50,
+        wnid_capability:
+          filters.wnidCapability !== "all" ? filters.wnidCapability : undefined,
+      })
+      .then((response) => {
+        const events = response.items.filter((event) => event.wnid_capability);
+        setAuditEvents(events.slice(0, 8));
+        setAuditState("idle");
+      })
+      .catch(() => {
+        setAuditEvents([]);
+        setAuditState("error");
+      });
+  };
+
   useEffect(() => {
     loadHistory();
   }, [filters]);
+
+  useEffect(() => {
+    loadAudits();
+  }, [filters.wnidCapability]);
 
   const onSelectOutput = (outputId: string) => {
     setSelectedOutputId(outputId);
@@ -366,6 +438,40 @@ export function HistoryPage() {
             <details className="advanced-controls history-filter-advanced">
               <summary>高级筛选</summary>
               <label>
+                <span>WNID 能力</span>
+                <select
+                  value={filters.wnidCapability}
+                  onChange={(event) =>
+                    setFilters({ ...filters, wnidCapability: event.target.value })
+                  }
+                >
+                  <option value="all">全部</option>
+                  <option value="quick_qa">Quick Q&A</option>
+                  <option value="react_agentqa">ReACT AgentQA</option>
+                  <option value="wiki_mode">Wiki Mode</option>
+                  <option value="mcp_tools">MCP Tools</option>
+                  <option value="web_search">Web Search</option>
+                  <option value="strategy_mutation">策略变更</option>
+                </select>
+              </label>
+              <label>
+                <span>WNID 证据</span>
+                <select
+                  value={filters.wnidEvidenceState}
+                  onChange={(event) =>
+                    setFilters({ ...filters, wnidEvidenceState: event.target.value })
+                  }
+                >
+                  <option value="all">全部</option>
+                  <option value="document_traceable">文档可追踪</option>
+                  <option value="wiki_traceable">Wiki 可追踪</option>
+                  <option value="web_search_traceable">Web 可追踪</option>
+                  <option value="mcp_audited">MCP 已审计</option>
+                  <option value="citation_blocked">引用阻断</option>
+                  <option value="no_evidence">无证据</option>
+                </select>
+              </label>
+              <label>
                 <span>引用来源</span>
                 <select
                   value={filters.citationSource}
@@ -391,6 +497,7 @@ export function HistoryPage() {
                   <option value="all">全部</option>
                   <option value="document_chunk">文档分块</option>
                   <option value="wiki_page">Wiki 页面</option>
+                  <option value="web_search">Web Search</option>
                   <option value="unknown">未知</option>
                 </select>
               </label>
@@ -457,7 +564,9 @@ export function HistoryPage() {
                   <strong>{output.title}</strong>
                   <div>
                     <span>{taskTypeLabel(output.task_type)}</span>
+                    <span>{wnidCapabilityLabel(output.wnid_capability)}</span>
                     <StatusBadge status={output.status} />
+                    <span>{wnidEvidenceStateLabel(output.wnid_evidence_state)}</span>
                     <span>{evidenceStateLabel(output)}</span>
                   </div>
                   <div className="history-output-metrics">
@@ -467,6 +576,7 @@ export function HistoryPage() {
                     <span>{compactCountLabel("模拟", output.mock_citation_count)}</span>
                     <span>{compactCountLabel("文档", output.document_citation_count)}</span>
                     <span>{compactCountLabel("Wiki", output.wiki_citation_count)}</span>
+                    <span>{compactCountLabel("Web", output.web_search_citation_count)}</span>
                     <span>{compactCountLabel("警告", output.warning_count)}</span>
                   </div>
                   <time>{formatDate(output.created_at)}</time>
@@ -489,10 +599,14 @@ export function HistoryPage() {
           <article className="history-output-detail">
             <div className="history-detail-meta">
               <span>{taskTypeLabel(selectedOutput.task_type)}</span>
+              <span>{wnidCapabilityLabel(selectedOutput.wnid_capability)}</span>
+              <span>{wnidEvidenceStateLabel(selectedOutput.wnid_evidence_state)}</span>
               <span>{outputStatusLabel(selectedOutput.status)}</span>
               <span>{evidenceStateLabel(selectedOutput)}</span>
               <span>{compactCountLabel("引用", selectedOutput.citation_count)}</span>
               <span>{compactCountLabel("可定位", selectedOutput.traceable_citation_count)}</span>
+              <span>{`能力 ${selectedOutput.wnid_capabilities.map(wnidCapabilityLabel).join(", ") || "非 WNID"}`}</span>
+              <span>{`来源 ${selectedOutput.evidence_source_types.join(", ") || "无"}`}</span>
               <span>{compactCountLabel("警告", selectedOutput.warning_count)}</span>
               <span>{formatDate(selectedOutput.created_at)}</span>
             </div>
@@ -565,6 +679,32 @@ export function HistoryPage() {
           </div>
 
           <WarningList warnings={warnings} emptyText="暂无警告" />
+        </section>
+
+        <section className="history-side-section">
+          <div className="history-panel-heading">
+            <span>WNID 审计</span>
+            <strong>{auditState === "loading" ? "..." : auditEvents.length}</strong>
+          </div>
+
+          {auditState === "error" ? <ErrorState message="审计读取失败" /> : null}
+          {auditState === "loading" ? <EmptyState text="读取中" loading /> : null}
+          {auditState === "idle" && auditEvents.length === 0 ? (
+            <EmptyState text="暂无 WNID 审计" />
+          ) : null}
+          {auditEvents.map((event) => (
+            <div className="history-draft-result" key={event.id}>
+              <div>
+                <FileClock size={16} aria-hidden="true" />
+                <span>{wnidCapabilityLabel(event.wnid_capability)}</span>
+              </div>
+              <p>{event.operation}</p>
+              <div className="history-draft-summary">
+                <span>{wnidEvidenceStateLabel(event.wnid_evidence_state)}</span>
+                <span>{event.status}</span>
+              </div>
+            </div>
+          ))}
         </section>
 
         <section className="history-side-section">

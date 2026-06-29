@@ -45,6 +45,8 @@ services:
       # to config/builtin_models.yaml, edit it for your deployment, then
       # uncomment the line below. See docs/BUILTIN_MODELS.md.
       - ./config/builtin_models.yaml:/app/config/builtin_models.yaml:ro
+      # Optional: declarative built-in Agent defaults.
+      - ./config/builtin_agents.yaml:/app/config/builtin_agents.yaml:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -166,6 +168,9 @@ services:
       - TENANT_AES_KEY=${TENANT_AES_KEY:-}
       - SYSTEM_AES_KEY=${SYSTEM_AES_KEY:-}
       - SSRF_WHITELIST=${SSRF_WHITELIST:-}
+      # Exact URL allowlist for local MCP development/validation only. Unlike
+      # SSRF_WHITELIST_EXTRA, this does not relax other outbound URL surfaces.
+      - WEKNORA_MCP_SSRF_ALLOWLIST=${WEKNORA_MCP_SSRF_ALLOWLIST:-}
       # 保留原始 URL 的图片域名白名单（逗号分隔，不替换为 provider://）
       - IMAGE_HOST_KEEP_URL=${IMAGE_HOST_KEEP_URL:-}
       # Always allow the optional searxng sidecar (compose service hostname);

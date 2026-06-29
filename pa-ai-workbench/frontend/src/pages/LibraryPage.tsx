@@ -521,23 +521,27 @@ export function LibraryPage() {
     }
   };
 
+  const applyDocumentItems = (nextDocuments: Document[]) => {
+    setDocuments(nextDocuments);
+    if (
+      previewDocumentId &&
+      !nextDocuments.some((document) => document.id === previewDocumentId)
+    ) {
+      setPreviewDocumentId(null);
+      setChunks([]);
+      setEvents([]);
+      setSpans(null);
+    }
+    applyHashTarget(nextDocuments);
+  };
+
   const loadDocuments = () => {
     setLoadState("loading");
     setError(null);
     apiClient
-      .listDocuments(buildDocumentFilters(filters))
+      .listDocuments({ ...buildDocumentFilters(filters), refresh_status: true })
       .then((response) => {
-        setDocuments(response.items);
-        if (
-          previewDocumentId &&
-          !response.items.some((document) => document.id === previewDocumentId)
-        ) {
-          setPreviewDocumentId(null);
-          setChunks([]);
-          setEvents([]);
-          setSpans(null);
-        }
-        applyHashTarget(response.items);
+        applyDocumentItems(response.items);
         setLoadState("idle");
       })
       .catch((loadError: unknown) => {
@@ -566,6 +570,19 @@ export function LibraryPage() {
   useEffect(() => {
     loadDocuments();
   }, [filters.status, filters.knowledgeBackend, filters.knowledgeBaseId, filters.errorOnly]);
+
+  useEffect(() => {
+    if (processingCount === 0) {
+      return undefined;
+    }
+    const intervalId = window.setInterval(() => {
+      apiClient
+        .listDocuments({ ...buildDocumentFilters(filters), refresh_status: true })
+        .then((response) => applyDocumentItems(response.items))
+        .catch((loadError: unknown) => setError(errorMessage(loadError)));
+    }, 10000);
+    return () => window.clearInterval(intervalId);
+  }, [processingCount, filters.status, filters.knowledgeBackend, filters.knowledgeBaseId, filters.errorOnly, previewDocumentId]);
 
   useEffect(() => {
     loadKnowledgeBases();
@@ -1092,16 +1109,7 @@ export function LibraryPage() {
     apiClient
       .refreshDocumentStatuses(buildDocumentFilters(filters))
       .then((response) => {
-        setDocuments(response.items);
-        if (
-          previewDocumentId &&
-          !response.items.some((document) => document.id === previewDocumentId)
-        ) {
-          setPreviewDocumentId(null);
-          setChunks([]);
-          setEvents([]);
-          setSpans(null);
-        }
+        applyDocumentItems(response.items);
       })
       .catch((refreshError: unknown) => setError(errorMessage(refreshError)))
       .finally(() => setIsRefreshingStatuses(false));

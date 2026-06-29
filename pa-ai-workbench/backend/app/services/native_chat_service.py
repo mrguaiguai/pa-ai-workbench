@@ -38,6 +38,7 @@ def run_native_knowledge_chat(
     knowledge_base_ids: list[str] | None = None,
     knowledge_ids: list[str] | None = None,
     web_search_enabled: bool = False,
+    answer_mode: str = "qa",
     current_run: dict[str, Any] | None = None,
 ) -> tuple[
     Conversation,
@@ -50,6 +51,8 @@ def run_native_knowledge_chat(
     normalized_query = str(query or "").strip()
     if not normalized_query:
         raise NativeKnowledgeChatError("Query is required.")
+    normalized_answer_mode = _normalize_answer_mode(answer_mode)
+    effective_query = _answer_mode_query(normalized_query, normalized_answer_mode)
     if get_settings().knowledge_backend != "weknora_api":
         raise NativeKnowledgeChatError("Native knowledge-chat requires the WeKnora backend.")
 
@@ -70,6 +73,7 @@ def run_native_knowledge_chat(
         kb_ids=kb_ids,
         knowledge_ids=native_knowledge_ids,
         current_run=current_run or {},
+        answer_mode=normalized_answer_mode,
     )
     task = create_task(
         session=session,
@@ -82,6 +86,7 @@ def run_native_knowledge_chat(
                 "knowledge_base_ids": kb_ids,
                 "knowledge_ids": native_knowledge_ids,
                 "web_search_enabled": web_search_enabled,
+                "answer_mode": normalized_answer_mode,
                 "current_run": current_run or {},
             }
         ),
@@ -100,7 +105,7 @@ def run_native_knowledge_chat(
             native_session_id = backend.create_agent_session(title or normalized_query)
             result = backend.run_knowledge_chat(
                 session_id=native_session_id,
-                query=normalized_query,
+                query=effective_query,
                 knowledge_base_ids=kb_ids,
                 knowledge_ids=native_knowledge_ids,
                 web_search_enabled=web_search_enabled,
@@ -136,8 +141,10 @@ def run_native_knowledge_chat(
                 "task_type": "native_knowledge_chat",
                 "source": "weknora_api",
                 "native_session_id": result.get("session_id"),
+                "answer_mode": normalized_answer_mode,
                 "event_counts": result.get("event_counts") or {},
                 "reference_count": result.get("reference_count") or 0,
+                "reference_event_source": result.get("reference_event_source") or "references",
                 "current_run": current_run or {},
             }
         ),
@@ -166,8 +173,10 @@ def run_native_knowledge_chat(
                 "answer": answer,
                 "source": "weknora_api",
                 "native_session_id": result.get("session_id"),
+                "answer_mode": normalized_answer_mode,
                 "event_counts": result.get("event_counts") or {},
                 "reference_count": result.get("reference_count") or 0,
+                "reference_event_source": result.get("reference_event_source") or "references",
             }
         ),
         content_markdown=answer,
@@ -186,8 +195,10 @@ def run_native_knowledge_chat(
     messages = list_messages(session, conversation.id)
     runtime = {
         "native_session_id": result.get("session_id"),
+        "answer_mode": normalized_answer_mode,
         "event_counts": result.get("event_counts") or {},
         "reference_count": result.get("reference_count") or 0,
+        "reference_event_source": result.get("reference_event_source") or "references",
         "saved_citation_count": len(citations),
         "warnings": warnings,
         "assistant_message_id": assistant.id,
@@ -206,6 +217,7 @@ def _ensure_conversation(
     kb_ids: list[str],
     knowledge_ids: list[str],
     current_run: dict[str, Any],
+    answer_mode: str,
 ) -> tuple[Conversation, ConversationMessage | None]:
     metadata = _json_dumps(
         {
@@ -214,6 +226,7 @@ def _ensure_conversation(
             "knowledge_base_ids": kb_ids,
             "knowledge_ids": knowledge_ids,
             "current_run": current_run,
+            "answer_mode": answer_mode,
         }
     )
     if conversation_id:
@@ -351,6 +364,27 @@ def _normalize_str_list(values: Any) -> list[str]:
         if text and text not in normalized:
             normalized.append(text)
     return normalized
+
+
+def _normalize_answer_mode(value: str | None) -> str:
+    normalized = str(value or "qa").strip()
+    return normalized if normalized in {"qa", "policy_analysis", "case_review"} else "qa"
+
+
+def _answer_mode_query(query: str, answer_mode: str) -> str:
+    if answer_mode == "policy_analysis":
+        return (
+            "请基于可检索到的资料库证据进行政策分析，按“政策要点、影响对象、风险提示、可执行建议”组织回答；"
+            "如果证据不足，请明确说明不足之处。\n\n用户问题："
+            f"{query}"
+        )
+    if answer_mode == "case_review":
+        return (
+            "请基于可检索到的资料库证据进行案例复盘，按“事实经过、关键问题、风险点、后续建议”组织回答；"
+            "如果证据不足，请明确说明不足之处。\n\n用户问题："
+            f"{query}"
+        )
+    return query
 
 
 def _first_string(*values: Any) -> str | None:

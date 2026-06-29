@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -16,18 +18,21 @@ import (
 
 // mcpServiceService implements MCPServiceService interface
 type mcpServiceService struct {
-	mcpServiceRepo interfaces.MCPServiceRepository
-	mcpManager     *mcp.MCPManager
+	mcpServiceRepo         interfaces.MCPServiceRepository
+	mcpManager             *mcp.MCPManager
+	mcpToolApprovalService interfaces.MCPToolApprovalService
 }
 
 // NewMCPServiceService creates a new MCP service service
 func NewMCPServiceService(
 	mcpServiceRepo interfaces.MCPServiceRepository,
 	mcpManager *mcp.MCPManager,
+	mcpToolApprovalService interfaces.MCPToolApprovalService,
 ) interfaces.MCPServiceService {
 	return &mcpServiceService{
-		mcpServiceRepo: mcpServiceRepo,
-		mcpManager:     mcpManager,
+		mcpServiceRepo:         mcpServiceRepo,
+		mcpManager:             mcpManager,
+		mcpToolApprovalService: mcpToolApprovalService,
 	}
 }
 
@@ -306,7 +311,7 @@ func (s *mcpServiceService) DeleteMCPService(ctx context.Context, tenantID uint6
 	return nil
 }
 
-// TestMCPService tests the connection to an MCP service and returns available tools/resources
+// TestMCPService tests the connection to an MCP service and returns available tools/resources/prompts
 func (s *mcpServiceService) TestMCPService(
 	ctx context.Context,
 	tenantID uint64,
@@ -369,6 +374,13 @@ func (s *mcpServiceService) TestMCPService(
 		resources = []*types.MCPResource{}
 	}
 
+	// List prompts
+	prompts, err := client.ListPrompts(testCtx)
+	if err != nil {
+		logger.GetLogger(ctx).Warnf("Failed to list prompts: %v", err)
+		prompts = []*types.MCPPrompt{}
+	}
+
 	return &types.MCPTestResult{
 		Success: true,
 		Message: fmt.Sprintf(
@@ -378,6 +390,7 @@ func (s *mcpServiceService) TestMCPService(
 		),
 		Tools:     tools,
 		Resources: resources,
+		Prompts:   prompts,
 	}, nil
 }
 
@@ -549,3 +562,217 @@ func (s *mcpServiceService) GetMCPServiceResources(
 	return resources, nil
 }
 
+// GetMCPServicePrompts retrieves the list of prompts from an MCP service
+func (s *mcpServiceService) GetMCPServicePrompts(
+	ctx context.Context,
+	tenantID uint64,
+	id string,
+) ([]*types.MCPPrompt, error) {
+	service, err := s.mcpServiceRepo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get MCP service: %w", err)
+	}
+	if service == nil {
+		return nil, fmt.Errorf("MCP service not found")
+	}
+
+	client, err := s.mcpManager.GetOrCreateClient(service)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get MCP client: %w", err)
+	}
+
+	prompts, err := client.ListPrompts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list prompts: %w", err)
+	}
+
+	return prompts, nil
+}
+
+// GetMCPServicePrompt reads one prompt from an MCP service.
+func (s *mcpServiceService) GetMCPServicePrompt(
+	ctx context.Context,
+	tenantID uint64,
+	id string,
+	promptName string,
+	args json.RawMessage,
+) (*types.MCPPromptReadResult, error) {
+	promptName = strings.TrimSpace(promptName)
+	if promptName == "" {
+		return nil, fmt.Errorf("prompt_name is required")
+	}
+	service, err := s.mcpServiceRepo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get MCP service: %w", err)
+	}
+	if service == nil {
+		return nil, fmt.Errorf("MCP service not found")
+	}
+
+	input := map[string]string{}
+	if len(args) > 0 && strings.TrimSpace(string(args)) != "" && strings.TrimSpace(string(args)) != "null" {
+		raw := map[string]interface{}{}
+		if err := json.Unmarshal(args, &raw); err != nil || raw == nil {
+			return nil, fmt.Errorf("arguments must be a JSON object")
+		}
+		for key, value := range raw {
+			if text, ok := value.(string); ok {
+				input[key] = text
+				continue
+			}
+			return nil, fmt.Errorf("prompt arguments must be string values")
+		}
+	}
+
+	client, err := s.mcpManager.GetOrCreateClient(service)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get MCP client: %w", err)
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	result, err := client.GetPrompt(callCtx, promptName, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get prompt: %w", err)
+	}
+	return result, nil
+}
+
+// ExecuteMCPServiceTool executes one MCP tool through the native MCP client.
+func (s *mcpServiceService) ExecuteMCPServiceTool(
+	ctx context.Context,
+	tenantID uint64,
+	id string,
+	toolName string,
+	args json.RawMessage,
+	approvalDecision string,
+) (*types.MCPToolExecutionResult, error) {
+	toolName = strings.TrimSpace(toolName)
+	approvalDecision = strings.TrimSpace(strings.ToLower(approvalDecision))
+	if toolName == "" {
+		return nil, fmt.Errorf("tool_name is required")
+	}
+
+	service, err := s.mcpServiceRepo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get MCP service: %w", err)
+	}
+	if service == nil {
+		return nil, fmt.Errorf("MCP service not found")
+	}
+	if !service.Enabled {
+		return &types.MCPToolExecutionResult{
+			Success:     false,
+			ServiceID:   service.ID,
+			ServiceName: service.Name,
+			ToolName:    toolName,
+			Error:       "MCP service is disabled",
+		}, nil
+	}
+
+	input := map[string]interface{}{}
+	if len(args) > 0 && strings.TrimSpace(string(args)) != "" && strings.TrimSpace(string(args)) != "null" {
+		if err := json.Unmarshal(args, &input); err != nil || input == nil {
+			return nil, fmt.Errorf("arguments must be a JSON object")
+		}
+	}
+
+	approvalRequired := false
+	if s.mcpToolApprovalService != nil {
+		required, err := s.mcpToolApprovalService.IsRequired(ctx, tenantID, service.ID, toolName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check MCP tool approval policy: %w", err)
+		}
+		approvalRequired = required
+	}
+
+	result := &types.MCPToolExecutionResult{
+		Success:          false,
+		ServiceID:        service.ID,
+		ServiceName:      service.Name,
+		ToolName:         toolName,
+		ApprovalRequired: approvalRequired,
+		ApprovalDecision: approvalDecision,
+	}
+	if approvalRequired {
+		switch approvalDecision {
+		case "reject":
+			result.Success = true
+			result.Rejected = true
+			result.Message = "MCP tool execution rejected by approval decision"
+			return result, nil
+		case "approve":
+			// Continue to execution.
+		default:
+			result.Message = "approval decision required before MCP tool execution"
+			result.Error = "approval_required"
+			return result, nil
+		}
+	}
+
+	client, err := s.mcpManager.GetOrCreateClient(service)
+	if err != nil {
+		result.Error = fmt.Sprintf("failed to get MCP client: %v", err)
+		return result, nil
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	callResult, err := client.CallTool(callCtx, toolName, input)
+	if err != nil {
+		result.Error = fmt.Sprintf("tool execution failed: %v", err)
+		return result, nil
+	}
+	result.Executed = true
+	result.ContentItemCount = len(callResult.Content)
+	output := safeMCPToolOutput(callResult.Content)
+	result.Output = truncateMCPExecutionText(output, 1000)
+	result.OutputChars = len([]rune(output))
+	if callResult.IsError {
+		result.Error = result.Output
+		result.Message = "MCP tool returned an error"
+		return result, nil
+	}
+	result.Success = true
+	result.Message = "MCP tool executed successfully"
+	return result, nil
+}
+
+func safeMCPToolOutput(content []mcp.ContentItem) string {
+	parts := make([]string, 0, len(content))
+	for _, item := range content {
+		switch item.Type {
+		case "text":
+			if item.Text != "" {
+				parts = append(parts, item.Text)
+			}
+		case "resource":
+			parts = append(parts, fmt.Sprintf("[Resource: %s]", item.MimeType))
+		case "image":
+			mimeType := item.MimeType
+			if mimeType == "" {
+				mimeType = "image"
+			}
+			parts = append(parts, fmt.Sprintf("[Image: %s]", mimeType))
+		default:
+			if item.Text != "" {
+				parts = append(parts, item.Text)
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return "Tool executed successfully (no text output)"
+	}
+	return strings.Join(parts, "\n")
+}
+
+func truncateMCPExecutionText(text string, maxRunes int) string {
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	if maxRunes <= 3 {
+		return string(runes[:maxRunes])
+	}
+	return string(runes[:maxRunes-3]) + "..."
+}
