@@ -1,0 +1,7 @@
+{
+  "name": "pa-ai-workbench-workspace",
+  "private": true,
+  "workspaces": [
+    "apps/pa-web"
+  ]
+}

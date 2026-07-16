@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pa-ai-workbench-api"
+version = "0.1.0"
+description = "PA AI Workbench API application"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "sqlmodel",
+  "sqlalchemy",
+  "python-dotenv",
+  "requests",
+  "pydantic",
+  "python-multipart",
+  "pypdf",
+  "python-docx",
+  "chromadb",
+  "pa-agent-runtime==0.1.0",
+  "pa-knowledge-engine==0.1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

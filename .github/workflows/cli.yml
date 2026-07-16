@@ -7,16 +7,16 @@ on:
   push:
     branches: [main]
     paths:
-      - 'cli/**'
+      - 'platform/weknora/cli/**'
       - '.github/workflows/cli.yml'
   pull_request:
     paths:
-      - 'cli/**'
+      - 'platform/weknora/cli/**'
       - '.github/workflows/cli.yml'
 
 defaults:
   run:
-    working-directory: cli
+    working-directory: platform/weknora/cli
     # Windows default is PowerShell, which tokenizes `go test -coverprofile=coverage.out ./...`
     # in a way that detaches `.out` as a separate positional package arg.
     # Force bash everywhere so the run lines parse identically across platforms
@@ -40,7 +40,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
-          cache-dependency-path: cli/go.sum
+          cache-dependency-path: platform/weknora/cli/go.sum
       - name: go build
         run: go build ./...
       - name: go test

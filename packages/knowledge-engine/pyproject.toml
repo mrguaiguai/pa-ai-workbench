@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pa-knowledge-engine"
+version = "0.1.0"
+description = "PA AI Workbench knowledge engine"
+requires-python = ">=3.10"
+dependencies = [
+  "requests",
+  "pypdf",
+  "python-docx",
+  "chromadb",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["knowledge_engine*"]

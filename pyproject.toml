@@ -1,0 +1,15 @@
+[tool.uv.workspace]
+members = [
+  "apps/pa-api",
+  "packages/agent-runtime",
+  "packages/knowledge-engine",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "apps/pa-api",
+  "packages/agent-runtime",
+  "packages/knowledge-engine",
+]
+testpaths = ["tests/backend"]
+addopts = "-ra"

@@ -1,0 +1,49 @@
+name: PA Image Build
+
+on:
+  pull_request:
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "infra/docker/pa-api/**"
+      - "infra/docker/pa-web/**"
+      - ".dockerignore"
+      - ".github/workflows/pa-images.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "infra/docker/pa-api/**"
+      - "infra/docker/pa-web/**"
+      - ".dockerignore"
+      - ".github/workflows/pa-images.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: pa-api
+            context: .
+            dockerfile: infra/docker/pa-api/Dockerfile
+          - name: pa-web
+            context: .
+            dockerfile: infra/docker/pa-web/Dockerfile
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: pa-ai-workbench/${{ matrix.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max

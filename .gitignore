@@ -1,71 +1,87 @@
-# Local-only hidden files and directories
+# PA-first repository ignore policy.
+# Runtime state belongs under .local/, Docker volumes, or explicitly retained
+# compatibility paths. Do not broaden build/output patterns across legitimate
+# source directories such as platform/weknora/cli/internal/build and output.
+
+# OS, editor, and local agent state
 .DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
 .env
 .env.*
 !.env.example
-!.env.lite.example
+!.env.*.example
 .pa_m1_smoke_password
 .agents/
 .codex/
 
-# Track project metadata that a fresh clone needs.
-!.dockerignore
-!.gitattributes
-!.gitignore
-!.github/
-!.github/**
-!.golangci.yml
-!pa-ai-workbench/.github/
-!pa-ai-workbench/.github/**
-
-# 敏感文件
+# Credentials and private material
 *.pem
-*_key
-*_secret
 *.key
 *.crt
+*.p12
+*.pfx
+*_key
+*_secret
 
-# IDE和编辑器文件
-*.swp
-*.swo
-
-# 构建和依赖文件
-node_modules/
-/dist/
-/build/
+# Canonical local runtime and root-scoped generated output
+/.local/
+/output/
+/tmp/
+/temp/
+/logs/
 *.log
-
-# 临时文件
-tmp/
-temp/
-logs/
 *.pid
 
-WeKnora
-WeKnora-lite
-cmd/desktop/build/bin/
-/models/
-test/data/mswag.txt
-data/files/
-data/weknora.db
-data/weknora.db-wal
-data/weknora.db-shm
+# Databases, vectors, uploads, and PA runtime state
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+/apps/pa-api/data/
+/apps/pa-api/uploads/
+/apps/pa-api/chroma/
 
-web/
+# Python environments, caches, and reports
+**/.venv/
+**/venv/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+*.py[cod]
 
-**/__pycache__
-/scripts/scale_dev_jobs.sh
-/server
-frontend/.vite
-frontend/chrome-extension/
-WeKnora-Chrome-Extension
-packages/protoc-3.19.4-linux-x86_64.zip
+# Node package stores, caches, and generated bundles
+node_modules/
+/.pnpm-store/
+/.npm/
+/.yarn/
+.vite/
+*.tsbuildinfo
+/dist/
+/build/
+/apps/pa-api/dist/
+/apps/pa-api/build/
+/apps/pa-web/dist/
+/apps/pa-web/build/
+/platform/weknora/frontend/dist/
+/platform/weknora/cmd/desktop/build/bin/
 
-Claude.md
-
-# 本地测试脚本
-configure-ollama.sh
-fix-docker.sh
-
-# WeChat Mini Program local/private configuration
-miniprogram/project.private.config.json
+# Compatibility paths retained without moving or deleting user/runtime data.
+apps/pa-api/.venv
+apps/pa-web/node_modules
+/pa-ai-workbench/backend/.venv/
+/pa-ai-workbench/backend/data/
+/pa-ai-workbench/backend/uploads/
+/pa-ai-workbench/frontend/node_modules/
+/pa-ai-workbench/frontend/dist/
+/pa-ai-workbench/logs/
+/pa-ai-workbench/tmp/
+/pa-ai-workbench/docs/resume_project/

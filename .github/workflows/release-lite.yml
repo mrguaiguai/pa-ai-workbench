@@ -22,6 +22,10 @@ env:
   NODE_VERSION: "22"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+defaults:
+  run:
+    working-directory: platform/weknora
+
 jobs:
   # ── 1. Build frontend once, share as artifact (for Web CLI) ──
   build-frontend:
@@ -33,10 +37,10 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: platform/weknora/frontend/package-lock.json
 
       - name: Build frontend
-        working-directory: frontend
+        working-directory: platform/weknora/frontend
         run: |
           npm ci
           npm run build
@@ -44,7 +48,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
-          path: frontend/dist/
+          path: platform/weknora/frontend/dist/
           retention-days: 1
 
   # ── 2a. Build Web CLI binary per platform (native CGO) ──
@@ -80,7 +84,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: frontend-dist
-          path: web/
+          path: platform/weknora/web/
 
       - name: Resolve version
         id: ver
@@ -96,8 +100,8 @@ jobs:
       - name: Build
         run: |
           export EDITION=lite
-          eval "$(./scripts/get_version.sh env)"
-          LDFLAGS="-w -s $(./scripts/get_version.sh ldflags)"
+          eval "$(../../scripts/release/weknora-version.sh env)"
+          LDFLAGS="-w -s $(../../scripts/release/weknora-version.sh ldflags)"
           export CGO_CFLAGS="-Wno-deprecated-declarations"
           if [ "${{ matrix.goos }}" = "darwin" ]; then
             export CGO_LDFLAGS="-Wl,-no_warn_duplicate_libraries"
@@ -130,8 +134,8 @@ jobs:
         with:
           name: release-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            WeKnora-lite_*.tar.gz
-            WeKnora-lite_*.tar.gz.sha256
+            platform/weknora/WeKnora-lite_*.tar.gz
+            platform/weknora/WeKnora-lite_*.tar.gz.sha256
           retention-days: 3
 
   # ── 2b. Build Desktop APP per platform (Wails) ──
@@ -175,7 +179,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: platform/weknora/frontend/package-lock.json
 
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
@@ -216,8 +220,8 @@ jobs:
         run: |
           export EDITION=lite
           export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
-          eval "$(./scripts/get_version.sh env)"
-          LDFLAGS="$(./scripts/get_version.sh ldflags) -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'"
+          eval "$(../../scripts/release/weknora-version.sh env)"
+          LDFLAGS="$(../../scripts/release/weknora-version.sh ldflags) -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'"
           export CGO_CFLAGS="-Wno-deprecated-declarations"
 
           BUILD_TAGS="sqlite_fts5"
@@ -317,7 +321,7 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: |
-            WeKnora-Lite-App_*
+            platform/weknora/WeKnora-Lite-App_*
           retention-days: 3
 
   # ── 3. Create GitHub Release ──
@@ -331,11 +335,13 @@ jobs:
         with:
           pattern: release-*
           merge-multiple: true
+          path: platform/weknora
 
       - uses: actions/download-artifact@v8
         with:
           pattern: desktop-*
           merge-multiple: true
+          path: platform/weknora
 
       - name: Resolve version
         id: ver
@@ -436,7 +442,7 @@ jobs:
         run: sleep 15
 
       - name: Update Formula
-        run: ./scripts/update-homebrew-formula.sh "${{ steps.ver.outputs.version }}"
+        run: ../../scripts/release/update-weknora-homebrew-formula.sh "${{ steps.ver.outputs.version }}"
 
       - name: Commit and push
         run: |

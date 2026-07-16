@@ -1,0 +1,73 @@
+name: pa-ai-workbench
+
+include:
+  - path: ./infra/compose/weknora.yaml
+
+services:
+  pa-api:
+    image: pa-ai-workbench-api:${PA_VERSION:-local}
+    build:
+      context: .
+      dockerfile: infra/docker/pa-api/Dockerfile
+    container_name: PA-ai-workbench-api
+    ports:
+      - "${PA_API_PORT:-8000}:8000"
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      PA_SKIP_DOTENV: "1"
+      APP_ENV: ${PA_APP_ENV:-local}
+      KNOWLEDGE_BACKEND: ${PA_KNOWLEDGE_BACKEND:-weknora_api}
+      MOCK_MODE: ${PA_MOCK_MODE:-false}
+      DATABASE_URL: ${PA_DATABASE_URL:-sqlite:////var/lib/pa/pa_workbench.db}
+      UPLOAD_DIR: ${PA_UPLOAD_DIR:-/var/lib/pa/uploads}
+      WEKNORA_BASE_URL: ${WEKNORA_BASE_URL:-http://app:8080}
+      WEKNORA_SERVICE_TOKEN: ${WEKNORA_SERVICE_TOKEN:-}
+      WEKNORA_WORKSPACE_ID: ${WEKNORA_WORKSPACE_ID:-}
+      WEKNORA_DEFAULT_KB_ID: ${WEKNORA_DEFAULT_KB_ID:-}
+      CORS_ORIGINS: ${PA_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+    volumes:
+      - pa-data:/var/lib/pa
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - WeKnora-network
+    restart: unless-stopped
+
+  pa-web:
+    image: pa-ai-workbench-web:${PA_VERSION:-local}
+    build:
+      context: .
+      dockerfile: infra/docker/pa-web/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${PA_API_PUBLIC_URL:-http://127.0.0.1:8000}
+    container_name: PA-ai-workbench-web
+    ports:
+      - "${PA_WEB_PORT:-5173}:80"
+    depends_on:
+      pa-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - WeKnora-network
+    restart: unless-stopped
+
+volumes:
+  pa-data:

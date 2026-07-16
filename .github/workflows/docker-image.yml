@@ -10,6 +10,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    working-directory: platform/weknora
+
 jobs:
   build-ui:
     runs-on: ubuntu-latest
@@ -37,8 +41,8 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          file: frontend/Dockerfile
-          context: ./frontend
+          file: infra/docker/weknora/Dockerfile.frontend
+          context: ./platform/weknora/frontend
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=build-ui
@@ -86,8 +90,8 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          file: docker/Dockerfile.docreader
-          context: .
+          file: infra/docker/weknora/Dockerfile.docreader
+          context: ./platform/weknora
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=build-docreader
@@ -119,8 +123,8 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64
-          file: docker/Dockerfile.sandbox
-          context: .
+          file: infra/docker/weknora/Dockerfile.sandbox
+          context: ./platform/weknora
           labels: ${{ steps.meta.outputs.labels }}
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=build-sandbox
@@ -161,7 +165,7 @@ jobs:
         id: version
         run: |
           # 使用统一的版本管理脚本
-          eval "$(./scripts/get_version.sh env)"
+          eval "$(../../scripts/release/weknora-version.sh env)"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "commit_id=$COMMIT_ID" >> $GITHUB_OUTPUT
           echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
@@ -170,7 +174,7 @@ jobs:
           platform=${{ matrix.platform }}
           echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
           # 显示版本信息
-          ./scripts/get_version.sh info
+          ../../scripts/release/weknora-version.sh info
       
       - name: Build app Image
         id: build
@@ -178,8 +182,8 @@ jobs:
         with:
           push: true
           platforms: ${{ matrix.platform }}
-          file: docker/Dockerfile.app
-          context: .
+          file: infra/docker/weknora/Dockerfile.app
+          context: ./platform/weknora
           build-args: |
             ${{ format('VERSION_ARG={0}', steps.version.outputs.version) }}
             ${{ format('COMMIT_ID_ARG={0}', steps.version.outputs.commit_id) }}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "PA Repository Reorganization"
+  short_description: "Safely restructure PA as the canonical monorepo"
+  default_prompt: "Use $pa-repository-architecture-reorganization to execute the next unfinished PAR task safely and validate repository integrity."

@@ -1,333 +1,146 @@
-.PHONY: help build run test clean docker-build-app docker-build-docreader docker-build-frontend docker-build-all docker-run migrate-up migrate-down docker-restart docker-stop start-all stop-all start-ollama stop-ollama build-images build-images-app build-images-docreader build-images-frontend clean-images check-env list-containers pull-images show-platform dev-start dev-stop dev-restart dev-logs dev-status dev-app dev-frontend docs install-swagger build-lite run-lite package-lite
+SHELL := /bin/bash
+.DEFAULT_GOAL := help
 
-# Show help
+PYTHON ?= $(if $(wildcard apps/pa-api/.venv/bin/python),apps/pa-api/.venv/bin/python,python3)
+NPM ?= npm
+COMPOSE ?= docker compose
+
+REPOSITORY_ROOT := $(CURDIR)
+PA_API_ROOT := $(REPOSITORY_ROOT)/apps/pa-api
+PA_WEB_ROOT := $(REPOSITORY_ROOT)/apps/pa-web
+WEKNORA_ROOT := $(REPOSITORY_ROOT)/platform/weknora
+PYTHONPATH_ROOTS := $(PA_API_ROOT):$(REPOSITORY_ROOT)/packages/agent-runtime:$(REPOSITORY_ROOT)/packages/knowledge-engine
+PAR_CHECKER := scripts/validation/check_pa_repository_reorganization.py
+WEB_OUT_DIR ?= /tmp/pa-ai-workbench-par-p2-03-web
+
+.PHONY: help setup start pa-start pa-stop pa-status pa-logs status \
+	weknora-dev-start weknora-dev-stop weknora-dev-status weknora-dev-logs \
+	compose-config launchagents-install launchagents-uninstall \
+	native-build native-test release-version release-images release-lite release-mac \
+	validate validate-command-surface validate-python validate-backend validate-web \
+	validate-static-acceptance validate-live-acceptance validate-clean-clone \
+	validate-par validate-par-json validate-par-final
+
 help:
-	@echo "WeKnora Makefile 帮助"
+	@echo "PA AI Workbench root commands"
 	@echo ""
-	@echo "基础命令:"
-	@echo "  build             构建应用"
-	@echo "  run               运行应用"
-	@echo "  test              运行测试"
-	@echo "  clean             清理构建文件"
+	@echo "Development:"
+	@echo "  make setup                 prepare local PA + WeKnora dependencies"
+	@echo "  make start                 start WeKnora and local PA services"
+	@echo "  make pa-start|pa-stop      manage local PA API/Web processes"
+	@echo "  make pa-status|pa-logs     inspect local PA process state"
+	@echo "  make weknora-dev-start     start native development dependencies"
 	@echo ""
-	@echo "Docker 命令:"
-	@echo "  docker-build-app       构建应用 Docker 镜像 (wechatopenai/weknora-app)"
-	@echo "  docker-build-docreader 构建文档读取器镜像 (wechatopenai/weknora-docreader)"
-	@echo "  docker-build-frontend  构建前端镜像 (wechatopenai/weknora-ui)"
-	@echo "  docker-build-all       构建所有 Docker 镜像"
-	@echo "  docker-run            运行 Docker 容器"
-	@echo "  docker-stop           停止 Docker 容器"
-	@echo "  docker-restart        重启 Docker 容器"
+	@echo "Operations:"
+	@echo "  make status                read-only Compose and PA process status"
+	@echo "  make compose-config        render the canonical root Compose model"
+	@echo "  make launchagents-install  install/start macOS PA LaunchAgents"
+	@echo "  make launchagents-uninstall remove macOS PA LaunchAgents"
 	@echo ""
-	@echo "服务管理:"
-	@echo "  start-all         启动所有服务"
-	@echo "  stop-all          停止所有服务"
-	@echo "  start-ollama      仅启动 Ollama 服务"
+	@echo "Release:"
+	@echo "  make release-version       print sanitized WeKnora version metadata"
+	@echo "  make release-images        build native images"
+	@echo "  make release-lite          build the WeKnora Lite archive"
+	@echo "  make release-mac           build the WeKnora macOS app"
 	@echo ""
-	@echo "镜像构建:"
-	@echo "  build-images      从源码构建所有镜像"
-	@echo "  build-images-app  从源码构建应用镜像"
-	@echo "  build-images-docreader 从源码构建文档读取器镜像"
-	@echo "  build-images-frontend  从源码构建前端镜像"
-	@echo "  clean-images      清理本地镜像"
-	@echo ""
-	@echo "数据库:"
-	@echo "  migrate-up        执行数据库迁移"
-	@echo "  migrate-down      回滚数据库迁移"
-	@echo ""
-	@echo "开发工具:"
-	@echo "  fmt               格式化代码"
-	@echo "  lint              代码检查"
-	@echo "  deps              安装依赖"
-	@echo "  docs              生成 Swagger API 文档"
-	@echo "  install-swagger   安装 swag 工具"
-	@echo ""
-	@echo "环境检查:"
-	@echo "  check-env         检查环境配置"
-	@echo "  list-containers   列出运行中的容器"
-	@echo "  pull-images       拉取最新镜像"
-	@echo "  show-platform     显示当前构建平台"
-	@echo ""
-	@echo "开发模式（推荐）:"
-	@echo "  dev-start         启动开发环境基础设施（仅启动依赖服务）"
-	@echo "  dev-stop          停止开发环境"
-	@echo "  dev-restart       重启开发环境"
-	@echo "  dev-logs          查看开发环境日志"
-	@echo "  dev-status        查看开发环境状态"
-	@echo "  dev-app           启动后端应用（本地运行，需先运行 dev-start）"
-	@echo "  dev-frontend      启动前端（本地运行，需先运行 dev-start）"
-	@echo ""
-	@echo "Lite 模式（零外部依赖）:"
-	@echo "  build-lite        构建 Lite 版本（先构建前端到 web/，再构建 Go；SKIP_FRONTEND=1 跳过前端）"
-	@echo "  run-lite          构建并启动 Lite 版本"
-	@echo "  package-lite      构建并打包 Lite 发行包（tarball）"
-	@echo "  package-mac-app   构建并打包 macOS 桌面应用 (.app)"
+	@echo "Validation:"
+	@echo "  make validate              command, Python, backend, Web, and PAR gates"
+	@echo "  make validate-static-acceptance  repository boundary contract tests"
+	@echo "  make validate-live-acceptance  live PA + WeKnora workflow/browser gates"
+	@echo "  make validate-clean-clone  reproduce final acceptance from an index-clean clone"
+	@echo "  make validate-par-json     machine-readable PAR governance result"
+	@echo "  make validate-par-final    final PAR governance and evidence gate"
 
-# Go related variables
-BINARY_NAME=WeKnora
-MAIN_PATH=./cmd/server
+setup:
+	./scripts/dev/pa-workbench-setup.sh
 
-# Docker related variables
-DOCKER_IMAGE=wechatopenai/weknora-app
-DOCKER_TAG=latest
+start:
+	./scripts/dev/pa-workbench-start.sh
 
-# Platform detection
-ifeq ($(shell uname -m),x86_64)
-    PLATFORM=linux/amd64
-else ifeq ($(shell uname -m),aarch64)
-    PLATFORM=linux/arm64
-else ifeq ($(shell uname -m),arm64)
-    PLATFORM=linux/arm64
-else
-    PLATFORM=linux/amd64
-endif
+pa-start:
+	./scripts/dev/pa-dev-services.sh start
 
-# Build the application
-build:
-	go build -o $(BINARY_NAME) $(MAIN_PATH)
+pa-stop:
+	./scripts/dev/pa-dev-services.sh stop
 
-# Run the application
-run: build
-	./$(BINARY_NAME)
+pa-status:
+	./scripts/dev/pa-dev-services.sh status
 
-# Run tests
-test:
-	go test -v ./...
+pa-logs:
+	./scripts/dev/pa-dev-services.sh logs
 
-# Clean build artifacts
-clean:
-	go clean
-	rm -f $(BINARY_NAME)
+weknora-dev-start:
+	./scripts/dev/weknora-dev.sh start
 
-# Build Docker image
-docker-build-app:
-	@echo "获取版本信息..."
-	@eval $$(./scripts/get_version.sh env); \
-	./scripts/get_version.sh info; \
-	docker build --platform $(PLATFORM) \
-		--build-arg VERSION_ARG="$$VERSION" \
-		--build-arg COMMIT_ID_ARG="$$COMMIT_ID" \
-		--build-arg BUILD_TIME_ARG="$$BUILD_TIME" \
-		--build-arg GO_VERSION_ARG="$$GO_VERSION" \
-		-f docker/Dockerfile.app -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+weknora-dev-stop:
+	./scripts/dev/weknora-dev.sh stop
 
-# Build docreader Docker image
-docker-build-docreader:
-	docker build --platform $(PLATFORM) -f docker/Dockerfile.docreader -t wechatopenai/weknora-docreader:latest .
+weknora-dev-status:
+	./scripts/dev/weknora-dev.sh status
 
-# Build frontend Docker image
-docker-build-frontend:
-	docker build --platform $(PLATFORM) -f frontend/Dockerfile -t wechatopenai/weknora-ui:latest frontend/
+weknora-dev-logs:
+	./scripts/dev/weknora-dev.sh logs
 
-# Build all Docker images
-docker-build-all: docker-build-app docker-build-docreader docker-build-frontend
+status: pa-status
+	$(COMPOSE) -f compose.yaml ps
 
-# Run Docker container (传统方式)
-# Touch .env if missing — docker-compose.yml's `env_file: [.env]` is required
-# for ${ENV} interpolation in builtin_models.yaml and would otherwise refuse
-# to parse on fresh clones. `start-all` handles this via check_env_file; this
-# direct path needs its own guard.
-docker-run:
-	@[ -f .env ] || ([ -f .env.example ] && cp .env.example .env || touch .env)
-	docker-compose up
+compose-config:
+	$(COMPOSE) --env-file infra/env/compose.env.example -f compose.yaml config --no-env-resolution
 
-# 使用新脚本启动所有服务
-start-all:
-	./scripts/start_all.sh
+launchagents-install:
+	./scripts/ops/install-pa-launchagents.sh
 
-# 使用新脚本仅启动Ollama服务
-start-ollama:
-	./scripts/start_all.sh --ollama
+launchagents-uninstall:
+	./scripts/ops/uninstall-pa-launchagents.sh
 
-# 使用新脚本仅启动Docker容器
-start-docker:
-	./scripts/start_all.sh --docker
+native-build:
+	$(MAKE) -C platform/weknora build
 
-# 使用新脚本停止所有服务
-stop-all:
-	./scripts/start_all.sh --stop
+native-test:
+	$(MAKE) -C platform/weknora test
 
-# Stop Docker container (传统方式)
-docker-stop:
-	docker-compose down
+release-version:
+	./scripts/release/weknora-version.sh info
 
-# 从源码构建镜像相关命令
-build-images:
-	./scripts/build_images.sh
+release-images:
+	./scripts/release/build-weknora-images.sh
 
-build-images-app:
-	./scripts/build_images.sh --app
+release-lite:
+	./scripts/release/package-weknora-lite.sh
 
-build-images-docreader:
-	./scripts/build_images.sh --docreader
+release-mac:
+	./scripts/release/package-weknora-mac-app.sh
 
-build-images-frontend:
-	./scripts/build_images.sh --frontend
+validate: validate-command-surface validate-python validate-backend validate-web validate-static-acceptance validate-par
 
-clean-images:
-	./scripts/build_images.sh --clean
+validate-command-surface:
+	@find scripts/dev scripts/ops scripts/release scripts/validation -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+	@echo "shell syntax: PASS"
 
-# Restart Docker container (stop, start)
-docker-restart:
-	@[ -f .env ] || ([ -f .env.example ] && cp .env.example .env || touch .env)
-	docker-compose stop -t 60
-	docker-compose up
+validate-python:
+	@$(PYTHON) -c 'from pathlib import Path; roots=[Path("apps/pa-api"),Path("packages/agent-runtime"),Path("packages/knowledge-engine"),Path("scripts"),Path("tests")]; files=[p for r in roots for p in r.rglob("*.py") if "__pycache__" not in p.parts and ".venv" not in p.parts]; [compile(p.read_bytes(),str(p),"exec") for p in files]; print(f"python syntax: PASS ({len(files)} files)")'
 
-# Database migrations
-migrate-up:
-	./scripts/migrate.sh up
+validate-backend:
+	@PA_SKIP_DOTENV=1 DATABASE_URL=sqlite:///:memory: UPLOAD_DIR=/tmp/pa-par-p2-03-uploads PYTHONPATH="$(PYTHONPATH_ROOTS)" $(PYTHON) -m unittest discover -s tests/backend -v
 
-migrate-down:
-	./scripts/migrate.sh down
+validate-web:
+	@cd apps/pa-web && ./node_modules/.bin/tsc --noEmit
+	@cd apps/pa-web && ./node_modules/.bin/vite build --outDir "$(WEB_OUT_DIR)" --emptyOutDir
 
-migrate-version:
-	./scripts/migrate.sh version
+validate-static-acceptance:
+	@PYTHONDONTWRITEBYTECODE=1 $(PYTHON) -m unittest discover -s tests/acceptance -v
 
-migrate-create:
-	@if [ -z "$(name)" ]; then \
-		echo "Error: migration name is required"; \
-		echo "Usage: make migrate-create name=your_migration_name"; \
-		exit 1; \
-	fi
-	./scripts/migrate.sh create $(name)
+validate-live-acceptance:
+	@PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$(PYTHONPATH_ROOTS):$(REPOSITORY_ROOT)/scripts/validation" $(PYTHON) scripts/validation/check_pa_repository_live_acceptance.py
 
-migrate-force:
-	@if [ -z "$(version)" ]; then \
-		echo "Error: version is required"; \
-		echo "Usage: make migrate-force version=4"; \
-		exit 1; \
-	fi
-	./scripts/migrate.sh force $(version)
+validate-clean-clone:
+	@PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$(PYTHONPATH_ROOTS):$(REPOSITORY_ROOT)/scripts/validation" $(PYTHON) scripts/validation/check_pa_repository_clean_clone_acceptance.py
 
-migrate-goto:
-	@if [ -z "$(version)" ]; then \
-		echo "Error: version is required"; \
-		echo "Usage: make migrate-goto version=3"; \
-		exit 1; \
-	fi
-	./scripts/migrate.sh goto $(version)
+validate-par:
+	$(PYTHON) $(PAR_CHECKER)
 
-# Generate API documentation (Swagger)
-docs:
-	@echo "生成 Swagger API 文档..."
-	swag init -g $(MAIN_PATH)/main.go -o ./docs --parseDependency --parseInternal
-	@echo "文档已生成到 ./docs 目录"
-	@echo "启动服务后访问 http://localhost:8080/swagger/index.html 查看文档"
+validate-par-json:
+	$(PYTHON) $(PAR_CHECKER) --json
 
-# Install swagger tool
-install-swagger:
-	go install github.com/swaggo/swag/cmd/swag@latest
-
-# Format code
-fmt:
-	go fmt ./...
-
-# Lint code
-lint:
-	golangci-lint run
-
-# Install dependencies
-deps:
-	go mod download
-
-# Build for production
-# google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn for qdrant milvus proto conflict
-build-prod:
-	VERSION=$$(git describe --tags --abbrev=0 2>/dev/null || echo "$${VERSION:-unknown}"); \
-	COMMIT_ID=$${COMMIT_ID:-unknown}; \
-	CGO_ENABLED=1 \
-	CGO_CFLAGS="-Wno-deprecated-declarations" \
-	CGO_LDFLAGS="$$(if [ "$$(uname)" = 'Darwin' ]; then echo '-Wl,-no_warn_duplicate_libraries'; fi)" \
-	BUILD_TIME=$${BUILD_TIME:-unknown}; \
-	GO_VERSION=$${GO_VERSION:-unknown}; \
-	LDFLAGS="-X 'github.com/Tencent/WeKnora/internal/handler.Version=$$VERSION' -X 'github.com/Tencent/WeKnora/internal/handler.Edition=standard' -X 'github.com/Tencent/WeKnora/internal/handler.CommitID=$$COMMIT_ID' -X 'github.com/Tencent/WeKnora/internal/handler.BuildTime=$$BUILD_TIME' -X 'github.com/Tencent/WeKnora/internal/handler.GoVersion=$$GO_VERSION' -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'"; \
-	go build -ldflags="-w -s $$LDFLAGS" -o $(BINARY_NAME) $(MAIN_PATH)
-
-# Build Lite version (single binary, SQLite + in-memory queue)
-# 会先构建前端到 web/，再构建 Go 二进制；SKIP_FRONTEND=1 可跳过前端
-build-lite:
-	@if [ -f frontend/package.json ] && [ "$${SKIP_FRONTEND:-}" != "1" ]; then \
-		echo ">> Building frontend for Lite..."; \
-		(cd frontend && npm ci --prefer-offline && npm run build) && \
-		rm -rf web && cp -r frontend/dist web; \
-	elif [ "$${SKIP_FRONTEND:-}" = "1" ]; then \
-		echo ">> Skipping frontend (SKIP_FRONTEND=1)"; \
-	else \
-		echo ">> No frontend/package.json, skipping frontend"; \
-	fi
-	export EDITION=lite; \
-	eval "$$(./scripts/get_version.sh env)"; \
-	LDFLAGS="$$(./scripts/get_version.sh ldflags) -X 'google.golang.org/protobuf/reflect/protoregistry.conflictPolicy=warn'"; \
-	CGO_ENABLED=1 \
-	CGO_CFLAGS="-Wno-deprecated-declarations" \
-	CGO_LDFLAGS="$$(if [ "$$(uname)" = 'Darwin' ]; then echo '-Wl,-no_warn_duplicate_libraries'; fi)" \
-	go build -tags "sqlite_fts5" -ldflags="-w -s $$LDFLAGS" -o $(BINARY_NAME)-lite $(MAIN_PATH)
-
-# Run Lite version with .env.lite defaults
-run-lite: build-lite
-	@if [ ! -f .env.lite ]; then echo "Error: .env.lite not found"; exit 1; fi
-	@set -a && . ./.env.lite && set +a && ./$(BINARY_NAME)-lite
-
-# Package Lite version into distributable tarball
-package-lite:
-	./scripts/package-lite.sh
-
-# Package Mac App
-package-mac-app:
-	./scripts/package-mac-app.sh
-
-download_spatial:
-	go run cmd/download/duckdb/duckdb.go
-
-clean-db:
-	@echo "Cleaning database..."
-	@if [ $$(docker volume ls -q -f name=weknora_postgres-data) ]; then \
-		docker volume rm weknora_postgres-data; \
-	fi
-	@if [ $$(docker volume ls -q -f name=weknora_minio_data) ]; then \
-		docker volume rm weknora_minio_data; \
-	fi
-	@if [ $$(docker volume ls -q -f name=weknora_redis_data) ]; then \
-		docker volume rm weknora_redis_data; \
-	fi
-
-# Environment check
-check-env:
-	./scripts/start_all.sh --check
-
-# List containers
-list-containers:
-	./scripts/start_all.sh --list
-
-# Pull latest images
-pull-images:
-	./scripts/start_all.sh --pull
-
-# Show current platform
-show-platform:
-	@echo "当前系统架构: $(shell uname -m)"
-	@echo "Docker构建平台: $(PLATFORM)"
-
-# Development mode commands
-dev-start:
-	./scripts/dev.sh start
-
-dev-stop:
-	./scripts/dev.sh stop
-
-dev-restart:
-	./scripts/dev.sh restart
-
-dev-logs:
-	./scripts/dev.sh logs
-
-dev-status:
-	./scripts/dev.sh status
-
-dev-app:
-	./scripts/dev.sh app
-
-dev-frontend:
-	./scripts/dev.sh frontend
-
-
+validate-par-final:
+	$(PYTHON) $(PAR_CHECKER) --final

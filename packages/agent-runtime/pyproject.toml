@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pa-agent-runtime"
+version = "0.1.0"
+description = "PA AI Workbench agent runtime"
+requires-python = ">=3.10"
+dependencies = [
+  "requests",
+  "pa-knowledge-engine==0.1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent*"]
+
+[tool.setuptools.package-data]
+"agent.skills.builtin" = ["*.md"]
