@@ -2,7 +2,7 @@
 
 > Product: PA AI Workbench
 >
-> Repository role: canonical root product
+> Repository role: integrated application workspace
 >
 > Current architecture stage: PAR
 
@@ -13,12 +13,11 @@ affairs team. It helps operators organize knowledge, ask traceable questions,
 run professional analysis, maintain Wiki knowledge, and review history,
 citations, and audit evidence.
 
-The product is not a generic chat client and is not a WeKnora distribution.
-PA owns the user experience, BFF semantics, business history, professional
-workflow, safety controls, and evidence presentation. The controlled WeKnora
-runtime owns general platform capabilities such as document parsing, chunks,
-retrieval, RAG, Wiki, AgentQA, tools, MCP, Web Search, model/config, vector
-stores, and data-source connectors.
+The Web and API layers organize the user experience, business history,
+professional workflows, safety controls, and evidence presentation. WeKnora
+provides platform capabilities such as document parsing, chunks, retrieval,
+RAG, Wiki, AgentQA, tools, MCP, Web Search, model/configuration, vector stores,
+and data-source connectors.
 
 ## Primary workflows
 
@@ -53,17 +52,18 @@ stores, and data-source connectors.
   secret system and are never returned to the frontend.
 - Destructive or external mutations require explicit confirmation and an audit
   record.
-- PA stores business state and safe snapshots; it does not become the source of
-  truth for WeKnora chunks, vectors, provider credentials, or platform config.
+- The application stores business state and safe snapshots. WeKnora maintains
+  the chunks, vectors, provider credentials, and platform configuration used
+  by its runtime.
 - Mock/fallback/partial/blocked states must remain visible and must not be
   presented as live completion.
 
 ## Delivery contract
 
-The repository root is the only product entry. Development, operations,
+The repository root provides a unified product entry. Development, operations,
 release, and validation commands are exposed through the root `Makefile` and
-`scripts/*`. The PA Web and API live under `apps`, PA packages under `packages`,
-and the controlled native runtime under `platform/weknora`.
+`scripts/*`. The Web and API applications live under `apps`, shared packages
+under `packages`, and the WeKnora runtime under `platform/weknora`.
 
 Static, live-service, live-workflow, browser, and clean-clone evidence are
 separate gates. Historical reports do not substitute for current validation.
@@ -72,7 +72,7 @@ The current repository-reorganization contract is
 
 ## Non-goals
 
-- Reimplementing WeKnora platform internals in PA.
+- Duplicating capabilities already exposed through the integration layers.
 - Exposing raw native/provider payloads or secrets for convenience.
 - Treating a tidy directory tree, configured status, mock result, or archived
   report as live acceptance.

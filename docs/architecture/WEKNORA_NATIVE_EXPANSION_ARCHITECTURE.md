@@ -8,22 +8,21 @@
 
 ## Purpose
 
-This document turns the native expansion spec into an operational architecture
-blueprint for later `WNX-P0`, `WNX-P1`, and `WNX-P2` work. It describes module
-ownership, data flow, file ownership, forbidden areas, and development landing
-zones for the internal production PA workbench.
+This document records the operational architecture produced by the native
+expansion work. It describes module responsibilities, data flow, file
+locations, safety constraints, and development landing zones for the internal
+production workbench.
 
 The product direction is:
 
-- PA keeps the product shell, operator workflow, business history, citation
-  layer, reports, status surfaces, and safety boundaries.
-- WeKnora owns general knowledge platform capability: knowledge base,
+- The Web, API, and shared packages provide the operator workflow, business
+  history, citation layer, reports, status surfaces, and safety boundaries.
+- WeKnora provides knowledge platform capabilities: knowledge base,
   document parsing and indexing, chunk storage, RAG, knowledge-chat, Wiki,
   AgentQA, custom Agent, MCP, web search, vector store, model/config, parser,
   data source, FAQ, tags, favorites, and skill platform surfaces.
-- PA is a BFF and workflow shell around WeKnora native capabilities. It should
-  not rebuild a parallel general RAG, Wiki, Agent, parser, embedding, vector
-  store, MCP, or web-search stack.
+- The BFF and adapter connect these capabilities to product workflows,
+  normalized evidence, history, audit, and confirmation controls.
 
 ## Architecture Diagram
 
@@ -37,7 +36,7 @@ flowchart LR
   DB["PA Business DB"]
   Evidence["Evidence/Citation Layer"]
   Ops["Validation/Ops Layer"]
-  Workflow["PA-native Professional Workflow Layer"]
+  Workflow["Professional Workflow Layer"]
 
   User --> FE
   FE --> BFF
@@ -55,15 +54,15 @@ flowchart LR
 
 ## Module Boundaries
 
-| Module | PA owns | WeKnora owns | Main files today | Development landing zone |
+| Module | Workbench responsibility | Platform responsibility | Main files today | Development landing zone |
 | --- | --- | --- | --- | --- |
-| PA Frontend Shell | Navigation, pages, operator flow, status labels, citation/history display, safe jump links. | Native admin depth remains outside PA unless scoped. | `apps/pa-web/src/App.tsx`, `apps/pa-web/src/pages/*`, `apps/pa-web/src/api/client.ts`, `apps/pa-web/src/components/workbench.tsx` | `WNX-P0-03`, `WNX-P3-01`, P1 workflow pages. |
-| PA Backend BFF | PA semantic APIs, status normalization, history/citation persistence, safe errors, masked config snapshots. | Native platform response shape and platform authorization. | `apps/pa-api/app/api/*`, `apps/pa-api/app/services/*`, `apps/pa-api/app/schemas.py`, `apps/pa-api/app/config.py` | `WNX-P0-02`, all P1/P2 BFF slices. |
+| PA Frontend Shell | Navigation, pages, operator flow, status labels, citation/history display, safe jump links. | Native administration and platform configuration surfaces. | `apps/pa-web/src/App.tsx`, `apps/pa-web/src/pages/*`, `apps/pa-web/src/api/client.ts`, `apps/pa-web/src/components/workbench.tsx` | `WNX-P0-03`, `WNX-P3-01`, P1 workflow pages. |
+| PA Backend BFF | Product APIs, status normalization, history/citation persistence, safe errors, masked config snapshots. | Native platform response shape and platform authorization. | `apps/pa-api/app/api/*`, `apps/pa-api/app/services/*`, `apps/pa-api/app/schemas.py`, `apps/pa-api/app/config.py` | `WNX-P0-02`, all P1/P2 BFF slices. |
 | WeKnora Native Adapter | Thin typed client, trace id, timeout, retry, redaction, error classes, response normalization. | Native endpoints and authoritative capability behavior. | `packages/knowledge-engine/knowledge_engine/backends/weknora_api_backend.py`, `packages/knowledge-engine/knowledge_engine/errors.py`, `packages/knowledge-engine/knowledge_engine/schemas.py`, `packages/knowledge-engine/knowledge_engine/citations/*` | `WNX-P0-01` creates the shared client contract. |
-| PA Business DB | Business records, history, citations, report metadata, active KB/workspace/config selection snapshots. | Chunks, vectors, provider secrets, parser internals, platform config truth. | `apps/pa-api/app/models.py`, `apps/pa-api/app/database.py`, SQLite by default | P1 history/citation and workflow persistence. |
+| PA Business DB | Business records, history, citations, report metadata, active KB/workspace/config selection snapshots. | Chunks, vectors, provider secrets, parser internals, and platform configuration. | `apps/pa-api/app/models.py`, `apps/pa-api/app/database.py`, SQLite by default | P1 history/citation and workflow persistence. |
 | Evidence/Citation Layer | Traceable citation objects, locator routing, report safety, fail-closed checks. | Native ids and references returned by document, Wiki, or AgentQA paths. | `packages/knowledge-engine/knowledge_engine/evidence.py`, `packages/knowledge-engine/knowledge_engine/citations/*`, `apps/pa-api/app/api/citations.py`, `apps/pa-api/app/services/citation_locator_service.py` | `WNX-P1-07` plus each workflow task. |
 | Validation/Ops Layer | Live smokes, browser checks, report safety, coverage ledger, service/runbook validation, handoff. | Native service health and platform status APIs. | `scripts/validation/*`, `docs/archive/weknora-first/WEKNORA_FIRST_*`, future `docs/archive/wnx/WEKNORA_NATIVE_CAPABILITY_COVERAGE_LEDGER.md` | `WNX-0-03`, `WNX-P0-04`, `WNX-P0-05`, `WNX-P3-02`. |
-| PA-native Professional Workflow Layer | Policy/case/QA entry points, templates, PA history, report outputs, business language. | General AgentQA/custom Agent and tools when used for platform reasoning. | `packages/agent-runtime/agent/orchestrator.py`, `packages/agent-runtime/agent/agents/*`, `packages/agent-runtime/agent/tools/*`, `apps/pa-api/app/services/analysis_service.py`, `apps/pa-web/src/pages/AnalysisPage.tsx` | P1 AgentQA/custom Agent integration, with deeper PA-native expansion backlog by default. |
+| Professional Workflow Layer | Policy/case/QA entry points, templates, history, report outputs, and business language. | AgentQA/custom Agent and tools used for platform reasoning. | `packages/agent-runtime/agent/orchestrator.py`, `packages/agent-runtime/agent/agents/*`, `packages/agent-runtime/agent/tools/*`, `apps/pa-api/app/services/analysis_service.py`, `apps/pa-web/src/pages/AnalysisPage.tsx` | P1 AgentQA/custom Agent integration and focused professional workflow extensions. |
 
 ## Request And Data Flow
 
@@ -82,14 +81,14 @@ flowchart LR
    - `GET /api/v1/knowledge/{knowledge_id}/spans`
    - `GET /api/v1/chunks/{knowledge_id}`
 5. PA DB stores the business document record, status events, external native
-   ids, and safe status snapshots. It must not store WeKnora authoritative
-   chunks or vectors as PA-owned truth.
+   ids, and safe status snapshots. WeKnora maintains the indexed chunks and
+   vectors used by its runtime.
 
 Development landing:
 
-- `WNX-P1-02` owns file/url/manual ingestion, status spans, preview/download,
+- `WNX-P1-02` covers file/url/manual ingestion, status spans, preview/download,
   delete/reparse/cancel, and chunk preview policy.
-- `WNX-P1-03` owns safe chunk inspection and mutation confirmation policy.
+- `WNX-P1-03` covers safe chunk inspection and mutation confirmation policy.
 
 ### Retrieval, RAG, And Knowledge Chat
 
@@ -134,8 +133,8 @@ Development landing:
 
 Development landing:
 
-- `WNX-P1-06` owns the full native Wiki workflow.
-- `WNX-P1-07` owns Wiki citation locator consistency.
+- `WNX-P1-06` covers the full native Wiki workflow.
+- `WNX-P1-07` covers Wiki citation locator consistency.
 
 ### AgentQA And Custom Agent
 
@@ -157,7 +156,7 @@ Development landing:
 
 Development landing:
 
-- `WNX-P1-05` owns AgentQA/custom Agent workflow integration.
+- `WNX-P1-05` covers AgentQA/custom Agent workflow integration.
 - If native AgentQA still lacks traceable references, the workflow can be
   live-partial for answer/history and blocked for citation PASS.
 
@@ -180,9 +179,10 @@ Native route groups include:
   and skills list.
 
 Credential subresources, raw test payloads, raw provider responses, connection
-strings, and private endpoints are WeKnora-owned platform concerns. PA may show
-masked configured/live/blocked/backlog state, but not secret-bearing forms or
-raw platform payloads unless a later secure task explicitly scopes them.
+strings, and private endpoints remain inside the platform security boundary.
+The workbench shows masked configured/live/blocked/backlog state and does not
+expose secret-bearing forms or raw platform payloads without a scoped secure
+workflow.
 
 Development landing:
 
@@ -197,29 +197,29 @@ Development landing:
 
 Current shell:
 
-- `apps/pa-web/src/App.tsx` owns hash navigation and the six current pages:
-  Home, Library, Analysis, RAG Debug, Wiki, and History.
-- `apps/pa-web/src/api/client.ts` owns frontend API types for status, model,
+- `apps/pa-web/src/App.tsx` implements hash navigation and the current pages:
+  Home, Library, Dialogue, Analysis, RAG Debug, Wiki, Capability Center, and
+  History.
+- `apps/pa-web/src/api/client.ts` defines frontend API types for status, model,
   documents, RAG, citations, Wiki overview, MCP overview, web search overview,
   and vector store overview.
-- `apps/pa-web/src/pages/HomePage.tsx` owns status summary and entry points.
-- `apps/pa-web/src/pages/LibraryPage.tsx` owns document upload, list, status,
+- `apps/pa-web/src/pages/HomePage.tsx` implements status summary and entry points.
+- `apps/pa-web/src/pages/LibraryPage.tsx` implements document upload, list, status,
   chunk/event viewing, and retry controls.
-- `apps/pa-web/src/pages/RagDebugPage.tsx` owns native retrieval diagnostics and
+- `apps/pa-web/src/pages/RagDebugPage.tsx` implements native retrieval diagnostics and
   evidence display.
-- `apps/pa-web/src/pages/AnalysisPage.tsx` owns PA professional analysis entry.
-- `apps/pa-web/src/pages/WikiPage.tsx` owns Wiki browse/search/read/draft/status.
-- `apps/pa-web/src/pages/HistoryPage.tsx` owns outputs, filters, warnings, and
+- `apps/pa-web/src/pages/AnalysisPage.tsx` implements the professional analysis entry.
+- `apps/pa-web/src/pages/WikiPage.tsx` implements Wiki browse/search/read/draft/status.
+- `apps/pa-web/src/pages/HistoryPage.tsx` implements outputs, filters, warnings, and
   citation/history review.
 
 Frontend must:
 
-- Preserve PA as the user-facing workbench, not a WeKnora admin clone.
+- Keep the user-facing workbench focused on operator workflows.
 - Show live, partial, blocked, backlog, mock, and fallback states truthfully.
 - Display citations and locator actions only when the backend returns traceable
   evidence fields.
-- Offer native jump links for broad admin screens where PA should not duplicate
-  WeKnora UI.
+- Offer native jump links for platform administration screens.
 - Keep professional workflow entry points visible even when the underlying
   native capability is partial or blocked.
 
@@ -315,9 +315,9 @@ Current PA DB models in `apps/pa-api/app/models.py` include:
 - `WikiPage`, `WikiCitation`, `WikiPageCache`
 - `DocumentChunk`
 
-Ownership rule for native expansion:
+Data responsibility for native expansion:
 
-PA DB stores PA business state, not WeKnora platform internals.
+PA DB stores product business state. WeKnora stores its platform runtime state.
 
 PA DB may store:
 
@@ -397,7 +397,7 @@ Development landing:
 
 ## Validation/Ops Layer
 
-Validation/Ops owns truthfulness for internal production:
+Validation/Ops verifies internal-production behavior through:
 
 - `git diff --check` for documentation and code formatting sanity.
 - Focused `rg` checks for required task/layer terms.
@@ -424,29 +424,29 @@ Validation/Ops must keep evidence types separate:
 No task may mark PASS from static UI, mock/fixture-only output, old reports,
 old browser cache, hidden fallback, or unverified inference.
 
-## PA-native Professional Workflow Layer
+## Professional Workflow Layer
 
-PA keeps the professional product layer:
+The professional workflow layer includes:
 
 - `packages/agent-runtime/agent/orchestrator.py` registers PA workflows for knowledge QA, policy
   analysis, and case review.
-- `packages/agent-runtime/agent/agents/*` owns the current PA-native workflow implementations.
-- `packages/agent-runtime/agent/tools/*` owns retriever, Wiki reader/writer, citation checker, and
+- `packages/agent-runtime/agent/agents/*` contains the workflow implementations.
+- `packages/agent-runtime/agent/tools/*` contains the retriever, Wiki reader/writer, citation checker, and
   evidence policy tools.
 - `apps/pa-api/app/services/analysis_service.py` persists PA analysis outputs and
   history.
-- `apps/pa-web/src/pages/AnalysisPage.tsx` owns the operator-facing analysis UI.
+- `apps/pa-web/src/pages/AnalysisPage.tsx` implements the operator-facing analysis UI.
 
-Native expansion stance:
+Integration approach:
 
 - Preserve professional workflow entry points, generated output history,
   warnings, reports, and citation display.
 - Route general knowledge reasoning through WeKnora AgentQA/custom Agent where
   native paths are available and safe.
-- Freeze broad PA-native general Agent expansion unless the user explicitly
-  scopes a narrow professional workflow task.
-- Keep PA workflow outputs internal-production eligible only when they are
-  backed by live native evidence and PA citation/history persistence.
+- Extend professional workflows when a product task requires additional
+  templates, controls, or evidence handling.
+- Treat workflow outputs as internal-production eligible only when they are
+  backed by live evidence and citation/history persistence.
 
 ## Forbidden Cross-Cutting Moves
 
@@ -459,13 +459,13 @@ Native expansion stance:
   evidence.
 - Do not create direct native HTTP calls in random BFF handlers when the adapter
   should own them.
-- Do not deepen PA-native general RAG/Wiki/Agent/parser/vector systems when
-  WeKnora has a native route.
+- Route general RAG, Wiki, Agent, parser, and vector operations through the
+  established adapter and platform APIs.
 - Do not hide partial/blocked/backlog state for visual polish.
 - Do not make unsafe destructive native mutations without confirmation, audit
   trail, and explicit task scope.
 
-## File Ownership Map
+## File Responsibility Map
 
 | Area | Existing files | Notes for future edits |
 | --- | --- | --- |
@@ -475,10 +475,10 @@ Native expansion stance:
 | BFF routers | `apps/pa-api/app/api/*.py` | Expose PA semantic APIs and safe native overview endpoints. |
 | BFF services | `apps/pa-api/app/services/*.py` | Own business workflow, persistence, status, and citation glue. |
 | Settings/config | `apps/pa-api/app/config.py` | Load config but never print values; expose masked posture only. |
-| DB models | `apps/pa-api/app/models.py`, `apps/pa-api/app/database.py` | Store business records, not WeKnora platform internals. |
+| DB models | `apps/pa-api/app/models.py`, `apps/pa-api/app/database.py` | Store business records and safe platform references. |
 | Native adapter | `packages/knowledge-engine/knowledge_engine/backends/weknora_api_backend.py` | `WNX-P0-01` should split or standardize common request/response behavior before more capability work. |
 | Citation contract | `packages/knowledge-engine/knowledge_engine/evidence.py`, `packages/knowledge-engine/knowledge_engine/citations/*`, `apps/pa-api/app/api/citations.py`, `apps/pa-api/app/services/citation_locator_service.py` | Fail closed on missing ids; status is not evidence. |
-| Professional workflows | `packages/agent-runtime/agent/orchestrator.py`, `packages/agent-runtime/agent/agents/*`, `packages/agent-runtime/agent/tools/*` | Preserve PA workflow shell; avoid broad general Agent rebuild. |
+| Professional workflows | `packages/agent-runtime/agent/orchestrator.py`, `packages/agent-runtime/agent/agents/*`, `packages/agent-runtime/agent/tools/*` | Maintain professional workflow, evidence, and history behavior. |
 | Validation | `scripts/validation/*`, `docs/archive/weknora-first/WEKNORA_FIRST_*`, future WNX reports | Every task declares evidence type and runs focused checks. |
 
 ## WNX Task To Module Mapping
@@ -528,6 +528,6 @@ Native expansion stance:
 
 This document is PASS only as architecture audit/map evidence if validation
 proves it names the required modules, existing files, forbidden areas, data
-ownership rules, citation rules, and task mappings. It does not add live
+responsibility rules, citation rules, and task mappings. It does not add live
 capability, does not change product code, and does not mark any P0/P1/P2
 implementation complete.
